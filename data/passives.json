@@ -1,0 +1,670 @@
+{
+  "passives": [
+    {
+      "id": 0, "name": "Poison Projectile",
+      "description": "Снаряды отравляют врагов",
+      "icon": "poison",
+      "affects_types": ["projectile"],
+      "available_rarities": [0, 1, 2, 3, 4],
+      "rarities": {
+        "0": {
+          "positive": "+10% яд", "negative": "+20% кд",
+          "poison_pct": 0.1, "cd_multiplier": 1.2,
+          "poison_tick": 0.5, "poison_duration": 2.0,
+          "slow_duration": 0.0
+        },
+        "1": {
+          "positive": "+20% яд", "negative": "+10% кд",
+          "poison_pct": 0.2, "cd_multiplier": 1.1,
+          "poison_tick": 0.5, "poison_duration": 2.0,
+          "slow_duration": 0.0
+        },
+        "2": {
+          "positive": "+30% яд", "negative": "",
+          "poison_pct": 0.3, "cd_multiplier": 1.0,
+          "poison_tick": 0.5, "poison_duration": 2.0,
+          "slow_duration": 0.0
+        },
+        "3": {
+          "positive": "+50% яд + замедление", "negative": "",
+          "poison_pct": 0.5, "cd_multiplier": 1.0,
+          "poison_tick": 0.5, "poison_duration": 2.0,
+          "slow_duration": 1.0
+        },
+        "4": {
+          "positive": "+70% яд + 2с замедление", "negative": "",
+          "poison_pct": 0.7, "cd_multiplier": 1.0,
+          "poison_tick": 0.5, "poison_duration": 2.0,
+          "slow_duration": 2.0
+        }
+      }
+    },
+    {
+      "id": 1, "name": "Phoenix",
+      "description": "Возрождение после смерти",
+      "icon": "phoenix",
+      "affects_types": [],
+      "available_rarities": [2, 3, 4],
+      "rarities": {
+        "2": {
+          "positive": "+1 жизнь", "negative": "-60% HP",
+          "extra_lives": 1, "hp_penalty": 0.6,
+          "respawn_hp_pct": 0.5
+        },
+        "3": {
+          "positive": "+1 жизнь", "negative": "-20% HP",
+          "extra_lives": 1, "hp_penalty": 0.2,
+          "respawn_hp_pct": 1.0
+        },
+        "4": {
+          "positive": "+2 жизни", "negative": "-10% HP",
+          "extra_lives": 2, "hp_penalty": 0.1,
+          "respawn_hp_pct": 1.0
+        }
+      }
+    },
+    {
+      "id": 2, "name": "Tank",
+      "description": "Увеличение здоровья",
+      "icon": "tank",
+      "affects_types": [],
+      "available_rarities": [0, 1, 2, 3, 4],
+      "rarities": {
+        "0": {
+          "positive": "+50% HP", "negative": "-50% скорость",
+          "hp_multiplier": 1.5, "speed_multiplier": 0.5
+        },
+        "1": {
+          "positive": "+75% HP", "negative": "-30% скорость",
+          "hp_multiplier": 1.75, "speed_multiplier": 0.7
+        },
+        "2": {
+          "positive": "+100% HP", "negative": "-15% скорость",
+          "hp_multiplier": 2.0, "speed_multiplier": 0.85
+        },
+        "3": {
+          "positive": "+150% HP", "negative": "",
+          "hp_multiplier": 2.5, "speed_multiplier": 1.0
+        },
+        "4": {
+          "positive": "+200% HP, +10% скорость", "negative": "",
+          "hp_multiplier": 3.0, "speed_multiplier": 1.1
+        }
+      }
+    },
+    {
+      "id": 3, "name": "Lifesteal",
+      "description": "Похищение здоровья",
+      "icon": "lifesteal",
+      "affects_types": ["projectile", "melee"],
+      "available_rarities": [0, 1, 2, 3, 4],
+      "rarities": {
+        "0": {
+          "positive": "10% lifesteal", "negative": "-30% урон",
+          "lifesteal_pct": 0.1, "damage_multiplier": 0.7
+        },
+        "1": {
+          "positive": "15% lifesteal", "negative": "-15% урон",
+          "lifesteal_pct": 0.15, "damage_multiplier": 0.85
+        },
+        "2": {
+          "positive": "20% lifesteal", "negative": "",
+          "lifesteal_pct": 0.2, "damage_multiplier": 1.0
+        },
+        "3": {
+          "positive": "30% lifesteal", "negative": "+10% урон",
+          "lifesteal_pct": 0.3, "damage_multiplier": 1.1
+        },
+        "4": {
+          "positive": "40% lifesteal, +20% урон", "negative": "",
+          "lifesteal_pct": 0.4, "damage_multiplier": 1.2
+        }
+      }
+    },
+    {
+      "id": 4, "name": "Thread Master",
+      "description": "Увеличивает дальность и скорость нити",
+      "icon": "thread",
+      "affects_types": [],
+      "available_rarities": [0, 1, 2, 3],
+      "rarities": {
+        "0": {
+          "positive": "+30% дальность, +20% скорость нити",
+          "negative": "-15% HP",
+          "grapple_range_mult": 1.3, "grapple_speed_mult": 1.2,
+          "hp_multiplier": 0.85
+        },
+        "1": {
+          "positive": "+50% дальность, +30% скорость нити",
+          "negative": "-10% HP",
+          "grapple_range_mult": 1.5, "grapple_speed_mult": 1.3,
+          "hp_multiplier": 0.9
+        },
+        "2": {
+          "positive": "+75% дальность, +50% скорость нити",
+          "negative": "",
+          "grapple_range_mult": 1.75, "grapple_speed_mult": 1.5,
+          "hp_multiplier": 1.0
+        },
+        "3": {
+          "positive": "+100% дальность, +80% скорость, +20% движение",
+          "negative": "",
+          "grapple_range_mult": 2.0, "grapple_speed_mult": 1.8,
+          "hp_multiplier": 1.0, "speed_multiplier": 1.2
+        }
+      }
+    },
+    {
+      "id": 5, "name": "Wide Impact",
+      "description": "Увеличивает радиус способностей",
+      "icon": "radius",
+      "affects_types": [],
+      "available_rarities": [0, 1, 2, 3],
+      "rarities": {
+        "0": {
+          "positive": "+25% радиус способностей",
+          "negative": "-20% урон",
+          "radius_multiplier": 1.25, "damage_multiplier": 0.8
+        },
+        "1": {
+          "positive": "+40% радиус способностей",
+          "negative": "-10% урон",
+          "radius_multiplier": 1.4, "damage_multiplier": 0.9
+        },
+        "2": {
+          "positive": "+60% радиус способностей",
+          "negative": "",
+          "radius_multiplier": 1.6, "damage_multiplier": 1.0
+        },
+        "3": {
+          "positive": "+80% радиус, +15% урон",
+          "negative": "",
+          "radius_multiplier": 1.8, "damage_multiplier": 1.15
+        }
+      }
+    },
+    {
+      "id": 6, "name": "Quick Hands",
+      "description": "Уменьшает кулдаун способностей",
+      "icon": "clock",
+      "affects_types": [],
+      "available_rarities": [0, 1, 2, 3],
+      "rarities": {
+        "0": {
+          "positive": "-15% кулдаун",
+          "negative": "-20% HP",
+          "cd_multiplier": 0.85, "hp_multiplier": 0.8
+        },
+        "1": {
+          "positive": "-25% кулдаун",
+          "negative": "-10% HP",
+          "cd_multiplier": 0.75, "hp_multiplier": 0.9
+        },
+        "2": {
+          "positive": "-35% кулдаун",
+          "negative": "",
+          "cd_multiplier": 0.65, "hp_multiplier": 1.0
+        },
+        "3": {
+          "positive": "-50% кулдаун, +10% скорость",
+          "negative": "",
+          "cd_multiplier": 0.5, "hp_multiplier": 1.0,
+          "speed_multiplier": 1.1
+        }
+      }
+    },
+    {
+      "id": 7, "name": "Fire Thread",
+      "description": "Нить наносит урон огнём",
+      "icon": "fire_thread",
+      "affects_types": [],
+      "available_rarities": [3],
+      "rarities": {
+        "3": {
+          "positive": "Огненная нить: 48 урон",
+          "negative": "",
+          "burn_damage": 12.0, "burn_tick": 0.5, "burn_duration": 2.0
+        }
+      }
+    },
+    {
+      "id": 8, "name": "Ricochet",
+      "description": "Снаряды отскакивают от платформ",
+      "icon": "ricochet",
+      "affects_types": ["projectile"],
+      "available_rarities": [1, 2, 3],
+      "rarities": {
+        "1": {
+          "positive": "+1 отскок",
+          "negative": "-15% скорость снарядов",
+          "bounce_count": 1, "projectile_speed_mult": 0.85
+        },
+        "2": {
+          "positive": "+2 отскока",
+          "negative": "",
+          "bounce_count": 2, "projectile_speed_mult": 1.0
+        },
+        "3": {
+          "positive": "+3 отскока, +20% скорость",
+          "negative": "",
+          "bounce_count": 3, "projectile_speed_mult": 1.2
+        }
+      }
+    },
+    {
+      "id": 9, "name": "Regeneration",
+      "description": "Восстановление здоровья",
+      "icon": "regen",
+      "affects_types": [],
+      "available_rarities": [2, 3],
+      "rarities": {
+        "2": {
+          "positive": "+3 HP/сек",
+          "negative": "-10% макс HP",
+          "regen_per_sec": 3.0, "hp_multiplier": 0.9
+        },
+        "3": {
+          "positive": "+5 HP/сек",
+          "negative": "",
+          "regen_per_sec": 5.0, "hp_multiplier": 1.0
+        }
+      }
+    },
+    {
+      "id": 10, "name": "Explosive Power",
+      "description": "Усиление взрывов",
+      "icon": "explosive",
+      "affects_types": ["explosion"],
+      "available_rarities": [0, 1, 2, 3],
+      "rarities": {
+        "0": {
+          "positive": "+20% радиус, +15% урон взрывов",
+          "negative": "-10% скорость",
+          "radius_multiplier": 1.2, "damage_multiplier": 1.15,
+          "speed_multiplier": 0.9
+        },
+        "1": {
+          "positive": "+30% радиус, +25% урон",
+          "negative": "-5% скорость",
+          "radius_multiplier": 1.3, "damage_multiplier": 1.25,
+          "speed_multiplier": 0.95
+        },
+        "2": {
+          "positive": "+40% радиус, +35% урон",
+          "negative": "",
+          "radius_multiplier": 1.4, "damage_multiplier": 1.35
+        },
+        "3": {
+          "positive": "+60% радиус, +50% урон, +10% скорость",
+          "negative": "",
+          "radius_multiplier": 1.6, "damage_multiplier": 1.5,
+          "speed_multiplier": 1.1
+        }
+      }
+    },
+    {
+      "id": 11, "name": "Swift Feet",
+      "description": "Увеличение скорости",
+      "icon": "swift",
+      "affects_types": [],
+      "available_rarities": [0, 1, 2, 3],
+      "rarities": {
+        "0": {
+          "positive": "+20% скорость, +15% нить",
+          "negative": "-15% HP",
+          "speed_multiplier": 1.2, "grapple_speed_mult": 1.15,
+          "hp_multiplier": 0.85
+        },
+        "1": {
+          "positive": "+30% скорость, +25% нить",
+          "negative": "-8% HP",
+          "speed_multiplier": 1.3, "grapple_speed_mult": 1.25,
+          "hp_multiplier": 0.92
+        },
+        "2": {
+          "positive": "+40% скорость, +35% нить",
+          "negative": "",
+          "speed_multiplier": 1.4, "grapple_speed_mult": 1.35
+        },
+        "3": {
+          "positive": "+50% скорость, +50% нить, +10% урон",
+          "negative": "",
+          "speed_multiplier": 1.5, "grapple_speed_mult": 1.5,
+          "damage_multiplier": 1.1
+        }
+      }
+    },
+    {
+      "id": 12, "name": "Projectile Master",
+      "description": "Усиление снарядов",
+      "icon": "proj_master",
+      "affects_types": ["projectile"],
+      "available_rarities": [0, 1, 2, 3],
+      "rarities": {
+        "0": {
+          "positive": "+20% урон, +15% скорость снарядов",
+          "negative": "+15% кд",
+          "damage_multiplier": 1.2, "projectile_speed_mult": 1.15,
+          "cd_multiplier": 1.15
+        },
+        "1": {
+          "positive": "+30% урон, +25% скорость снарядов",
+          "negative": "+8% кд",
+          "damage_multiplier": 1.3, "projectile_speed_mult": 1.25,
+          "cd_multiplier": 1.08
+        },
+        "2": {
+          "positive": "+40% урон, +30% скорость",
+          "negative": "",
+          "damage_multiplier": 1.4, "projectile_speed_mult": 1.3
+        },
+        "3": {
+          "positive": "+50% урон, +40% скорость, -10% кд",
+          "negative": "",
+          "damage_multiplier": 1.5, "projectile_speed_mult": 1.4,
+          "cd_multiplier": 0.9
+        }
+      }
+    },
+    {
+      "id": 13, "name": "Glass Cannon",
+      "description": "Больше урон, меньше HP",
+      "icon": "glass_cannon",
+      "affects_types": [],
+      "available_rarities": [0, 1, 2, 3, 4],
+      "rarities": {
+        "0": {
+          "positive": "+40% урон",
+          "negative": "-40% HP",
+          "damage_multiplier": 1.4, "hp_multiplier": 0.6
+        },
+        "1": {
+          "positive": "+60% урон",
+          "negative": "-35% HP",
+          "damage_multiplier": 1.6, "hp_multiplier": 0.65
+        },
+        "2": {
+          "positive": "+80% урон",
+          "negative": "-30% HP",
+          "damage_multiplier": 1.8, "hp_multiplier": 0.7
+        },
+        "3": {
+          "positive": "+100% урон",
+          "negative": "-20% HP",
+          "damage_multiplier": 2.0, "hp_multiplier": 0.8
+        },
+        "4": {
+          "positive": "+150% урон",
+          "negative": "-15% HP",
+          "damage_multiplier": 2.5, "hp_multiplier": 0.85
+        }
+      }
+    },
+    {
+      "id": 14, "name": "Iron Skin",
+      "description": "Снижение получаемого урона",
+      "icon": "iron_skin",
+      "affects_types": [],
+      "available_rarities": [0, 1, 2, 3, 4],
+      "rarities": {
+        "0": {
+          "positive": "-15% входящий урон",
+          "negative": "-20% скорость",
+          "damage_reduction": 0.15, "speed_multiplier": 0.8
+        },
+        "1": {
+          "positive": "-25% входящий урон",
+          "negative": "-12% скорость",
+          "damage_reduction": 0.25, "speed_multiplier": 0.88
+        },
+        "2": {
+          "positive": "-30% входящий урон",
+          "negative": "",
+          "damage_reduction": 0.3
+        },
+        "3": {
+          "positive": "-40% входящий урон, +10% HP",
+          "negative": "",
+          "damage_reduction": 0.4, "hp_multiplier": 1.1
+        },
+        "4": {
+          "positive": "-50% входящий урон, +20% HP",
+          "negative": "",
+          "damage_reduction": 0.5, "hp_multiplier": 1.2
+        }
+      }
+    },
+    {
+      "id": 15, "name": "Shockwave",
+      "description": "Парирование отталкивает врагов",
+      "icon": "shockwave",
+      "affects_types": [],
+      "available_rarities": [0, 1, 2, 3, 4],
+      "rarities": {
+        "0": {
+          "positive": "Отталкивание x1.0 при парировании",
+          "negative": "-10% HP",
+          "radius_mult": 1.0, "hp_multiplier": 0.9
+        },
+        "1": {
+          "positive": "Отталкивание x1.3",
+          "negative": "",
+          "radius_mult": 1.3
+        },
+        "2": {
+          "positive": "Отталкивание x1.6",
+          "negative": "",
+          "radius_mult": 1.6
+        },
+        "3": {
+          "positive": "Отталкивание x2.0, +10% скорость",
+          "negative": "",
+          "radius_mult": 2.0, "speed_multiplier": 1.1
+        },
+        "4": {
+          "positive": "Отталкивание x2.5, +15% скорость",
+          "negative": "",
+          "radius_mult": 2.5, "speed_multiplier": 1.15
+        }
+      }
+    },
+    {
+      "id": 16, "name": "Lightning Strike",
+      "description": "Урон накладывает замедление молнией",
+      "icon": "lightning",
+      "affects_types": [],
+      "available_rarities": [1, 2, 3, 4],
+      "rarities": {
+        "1": {
+          "positive": "0.3с замедление при ударе",
+          "negative": "+10% кд",
+          "slow_duration": 0.3, "cd_multiplier": 1.1
+        },
+        "2": {
+          "positive": "0.5с замедление при ударе",
+          "negative": "",
+          "slow_duration": 0.5
+        },
+        "3": {
+          "positive": "0.8с замедление при ударе, +15% урон",
+          "negative": "",
+          "slow_duration": 0.8, "damage_multiplier": 1.15
+        },
+        "4": {
+          "positive": "1.2с замедление, +20% урон",
+          "negative": "",
+          "slow_duration": 1.2, "damage_multiplier": 1.2
+        }
+      }
+    },
+    {
+      "id": 17, "name": "Heavy Impact",
+      "description": "Сильнее отталкивание при столкновении",
+      "icon": "heavy",
+      "affects_types": [],
+      "available_rarities": [0, 1, 2, 3],
+      "rarities": {
+        "0": {
+          "positive": "+50% сила столкновений",
+          "negative": "-15% скорость",
+          "collision_mult": 1.5, "speed_multiplier": 0.85
+        },
+        "1": {
+          "positive": "+80% сила столкновений",
+          "negative": "-8% скорость",
+          "collision_mult": 1.8, "speed_multiplier": 0.92
+        },
+        "2": {
+          "positive": "+120% сила столкновений",
+          "negative": "",
+          "collision_mult": 2.2
+        },
+        "3": {
+          "positive": "+200% сила столкновений, +20% HP",
+          "negative": "",
+          "collision_mult": 3.0, "hp_multiplier": 1.2
+        }
+      }
+    },
+    {
+      "id": 18, "name": "Homing Projectiles",
+      "description": "Снаряды наводятся на врагов",
+      "icon": "homing",
+      "affects_types": ["projectile"],
+      "available_rarities": [1, 2, 3, 4],
+      "rarities": {
+        "1": {
+          "positive": "Наведение 1.5x",
+          "negative": "-10% скорость снарядов",
+          "homing_strength": 1.5, "projectile_speed_mult": 0.9
+        },
+        "2": {
+          "positive": "Наведение 2.5x",
+          "negative": "",
+          "homing_strength": 2.5
+        },
+        "3": {
+          "positive": "Наведение 3.5x, +10% скорость",
+          "negative": "",
+          "homing_strength": 3.5, "projectile_speed_mult": 1.1
+        },
+        "4": {
+          "positive": "Наведение 5.0x, +20% скорость, +15% урон",
+          "negative": "",
+          "homing_strength": 5.0, "projectile_speed_mult": 1.2, "damage_multiplier": 1.15
+        }
+      }
+    },
+    {
+      "id": 19, "name": "Burst Fire",
+      "description": "Залповая стрельба",
+      "icon": "burst",
+      "affects_types": ["projectile"],
+      "available_rarities": [2, 3, 4],
+      "rarities": {
+        "2": {
+          "positive": "+1 доп. выстрел",
+          "negative": "+20% кд",
+          "burst_count": 1, "cd_multiplier": 1.2
+        },
+        "3": {
+          "positive": "+2 доп. выстрела",
+          "negative": "+10% кд",
+          "burst_count": 2, "cd_multiplier": 1.1
+        },
+        "4": {
+          "positive": "+3 доп. выстрела, -10% кд",
+          "negative": "",
+          "burst_count": 3, "cd_multiplier": 0.9
+        }
+      }
+    },
+    {
+      "id": 20, "name": "Lucky Star",
+      "description": "Повышает шанс редких пассивок",
+      "icon": "lucky",
+      "affects_types": [],
+      "available_rarities": [0, 1, 2, 3, 4],
+      "rarities": {
+        "0": {
+          "positive": "+1 удача",
+          "negative": "",
+          "luck_bonus": 1.0
+        },
+        "1": {
+          "positive": "+2 удача",
+          "negative": "",
+          "luck_bonus": 2.5
+        },
+        "2": {
+          "positive": "+4 удача",
+          "negative": "",
+          "luck_bonus": 4.0
+        },
+        "3": {
+          "positive": "+6 удача",
+          "negative": "",
+          "luck_bonus": 6.0
+        },
+        "4": {
+          "positive": "+10 удача",
+          "negative": "",
+          "luck_bonus": 10.0
+        }
+      }
+    },
+    {
+      "id": 21, "name": "Spirit Burst",
+      "description": "Щит выпускает наводящиеся эссенции",
+      "icon": "spirit",
+      "affects_types": [],
+      "available_rarities": [4],
+      "rarities": {
+        "4": {
+          "positive": "5 эссенций при парировании, хил 50%",
+          "negative": "",
+          "essence_damage": 6.0
+        }
+      }
+    }
+    ,
+    {
+      "id": 22, "name": "Shield Mastery",
+      "description": "Уменьшает кулдаун щита",
+      "icon": "shield_cd",
+      "affects_types": [],
+      "available_rarities": [0, 1, 2, 3, 4],
+      "rarities": {
+        "0": {"positive": "-15% КД щита", "negative": "", "parry_cd_mult": 0.85},
+        "1": {"positive": "-25% КД щита", "negative": "", "parry_cd_mult": 0.75},
+        "2": {"positive": "-40% КД щита", "negative": "", "parry_cd_mult": 0.6},
+        "3": {"positive": "-55% КД, +5% скорость", "negative": "", "parry_cd_mult": 0.45, "speed_multiplier": 1.05},
+        "4": {"positive": "-70% КД, +10% скорость, +10% урон", "negative": "", "parry_cd_mult": 0.3, "speed_multiplier": 1.1, "damage_multiplier": 1.1}
+      }
+    }
+    ,
+    {
+      "id": 23, "name": "Parry Burst",
+      "description": "Щит активируется несколько раз подряд",
+      "icon": "parry_burst",
+      "affects_types": [],
+      "available_rarities": [2, 3, 4],
+      "rarities": {
+        "2": {"positive": "+1 доп. парирование", "negative": "+15% КД способностей", "burst_count": 1, "cd_multiplier": 1.15},
+        "3": {"positive": "+2 доп. парирования", "negative": "", "burst_count": 2},
+        "4": {"positive": "+3 доп. парирования, -10% КД щита", "negative": "", "burst_count": 3, "parry_cd_mult": 0.9}
+      }
+    },
+    {
+      "id": 24, "name": "Phase Shot",
+      "description": "Снаряды проходят через стены и щит",
+      "icon": "phase",
+      "affects_types": ["projectile"],
+      "available_rarities": [3, 4],
+      "rarities": {
+        "3": {"positive": "Снаряды проходят через стены", "negative": "-15% урон", "damage_multiplier": 0.85},
+        "4": {"positive": "Снаряды через стены, +10% скорость", "negative": "", "speed_multiplier": 1.1}
+      }
+    }
+  ]
+}

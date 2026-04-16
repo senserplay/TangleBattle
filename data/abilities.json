@@ -1,0 +1,331 @@
+{
+  "abilities": [
+    {
+      "id": 0,
+      "name": "Yarn Toss",
+      "types": [
+        "projectile"
+      ],
+      "cooldown": 1.2,
+      "color": [
+        0.4,
+        0.8,
+        1.0
+      ],
+      "damage": 35.0,
+      "knockback": 800.0,
+      "knockback_up": 200.0,
+      "stun_duration": 0.5,
+      "speed": 900.0,
+      "projectile_radius": 12.0,
+      "lifetime": 3.0
+    },
+    {
+      "id": 1,
+      "name": "Needle Dash",
+      "types": [
+        "melee"
+      ],
+      "cooldown": 2.0,
+      "color": [
+        1.0,
+        0.3,
+        0.3
+      ],
+      "damage": 35.0,
+      "knockback": 700.0,
+      "knockback_up": 200.0,
+      "dash_speed": 900.0,
+      "dash_duration": 0.2,
+      "hit_radius": 50.0
+    },
+    {
+      "id": 2,
+      "name": "Yarn Bomb",
+      "types": [
+        "explosion"
+      ],
+      "cooldown": 2.5,
+      "color": [
+        1.0,
+        0.4,
+        0.6
+      ],
+      "damage": 35.0,
+      "knockback": 900.0,
+      "knockback_up": 500.0,
+      "explosion_range": 250.0,
+      "explosion_radius": 150.0,
+      "visual_duration": 0.3
+    },
+    {
+      "id": 3,
+      "name": "Thread Pull",
+      "types": [
+        "melee"
+      ],
+      "cooldown": 1.5,
+      "color": [
+        0.5,
+        1.0,
+        0.5
+      ],
+      "damage": 20.0,
+      "pull_force": 800.0,
+      "pull_up": 200.0,
+      "max_range": 400.0,
+      "aim_threshold": 0.5
+    },
+    {
+      "id": 4,
+      "name": "Spin Attack",
+      "types": [
+        "melee",
+        "explosion"
+      ],
+      "cooldown": 1.5,
+      "color": [
+        1.0,
+        0.8,
+        0.2
+      ],
+      "damage": 30.0,
+      "knockback": 800.0,
+      "knockback_up": 400.0,
+      "radius": 120.0,
+      "visual_duration": 0.2
+    },
+    {
+      "id": 5,
+      "name": "Grenade",
+      "types": [
+        "projectile",
+        "explosion"
+      ],
+      "cooldown": 2.5,
+      "color": [
+        0.8,
+        0.3,
+        0.1
+      ],
+      "min_throw_speed": 1200.0,
+      "max_throw_speed": 2200.0,
+      "charge_time": 1.0,
+      "overcharge_time": 2.5,
+      "bounce_damping": 0.5,
+      "fuse_time": 2.0,
+      "owner_safe_time": 0.3,
+      "explosion_radius": 180.0,
+      "damage": 50.0,
+      "knockback": 1100.0,
+      "knockback_up": 500.0,
+      "player_detect_radius": 20.0,
+      "grenade_radius": 14.0
+    },
+    {
+      "id": 6,
+      "name": "Rocket Launcher",
+      "types": [
+        "projectile",
+        "explosion"
+      ],
+      "cooldown": 3.0,
+      "color": [
+        1.0,
+        0.35,
+        0.1
+      ],
+      "rocket_speed": 800.0,
+      "spread_angle": 30.0,
+      "damage": 30.0,
+      "knockback": 700.0,
+      "knockback_up": 350.0,
+      "explosion_radius": 120.0,
+      "rocket_radius": 8.0,
+      "lifetime": 2.5
+    },
+    {
+      "id": 7,
+      "name": "Stink Cloud",
+      "types": [
+        "trap",
+        "dot"
+      ],
+      "cooldown": 5.0,
+      "color": [
+        0.3,
+        0.75,
+        0.15
+      ],
+      "cloud_radius": 200.0,
+      "cloud_duration": 3.0,
+      "tick_damage": 8.0,
+      "tick_interval": 0.5,
+      "poison_duration": 2.0
+    },
+    {
+      "id": 8,
+      "name": "Spike Armor",
+      "types": [
+        "contact",
+        "reflect"
+      ],
+      "cooldown": 6.0,
+      "color": [
+        0.85,
+        0.85,
+        0.85
+      ],
+      "armor_duration": 2.0,
+      "contact_damage": 20.0,
+      "contact_knockback": 500.0,
+      "contact_radius": 40.0,
+      "contact_cooldown": 0.5,
+      "spike_count": 8,
+      "spike_grow_time": 0.2,
+      "spike_shrink_time": 0.3
+    },
+    {
+      "id": 9,
+      "name": "Swap",
+      "types": [
+        "utility"
+      ],
+      "cooldown": 4.0,
+      "color": [
+        0.9,
+        0.3,
+        0.9
+      ],
+      "max_range": 800.0,
+      "aim_threshold": 0.4,
+      "swap_invuln": 0.3
+    },
+    {
+      "id": 10,
+      "name": "Boomerang",
+      "types": [
+        "projectile"
+      ],
+      "cooldown": 2.5,
+      "color": [
+        0.2,
+        0.7,
+        0.9
+      ],
+      "speed": 1400.0,
+      "fly_distance": 1800.0,
+      "return_speed": 1600.0,
+      "damage": 25.0,
+      "knockback": 500.0,
+      "knockback_up": 200.0,
+      "hit_radius": 96.0,
+      "return_radius": 50.0,
+      "lifetime": 5.0
+    },
+    {
+      "id": 11,
+      "name": "Guided Rocket",
+      "types": [
+        "projectile",
+        "explosion"
+      ],
+      "cooldown": 5.0,
+      "color": [
+        1.0,
+        0.5,
+        0.0
+      ],
+      "rocket_speed": 500.0,
+      "turn_speed": 4.0,
+      "damage": 40.0,
+      "knockback": 800.0,
+      "knockback_up": 400.0,
+      "explosion_radius": 150.0,
+      "lifetime": 3.5
+    },
+    {
+      "id": 12,
+      "name": "Tripwire",
+      "types": [
+        "trap"
+      ],
+      "cooldown": 2.0,
+      "color": [
+        0.3,
+        0.9,
+        1.0
+      ],
+      "cast_range": 500.0,
+      "damage": 30.0,
+      "stun_duration": 0.8,
+      "knockback": 300.0,
+      "lifetime": 12.0,
+      "wire_check_radius": 15.0
+    },
+    {
+      "id": 13,
+      "name": "Grab Throw",
+      "types": [
+        "melee"
+      ],
+      "cooldown": 3.0,
+      "color": [
+        0.7,
+        0.5,
+        0.2
+      ],
+      "grab_radius": 60.0,
+      "grab_stun": 1.5,
+      "throw_speed": 1200.0,
+      "throw_damage": 25.0,
+      "throw_knockback": 600.0
+    },
+    {
+      "id": 14,
+      "name": "Black Hole",
+      "types": [
+        "trap",
+        "dot"
+      ],
+      "cooldown": 12.0,
+      "color": [
+        0.15,
+        0.05,
+        0.3
+      ],
+      "max_radius": 250.0,
+      "expand_time": 2.5,
+      "active_duration": 8.0,
+      "pull_force": 350.0,
+      "drain_per_sec": 12.0
+    },
+    {
+      "id": 15,
+      "name": "Portal Gate",
+      "types": [
+        "utility"
+      ],
+      "cooldown": 8.0,
+      "color": [
+        0.5,
+        0.2,
+        0.9
+      ],
+      "portal_radius": 100.0
+    },
+    {
+      "id": 16,
+      "name": "Heaven's Wrath",
+      "types": ["projectile", "explosion"],
+      "cooldown": 10.0,
+      "color": [1.0, 0.95, 0.6],
+      "damage": 55.0,
+      "pillar_count": 6,
+      "pillar_spacing": 120.0,
+      "pillar_width": 70.0,
+      "pillar_delay": 0.07,
+      "pillar_speed": 5000.0
+    }
+  ]
+}

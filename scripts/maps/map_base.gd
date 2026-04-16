@@ -1,0 +1,1056 @@
+extends Node2D
+## Base map class with multiple platform shape types.
+##
+## Platform format: [x, y, width, height, one_way, shape]
+## shape: "rect" (default), "circle", "arc_left", "arc_right"
+## Rect platforms are drawn as rounded capsules.
+## Circle platforms are ball-shaped.
+## Arc platforms are curved half-pipes.
+
+var platforms: Array = []
+## Extra objects: [type, x, y, params...]
+## "ball" — circle platform: [x, y, radius]
+## "arc" — curved platform: [x, y, radius, start_angle, end_angle]
+var objects: Array = []
+## Hazards: [type, x, y, params...]
+## "spikes" — instant kill zone: [x, y, width, height]
+## "moving" — moving platform: [x, y, w, h, move_x, move_y, speed]
+var hazards: Array = []
+## Teleport pairs: [[x1, y1, x2, y2]]
+var teleports: Array = []
+## Destructible platforms: [x, y, w, h, hp]
+var destructibles: Array = []
+## Item spawn points: [x, y] — items spawn randomly at these positions
+var item_spawns: Array = []
+## Map events enabled
+var events_enabled: bool = false
+var event_timer: float = 0.0
+const EVENT_INTERVAL := 20.0
+
+## Parallax layers: [{color, elements: [{x, y, size, shape}], scroll_factor}]
+## scroll_factor: 0.0 = static, 1.0 = moves with camera
+var parallax_layers: Array = []
+
+var bg_color: Color = Color(0.12, 0.1, 0.15)
+var platform_color: Color = Color(0.35, 0.25, 0.2)
+var platform_edge_color: Color = Color(0.6, 0.45, 0.3)
+var floor_color: Color = Color(0.3, 0.2, 0.18)
+var floor_edge_color: Color = Color(0.5, 0.35, 0.25)
+var map_name: String = "Unknown"
+
+var spawn_points: Array[Vector2] = [
+	Vector2(800, 2600), Vector2(4000, 2600),
+	Vector2(2000, 1800), Vector2(2800, 1800),
+]
+
+var map_rect: Rect2 = Rect2(0, 0, 4800, 3200)
+var danger_left: float = 300.0
+var danger_right: float = 300.0
+var danger_bottom: float = 300.0
+var danger_top: float = 0.0
+var kill_margin: float = 200.0
+
+var use_walls: bool = false       # solid walls instead of danger zones
+var fire_walls: bool = false      # walls deal fire damage on touch
+var bouncy_walls: bool = false    # walls bounce players off
+var wall_thickness: float = 40.0  # thickness of wall collision
+
+# Global zone shrink — starts after SHRINK_GLOBAL_DELAY seconds
+const SHRINK_GLOBAL_DELAY := 120.0
+const SHRINK_GLOBAL_SPEED := 20.0
+const SHRINK_MIN_SAFE := 600.0
+var global_shrink_timer: float = 0.0
+
+
+func _ready() -> void:
+	for data in platforms:
+		if data.size() > 4 and data[4] is String and data[4] == "sticky":
+			_create_platform(data[0], data[1], data[2], data[3], false)
+		elif data.size() > 4 and data[4] is bool:
+			_create_platform(data[0], data[1], data[2], data[3], data[4])
+		else:
+			_create_platform(data[0], data[1], data[2], data[3], false)
+	for obj in objects:
+		var type: String = obj[0]
+		match type:
+			"ball":
+				_create_ball(obj[1], obj[2], obj[3])
+			"arc":
+				_create_arc_platform(obj[1], obj[2], obj[3], obj[4], obj[5])
+	for haz in hazards:
+		var type: String = haz[0]
+		match type:
+			"spikes":
+				_create_spikes(haz[1], haz[2], haz[3], haz[4])
+			"moving":
+				_create_moving_platform(haz[1], haz[2], haz[3], haz[4],
+					haz[5], haz[6], haz[7])
+	for tp in teleports:
+		if tp.size() >= 8:
+			_create_teleport_pair_v2(tp[0], tp[1], tp[2], tp[3], tp[4], tp[5], tp[6], tp[7])
+		else:
+			_create_teleport_pair(tp[0], tp[1], tp[2], tp[3])
+	for dplat in destructibles:
+		_create_destructible(dplat[0], dplat[1], dplat[2], dplat[3], dplat[4])
+	if use_walls or fire_walls or bouncy_walls:
+		_create_walls()
+
+
+func _create_platform(
+	x: float, y: float, w: float, h: float, one_way: bool
+) -> void:
+	var body := StaticBody2D.new()
+	body.position = Vector2(x, y)
+	var shape := RectangleShape2D.new()
+	shape.size = Vector2(w, h)
+	var col := CollisionShape2D.new()
+	col.shape = shape
+	if one_way:
+		col.one_way_collision = true
+	body.add_child(col)
+	add_child(body)
+
+
+## ══════ WALLS ══════
+func _create_walls() -> void:
+	var r := map_rect
+	var t := wall_thickness
+	var cx := r.position.x + r.size.x / 2.0
+	var cy := r.position.y + r.size.y / 2.0
+
+	var wall_configs: Array = [
+		# [pos_x, pos_y, size_x, size_y]
+		[r.position.x - t / 2.0, cy, t, r.size.y + 200.0],        # left
+		[r.end.x + t / 2.0, cy, t, r.size.y + 200.0],             # right
+		[cx, r.end.y + t / 2.0, r.size.x + 200.0, t],              # bottom
+	]
+	if danger_top > 0:
+		wall_configs.append([cx, r.position.y - t / 2.0, r.size.x + 200.0, t])  # top
+
+	var phys_mat: PhysicsMaterial = null
+	if bouncy_walls:
+		phys_mat = PhysicsMaterial.new()
+		phys_mat.bounce = 1.5
+		phys_mat.friction = 0.0
+
+	for wc in wall_configs:
+		var body := StaticBody2D.new()
+		body.position = Vector2(wc[0], wc[1])
+		body.collision_layer = 1
+		body.collision_mask = 0
+		if bouncy_walls and phys_mat != null:
+			body.physics_material_override = phys_mat
+		var shape := RectangleShape2D.new()
+		shape.size = Vector2(wc[2], wc[3])
+		var col := CollisionShape2D.new()
+		col.shape = shape
+		body.add_child(col)
+		body.add_to_group("map_walls")
+		add_child(body)
+
+
+func _create_ball(x: float, y: float, radius: float) -> void:
+	var body := StaticBody2D.new()
+	body.position = Vector2(x, y)
+	var shape := CircleShape2D.new()
+	shape.radius = radius
+	var col := CollisionShape2D.new()
+	col.shape = shape
+	body.add_child(col)
+	add_child(body)
+
+
+func _create_arc_platform(
+	x: float, y: float, radius: float,
+	start_deg: float, end_deg: float
+) -> void:
+	# Approximate arc with multiple small segment bodies
+	var start_rad := deg_to_rad(start_deg)
+	var end_rad := deg_to_rad(end_deg)
+	var segments := 8
+	var span := end_rad - start_rad
+	for i in range(segments):
+		var a0 := start_rad + span * float(i) / segments
+		var a1 := start_rad + span * float(i + 1) / segments
+		var mid_a := (a0 + a1) / 2.0
+		var seg_len := radius * absf(a1 - a0)
+
+		var body := StaticBody2D.new()
+		var cx := x + cos(mid_a) * radius
+		var cy := y + sin(mid_a) * radius
+		body.position = Vector2(cx, cy)
+		body.rotation = mid_a + PI / 2.0
+
+		var shape := RectangleShape2D.new()
+		shape.size = Vector2(seg_len + 4, 20)
+		var col := CollisionShape2D.new()
+		col.shape = shape
+		col.one_way_collision = true
+		body.add_child(col)
+		add_child(body)
+
+
+func _draw() -> void:
+	draw_rect(
+		Rect2(
+			map_rect.position.x - 500, map_rect.position.y - 500,
+			map_rect.size.x + 1000, map_rect.size.y + 1000
+		),
+		bg_color
+	)
+	_draw_parallax()
+	_draw_danger_zones()
+	_draw_walls()
+	_draw_decorations()
+	_draw_platforms()
+	_draw_objects()
+	_draw_hazards()
+
+
+func _draw_parallax() -> void:
+	if parallax_layers.is_empty():
+		return
+	var cam := get_viewport().get_camera_2d()
+	if cam == null:
+		return
+	var cam_pos := cam.position
+	var center := map_rect.position + map_rect.size / 2.0
+
+	for layer in parallax_layers:
+		var scroll: float = layer.get("scroll", 0.3)
+		var col: Color = layer.get("color", Color(0.2, 0.2, 0.3, 0.1))
+		var elements: Array = layer.get("elements", [])
+		var parallax_offset := (cam_pos - center) * (1.0 - scroll)
+
+		for elem in elements:
+			var ex: float = elem[0] + parallax_offset.x
+			var ey: float = elem[1] + parallax_offset.y
+			var esize: float = elem[2]
+			var eshape: String = elem[3] if elem.size() > 3 else "circle"
+
+			match eshape:
+				"circle":
+					draw_circle(Vector2(ex, ey), esize, col)
+				"rect":
+					draw_rect(
+						Rect2(ex - esize, ey - esize * 0.5,
+							esize * 2, esize),
+						col
+					)
+				"diamond":
+					draw_colored_polygon(PackedVector2Array([
+						Vector2(ex, ey - esize),
+						Vector2(ex + esize * 0.6, ey),
+						Vector2(ex, ey + esize),
+						Vector2(ex - esize * 0.6, ey),
+					]), col)
+
+
+func _draw_danger_zones() -> void:
+	if use_walls or fire_walls or bouncy_walls:
+		return
+	var r := map_rect
+	var dc := Color(0.9, 0.1, 0.05, 0.12)
+	var de := Color(0.9, 0.1, 0.05, 0.3)
+	# Extend red zone far beyond map so player never sees the edge
+	var ext := 2000.0
+	if danger_left > 0:
+		_draw_danger_rect(Rect2(r.position.x - ext, r.position.y - ext,
+			danger_left + ext, r.size.y + ext * 2), dc, de)
+	if danger_right > 0:
+		_draw_danger_rect(Rect2(r.end.x - danger_right, r.position.y - ext,
+			danger_right + ext, r.size.y + ext * 2), dc, de)
+	if danger_bottom > 0:
+		_draw_danger_rect(Rect2(r.position.x - ext, r.end.y - danger_bottom,
+			r.size.x + ext * 2, danger_bottom + ext), dc, de)
+	if danger_top > 0:
+		_draw_danger_rect(Rect2(r.position.x - ext, r.position.y - ext,
+			r.size.x + ext * 2, danger_top + ext), dc, de)
+
+
+func _draw_danger_rect(rect: Rect2, fill: Color, edge: Color) -> void:
+	draw_rect(rect, fill)
+	var stripe_gap := 60.0
+	var x := rect.position.x
+	while x < rect.end.x + rect.size.y:
+		draw_line(
+			Vector2(x, rect.position.y),
+			Vector2(x - rect.size.y, rect.end.y),
+			Color(0.9, 0.1, 0.05, 0.08), 2.0
+		)
+		x += stripe_gap
+	draw_rect(rect, edge, false, 2.0)
+
+
+func _draw_walls() -> void:
+	if not (use_walls or fire_walls or bouncy_walls):
+		return
+	var r := map_rect
+	var t := wall_thickness
+	var time_val := float(Engine.get_physics_frames()) * 0.02
+
+	if bouncy_walls:
+		var bc := Color(0.2, 0.9, 0.6, 0.7)
+		draw_rect(Rect2(r.position.x - t, r.position.y - 100, t, r.size.y + 200), bc.darkened(0.4))
+		draw_rect(Rect2(r.end.x, r.position.y - 100, t, r.size.y + 200), bc.darkened(0.4))
+		draw_rect(Rect2(r.position.x - 100, r.end.y, r.size.x + 200, t), bc.darkened(0.4))
+		if danger_top > 0:
+			draw_rect(Rect2(r.position.x - 100, r.position.y - t, r.size.x + 200, t), bc.darkened(0.4))
+		# Spring zigzag lines on left and right walls
+		for i in range(int(r.size.y / 40)):
+			var y_pos := r.position.y + i * 40.0
+			draw_line(Vector2(r.position.x - 5, y_pos), Vector2(r.position.x - t + 5, y_pos + 20), bc, 2.0)
+			draw_line(Vector2(r.end.x + 5, y_pos), Vector2(r.end.x + t - 5, y_pos + 20), bc, 2.0)
+	elif fire_walls:
+		var fc := Color(0.9, 0.3, 0.05, 0.6)
+		draw_rect(Rect2(r.position.x - t, r.position.y - 100, t, r.size.y + 200), fc.darkened(0.5))
+		draw_rect(Rect2(r.end.x, r.position.y - 100, t, r.size.y + 200), fc.darkened(0.5))
+		draw_rect(Rect2(r.position.x - 100, r.end.y, r.size.x + 200, t), fc.darkened(0.5))
+		if danger_top > 0:
+			draw_rect(Rect2(r.position.x - 100, r.position.y - t, r.size.x + 200, t), fc.darkened(0.5))
+		# Flame particles on left and right walls
+		for i in range(int(r.size.y / 30)):
+			var y_pos := r.position.y + i * 30.0
+			var flicker := sin(time_val * 4.0 + i * 1.5) * 5.0
+			draw_circle(Vector2(r.position.x + flicker, y_pos), 4.0 + sin(time_val + i) * 2.0, Color(1, 0.5, 0.1, 0.4))
+			draw_circle(Vector2(r.end.x + flicker, y_pos), 4.0 + sin(time_val + i) * 2.0, Color(1, 0.5, 0.1, 0.4))
+	else:
+		# Stone walls
+		var wc := Color(0.4, 0.35, 0.3, 0.8)
+		draw_rect(Rect2(r.position.x - t, r.position.y - 100, t, r.size.y + 200), wc)
+		draw_rect(Rect2(r.end.x, r.position.y - 100, t, r.size.y + 200), wc)
+		draw_rect(Rect2(r.position.x - 100, r.end.y, r.size.x + 200, t), wc)
+		if danger_top > 0:
+			draw_rect(Rect2(r.position.x - 100, r.position.y - t, r.size.x + 200, t), wc)
+		# Brick pattern on left and right walls
+		for i in range(int(r.size.y / 25)):
+			var y_pos := r.position.y + i * 25.0
+			draw_line(Vector2(r.position.x - t, y_pos), Vector2(r.position.x, y_pos), Color(0.3, 0.25, 0.2, 0.3), 1.0)
+			draw_line(Vector2(r.end.x, y_pos), Vector2(r.end.x + t, y_pos), Color(0.3, 0.25, 0.2, 0.3), 1.0)
+
+
+func _draw_platforms() -> void:
+	for data in platforms:
+		var x: float = data[0]
+		var y: float = data[1]
+		var w: float = data[2]
+		var h: float = data[3]
+		var platform_type = data[4] if data.size() > 4 else false
+		if platform_type is String and platform_type == "sticky":
+			# Purple/web-textured sticky platforms
+			var sticky_fill := Color(0.45, 0.15, 0.55, 0.9)
+			var sticky_edge := Color(0.7, 0.3, 0.8, 1.0)
+			_draw_capsule(x, y, w, h, sticky_fill, sticky_edge)
+			# Web texture lines
+			var hw := w / 2.0
+			var hh := h / 2.0
+			var web_gap := 30.0
+			var xi := x - hw
+			while xi < x + hw:
+				draw_line(Vector2(xi, y - hh), Vector2(xi + web_gap * 0.5, y + hh),
+					Color(0.8, 0.4, 1.0, 0.25), 1.0)
+				xi += web_gap
+		elif platform_type is bool and platform_type:
+			_draw_capsule(x, y, w, h, platform_color, platform_edge_color)
+		else:
+			_draw_capsule(x, y, w, h, floor_color, floor_edge_color)
+
+
+func _draw_objects() -> void:
+	for obj in objects:
+		var type: String = obj[0]
+		match type:
+			"ball":
+				_draw_ball(obj[1], obj[2], obj[3])
+			"arc":
+				_draw_arc(obj[1], obj[2], obj[3], obj[4], obj[5])
+
+
+## ══════ CAPSULE (rounded rectangle) ══════
+func _draw_capsule(
+	cx: float, cy: float, w: float, h: float,
+	fill: Color, edge: Color
+) -> void:
+	var hw := w / 2.0
+	var hh := h / 2.0
+	var r := minf(hh, hw * 0.15)  # corner radius — subtle rounding
+	r = clampf(r, 4.0, 20.0)
+
+	# Build rounded rect polygon
+	var pts: PackedVector2Array = []
+	var segs := 6
+
+	# Top-left corner
+	for i in range(segs + 1):
+		var a := PI + float(i) / segs * (PI / 2.0)
+		pts.append(Vector2(cx - hw + r + cos(a) * r, cy - hh + r + sin(a) * r))
+	# Top-right corner
+	for i in range(segs + 1):
+		var a := -PI / 2.0 + float(i) / segs * (PI / 2.0)
+		pts.append(Vector2(cx + hw - r + cos(a) * r, cy - hh + r + sin(a) * r))
+	# Bottom-right corner
+	for i in range(segs + 1):
+		var a := 0.0 + float(i) / segs * (PI / 2.0)
+		pts.append(Vector2(cx + hw - r + cos(a) * r, cy + hh - r + sin(a) * r))
+	# Bottom-left corner
+	for i in range(segs + 1):
+		var a := PI / 2.0 + float(i) / segs * (PI / 2.0)
+		pts.append(Vector2(cx - hw + r + cos(a) * r, cy + hh - r + sin(a) * r))
+
+	draw_colored_polygon(pts, fill)
+
+	# Top highlight
+	draw_line(
+		Vector2(cx - hw + r, cy - hh),
+		Vector2(cx + hw - r, cy - hh),
+		edge.lightened(0.2), 3.0
+	)
+	# Bottom shadow
+	draw_line(
+		Vector2(cx - hw + r, cy + hh),
+		Vector2(cx + hw - r, cy + hh),
+		fill.darkened(0.3), 2.0
+	)
+	# Outline
+	for i in range(pts.size()):
+		var i2 := (i + 1) % pts.size()
+		draw_line(pts[i], pts[i2], edge, 1.5)
+
+	# Surface texture
+	@warning_ignore("integer_division")
+	var line_count: int = int(w / 50.0)
+	for i in range(line_count):
+		var t := float(i + 1) / (line_count + 1)
+		var lx := cx - hw + t * w
+		draw_line(
+			Vector2(lx, cy - hh + 3), Vector2(lx + 12, cy - hh + 3),
+			edge.darkened(0.15), 1.0
+		)
+
+
+## ══════ BALL (circle platform) ══════
+func _draw_ball(x: float, y: float, radius: float) -> void:
+	var fill := platform_color.lightened(0.1)
+	var edge := platform_edge_color
+
+	# Main circle
+	var segs := 24
+	var pts: PackedVector2Array = []
+	for i in range(segs):
+		var a := float(i) * TAU / segs
+		pts.append(Vector2(x + cos(a) * radius, y + sin(a) * radius))
+	draw_colored_polygon(pts, fill)
+
+	# Highlight arc on top
+	@warning_ignore("integer_division")
+	var half: int = segs / 2
+	for i in range(half):
+		var a0 := PI + float(i) * PI / float(half)
+		var a1 := PI + float(i + 1) * PI / float(half)
+		draw_line(
+			Vector2(x + cos(a0) * radius, y + sin(a0) * radius),
+			Vector2(x + cos(a1) * radius, y + sin(a1) * radius),
+			edge.lightened(0.2), 3.0
+		)
+
+	# Shadow on bottom
+	for i in range(half):
+		var a0 := float(i) * PI / float(half)
+		var a1 := float(i + 1) * PI / float(half)
+		draw_line(
+			Vector2(x + cos(a0) * radius, y + sin(a0) * radius),
+			Vector2(x + cos(a1) * radius, y + sin(a1) * radius),
+			fill.darkened(0.3), 2.0
+		)
+
+	# Outline
+	draw_arc(Vector2(x, y), radius, 0.0, TAU, segs, edge, 1.5)
+
+	# Shine spot
+	draw_circle(
+		Vector2(x - radius * 0.3, y - radius * 0.3),
+		radius * 0.2, Color(1, 1, 1, 0.15)
+	)
+
+
+## ══════ ARC (curved platform) ══════
+func _draw_arc(
+	x: float, y: float, radius: float,
+	start_deg: float, end_deg: float
+) -> void:
+	var fill := platform_color
+	var edge := platform_edge_color
+	var start_rad := deg_to_rad(start_deg)
+	var end_rad := deg_to_rad(end_deg)
+	var segs := 16
+	var thickness := 20.0
+
+	# Outer and inner arcs to form a thick curve
+	for i in range(segs):
+		var a0 := start_rad + (end_rad - start_rad) * float(i) / segs
+		var a1 := start_rad + (end_rad - start_rad) * float(i + 1) / segs
+		var outer0 := Vector2(x + cos(a0) * radius, y + sin(a0) * radius)
+		var outer1 := Vector2(x + cos(a1) * radius, y + sin(a1) * radius)
+		var inner0 := Vector2(
+			x + cos(a0) * (radius - thickness),
+			y + sin(a0) * (radius - thickness)
+		)
+		var inner1 := Vector2(
+			x + cos(a1) * (radius - thickness),
+			y + sin(a1) * (radius - thickness)
+		)
+		draw_colored_polygon(
+			PackedVector2Array([outer0, outer1, inner1, inner0]), fill
+		)
+
+	# Outer edge line
+	for i in range(segs):
+		var a0 := start_rad + (end_rad - start_rad) * float(i) / segs
+		var a1 := start_rad + (end_rad - start_rad) * float(i + 1) / segs
+		draw_line(
+			Vector2(x + cos(a0) * radius, y + sin(a0) * radius),
+			Vector2(x + cos(a1) * radius, y + sin(a1) * radius),
+			edge, 2.0
+		)
+	# Inner edge
+	for i in range(segs):
+		var a0 := start_rad + (end_rad - start_rad) * float(i) / segs
+		var a1 := start_rad + (end_rad - start_rad) * float(i + 1) / segs
+		draw_line(
+			Vector2(x + cos(a0) * (radius - thickness), y + sin(a0) * (radius - thickness)),
+			Vector2(x + cos(a1) * (radius - thickness), y + sin(a1) * (radius - thickness)),
+			edge.darkened(0.2), 1.5
+		)
+
+
+## ══════ BOUNDS HELPERS ══════
+func get_safe_rect() -> Rect2:
+	return Rect2(
+		map_rect.position.x + danger_left,
+		map_rect.position.y + danger_top,
+		map_rect.size.x - danger_left - danger_right,
+		map_rect.size.y - danger_top - danger_bottom,
+	)
+
+
+func is_in_danger_zone(pos: Vector2) -> bool:
+	if use_walls or fire_walls or bouncy_walls:
+		return false
+	if pos.x < map_rect.position.x + danger_left:
+		return true
+	if pos.x > map_rect.end.x - danger_right:
+		return true
+	if pos.y > map_rect.end.y - danger_bottom:
+		return true
+	if danger_top > 0 and pos.y < map_rect.position.y + danger_top:
+		return true
+	return false
+
+
+func is_past_kill_zone(pos: Vector2) -> bool:
+	if use_walls or fire_walls or bouncy_walls:
+		return false
+	if pos.x < map_rect.position.x - kill_margin:
+		return true
+	if pos.x > map_rect.end.x + kill_margin:
+		return true
+	if pos.y > map_rect.end.y + kill_margin:
+		return true
+	if danger_top > 0 and pos.y < map_rect.position.y - kill_margin:
+		return true
+	return false
+
+
+## ══════ SPIKES (instant kill) ══════
+func _create_spikes(x: float, y: float, w: float, h: float) -> void:
+	var area := Area2D.new()
+	area.position = Vector2(x, y)
+	area.collision_layer = 0
+	area.collision_mask = 2  # detect players
+	var shape := RectangleShape2D.new()
+	shape.size = Vector2(w, h)
+	var col := CollisionShape2D.new()
+	col.shape = shape
+	area.add_child(col)
+	area.body_entered.connect(func(body: Node2D) -> void:
+		if body is CharacterBody2D and body.has_method("die"):
+			if body.is_alive:
+				body.die()
+	)
+	area.add_to_group("hazards")
+	add_child(area)
+
+
+## ══════ MOVING PLATFORMS ══════
+func _create_moving_platform(
+	x: float, y: float, w: float, h: float,
+	move_x: float, move_y: float, speed: float
+) -> void:
+	var body := AnimatableBody2D.new()
+	body.position = Vector2(x, y)
+	var shape := RectangleShape2D.new()
+	shape.size = Vector2(w, h)
+	var col := CollisionShape2D.new()
+	col.shape = shape
+	col.one_way_collision = true
+	body.add_child(col)
+	body.add_to_group("moving_platforms")
+	# Store movement data as metadata
+	body.set_meta("origin", Vector2(x, y))
+	body.set_meta("move_vec", Vector2(move_x, move_y))
+	body.set_meta("speed", speed)
+	body.set_meta("time", randf() * TAU)  # random phase
+	add_child(body)
+
+
+func _process(delta: float) -> void:
+	# Animate moving platforms
+	for node in get_tree().get_nodes_in_group("moving_platforms"):
+		if not node.has_meta("origin"):
+			continue
+		var origin: Vector2 = node.get_meta("origin")
+		var move_vec: Vector2 = node.get_meta("move_vec")
+		var spd: float = node.get_meta("speed")
+		var t: float = node.get_meta("time") + delta * spd
+		node.set_meta("time", t)
+		var offset := sin(t) * 0.5 + 0.5  # 0 to 1 oscillation
+		node.position = origin + move_vec * offset
+
+	# Global zone shrink after 120 seconds (disabled when walls are active)
+	if not (use_walls or fire_walls or bouncy_walls):
+		global_shrink_timer += delta
+		if global_shrink_timer > SHRINK_GLOBAL_DELAY:
+			var safe_w := map_rect.size.x - danger_left - danger_right
+			var safe_h := map_rect.size.y - danger_top - danger_bottom
+			if safe_w > SHRINK_MIN_SAFE:
+				danger_left += SHRINK_GLOBAL_SPEED * delta * 0.5
+				danger_right += SHRINK_GLOBAL_SPEED * delta * 0.5
+			if safe_h > SHRINK_MIN_SAFE:
+				if danger_top > 0:
+					danger_top += SHRINK_GLOBAL_SPEED * delta * 0.3
+				danger_bottom += SHRINK_GLOBAL_SPEED * delta * 0.3
+
+	# Fire wall damage
+	if fire_walls:
+		for p in get_tree().get_nodes_in_group("players"):
+			if not p.is_alive:
+				continue
+			var px: float = p.global_position.x
+			var py: float = p.global_position.y
+			if px < map_rect.position.x + 10 or px > map_rect.end.x - 10 \
+					or py > map_rect.end.y - 10 \
+					or (danger_top > 0 and py < map_rect.position.y + 10):
+				p._apply_fire_burn(5.0, 0.3, 0.6)
+
+	# Bouncy wall collision response
+	if bouncy_walls:
+		for p in get_tree().get_nodes_in_group("players"):
+			if not p.is_alive:
+				continue
+			var r_val: float = p.get_player_radius()
+			if p.global_position.x < map_rect.position.x + r_val:
+				p.global_position.x = map_rect.position.x + r_val
+				p.velocity.x = absf(p.velocity.x) * 1.2 + 200.0
+			elif p.global_position.x > map_rect.end.x - r_val:
+				p.global_position.x = map_rect.end.x - r_val
+				p.velocity.x = -absf(p.velocity.x) * 1.2 - 200.0
+			if p.global_position.y > map_rect.end.y - r_val:
+				p.global_position.y = map_rect.end.y - r_val
+				p.velocity.y = -absf(p.velocity.y) * 1.0 - 150.0
+
+	# Map events
+	if events_enabled:
+		event_timer += delta
+		if event_timer >= EVENT_INTERVAL:
+			event_timer = 0.0
+			_trigger_random_event()
+
+	# Item spawning
+	if item_spawns.size() > 0 and Engine.get_physics_frames() % 900 == 0:
+		_spawn_random_item()
+
+	# Only redraw if dynamic elements exist (moving platforms, items, teleports, walls)
+	if not hazards.is_empty() or not teleports.is_empty() \
+		or not item_spawns.is_empty() or events_enabled \
+		or fire_walls or bouncy_walls:
+		queue_redraw()
+
+
+func _draw_hazards() -> void:
+	# Draw spikes
+	for haz in hazards:
+		if haz[0] == "spikes":
+			_draw_spike_visual(haz[1], haz[2], haz[3], haz[4])
+
+	# Draw moving platforms
+	for node in get_tree().get_nodes_in_group("moving_platforms"):
+		if not is_instance_valid(node):
+			continue
+		var pos: Vector2 = node.position
+		var shape: CollisionShape2D = node.get_child(0)
+		if shape != null and shape.shape is RectangleShape2D:
+			var sz: Vector2 = shape.shape.size
+			_draw_capsule(pos.x, pos.y, sz.x, sz.y,
+				platform_color.lerp(Color(0.4, 0.6, 0.8), 0.3),
+				platform_edge_color.lerp(Color(0.5, 0.7, 0.9), 0.3))
+
+	# Draw teleport portals
+	var time := float(Engine.get_physics_frames()) * 0.016
+	for tp in get_tree().get_nodes_in_group("teleports"):
+		if not is_instance_valid(tp):
+			continue
+		var tpos: Vector2 = tp.position
+		var pulse := sin(time * 3.0) * 0.15 + 0.85
+		var portal_h: float = tp.get_meta("height") if tp.has_meta("height") else 0.0
+		if portal_h > 0.0:
+			# Rectangular/oval portal (v2 format)
+			var portal_angle: float = tp.get_meta("angle")
+			var hw := 15.0
+			var hh := portal_h / 2.0
+			# Draw rotated oval using polygon approximation
+			var segs := 16
+			var pts: PackedVector2Array = []
+			for si in range(segs):
+				var a := float(si) * TAU / segs
+				var lx := cos(a) * hw * pulse
+				var ly := sin(a) * hh * pulse
+				var rad := deg_to_rad(portal_angle)
+				pts.append(tpos + Vector2(
+					lx * cos(rad) - ly * sin(rad),
+					lx * sin(rad) + ly * cos(rad)
+				))
+			draw_colored_polygon(pts, Color(0.4, 0.2, 0.8, 0.25))
+			draw_polyline(pts + PackedVector2Array([pts[0]]), Color(0.4, 0.2, 0.8, 0.7), 2.5)
+			# Inner glow oval
+			var pts2: PackedVector2Array = []
+			for si in range(segs):
+				var a := float(si) * TAU / segs
+				var lx := cos(a) * hw * 0.55
+				var ly := sin(a) * hh * 0.55
+				var rad := deg_to_rad(portal_angle)
+				pts2.append(tpos + Vector2(
+					lx * cos(rad) - ly * sin(rad),
+					lx * sin(rad) + ly * cos(rad)
+				))
+			draw_colored_polygon(pts2, Color(0.6, 0.3, 1.0, 0.2))
+			# Particle wisps
+			for pi in range(5):
+				var pa := time * 2.0 + pi * TAU / 5.0
+				var px := tpos.x + cos(pa) * hw * 0.8
+				var py := tpos.y + sin(pa) * hh * 0.8
+				draw_circle(Vector2(px, py), 3.0, Color(0.7, 0.4, 1.0, 0.4))
+		else:
+			# Old circular portal
+			draw_arc(tpos, 25.0 * pulse, 0.0, TAU, 16,
+				Color(0.4, 0.2, 0.8, 0.5), 3.0)
+			draw_arc(tpos, 15.0, 0.0, TAU, 12,
+				Color(0.6, 0.3, 1.0, 0.3), 2.0)
+		# Cooldown decay
+		var cd: float = tp.get_meta("cooldown")
+		if cd > 0.0:
+			tp.set_meta("cooldown", cd - 0.016)
+
+	# Draw destructible platforms
+	for dplat in get_tree().get_nodes_in_group("destructible_platforms"):
+		if not is_instance_valid(dplat):
+			continue
+		var dpos: Vector2 = dplat.position
+		var dsz: Vector2 = dplat.get_meta("size")
+		var dhp: int = dplat.get_meta("hp")
+		var dmax: int = dplat.get_meta("max_hp")
+		var hp_ratio: float = float(dhp) / maxf(dmax, 1)
+		var crack_col := platform_color.lerp(Color(0.5, 0.2, 0.1), 1.0 - hp_ratio)
+		_draw_capsule(dpos.x, dpos.y, dsz.x, dsz.y, crack_col,
+			platform_edge_color.darkened(0.3 * (1.0 - hp_ratio)))
+
+	# Draw items
+	for item in get_tree().get_nodes_in_group("map_items"):
+		if not is_instance_valid(item):
+			continue
+		var ipos: Vector2 = item.position
+		var itype: int = item.get_meta("item_type")
+		var bob := sin(time * 3.0 + ipos.x * 0.01) * 5.0
+		ipos.y += bob
+		match itype:
+			0:  # Health — green cross
+				draw_circle(ipos, 16.0, Color(0.1, 0.08, 0.14, 0.8))
+				draw_line(ipos + Vector2(-6, 0), ipos + Vector2(6, 0),
+					Color(0.2, 0.9, 0.2), 3.0)
+				draw_line(ipos + Vector2(0, -6), ipos + Vector2(0, 6),
+					Color(0.2, 0.9, 0.2), 3.0)
+				draw_arc(ipos, 16.0, 0.0, TAU, 12, Color(0.2, 0.9, 0.2, 0.5), 2.0)
+			1:  # Speed — yellow lightning
+				draw_circle(ipos, 16.0, Color(0.1, 0.08, 0.14, 0.8))
+				draw_line(ipos + Vector2(-3, -8), ipos + Vector2(2, -1),
+					Color(1, 0.85, 0.2), 2.5)
+				draw_line(ipos + Vector2(2, -1), ipos + Vector2(-2, 1),
+					Color(1, 0.85, 0.2), 2.5)
+				draw_line(ipos + Vector2(-2, 1), ipos + Vector2(3, 8),
+					Color(1, 0.85, 0.2), 2.5)
+				draw_arc(ipos, 16.0, 0.0, TAU, 12, Color(1, 0.85, 0.2, 0.5), 2.0)
+			2:  # CD Reset — blue clock
+				draw_circle(ipos, 16.0, Color(0.1, 0.08, 0.14, 0.8))
+				draw_arc(ipos, 8.0, 0.0, TAU, 10, Color(0.3, 0.5, 1.0), 2.0)
+				draw_line(ipos, ipos + Vector2(0, -6), Color(0.3, 0.5, 1.0), 2.0)
+				draw_line(ipos, ipos + Vector2(5, 0), Color(0.3, 0.5, 1.0), 1.5)
+				draw_arc(ipos, 16.0, 0.0, TAU, 12, Color(0.3, 0.5, 1.0, 0.5), 2.0)
+
+
+func _draw_spike_visual(x: float, y: float, w: float, h: float) -> void:
+	var spike_count := int(w / 20.0)
+	var spike_w := w / maxf(spike_count, 1)
+	for i in range(spike_count):
+		var sx := x - w / 2.0 + i * spike_w + spike_w / 2.0
+		# Triangle spike pointing up
+		var pts := PackedVector2Array([
+			Vector2(sx - spike_w * 0.4, y + h / 2.0),
+			Vector2(sx, y - h / 2.0),
+			Vector2(sx + spike_w * 0.4, y + h / 2.0),
+		])
+		draw_colored_polygon(pts, Color(0.8, 0.15, 0.1, 0.9))
+		# Highlight
+		draw_line(
+			Vector2(sx - spike_w * 0.4, y + h / 2.0),
+			Vector2(sx, y - h / 2.0),
+			Color(1, 0.3, 0.2, 0.5), 1.5
+		)
+
+
+## ══════ TELEPORTS ══════
+func _create_teleport_pair(x1: float, y1: float, x2: float, y2: float) -> void:
+	var portal_a := Area2D.new()
+	portal_a.position = Vector2(x1, y1)
+	portal_a.collision_layer = 0
+	portal_a.collision_mask = 2
+	var shape_a := CircleShape2D.new()
+	shape_a.radius = 30.0
+	var col_a := CollisionShape2D.new()
+	col_a.shape = shape_a
+	portal_a.add_child(col_a)
+	portal_a.set_meta("target", Vector2(x2, y2))
+	portal_a.set_meta("cooldown", 0.0)
+	portal_a.add_to_group("teleports")
+
+	var portal_b := Area2D.new()
+	portal_b.position = Vector2(x2, y2)
+	portal_b.collision_layer = 0
+	portal_b.collision_mask = 2
+	var shape_b := CircleShape2D.new()
+	shape_b.radius = 30.0
+	var col_b := CollisionShape2D.new()
+	col_b.shape = shape_b
+	portal_b.add_child(col_b)
+	portal_b.set_meta("target", Vector2(x1, y1))
+	portal_b.set_meta("cooldown", 0.0)
+	portal_b.add_to_group("teleports")
+
+	portal_a.body_entered.connect(func(body: Node2D) -> void:
+		_teleport_body(body, portal_a))
+	portal_b.body_entered.connect(func(body: Node2D) -> void:
+		_teleport_body(body, portal_b))
+
+	add_child(portal_a)
+	add_child(portal_b)
+
+
+func _teleport_body(body: Node2D, portal: Area2D) -> void:
+	if not body is CharacterBody2D or not body.has_method("die"):
+		return
+	var cd: float = portal.get_meta("cooldown")
+	if cd > 0.0:
+		return
+	var target: Vector2 = portal.get_meta("target")
+	body.global_position = target
+	portal.set_meta("cooldown", 1.0)
+	# Set cooldown on target portal too
+	for tp in get_tree().get_nodes_in_group("teleports"):
+		if tp.position.distance_to(target) < 5.0:
+			tp.set_meta("cooldown", 1.0)
+	SoundManager.play_blink()
+
+
+## Rectangular portal pair with optional height and rotation angle
+func _create_teleport_pair_v2(
+	x1: float, y1: float, h1: float, angle1: float,
+	x2: float, y2: float, h2: float, angle2: float
+) -> void:
+	var portal_a := Area2D.new()
+	portal_a.position = Vector2(x1, y1)
+	portal_a.rotation_degrees = angle1
+	portal_a.collision_layer = 0
+	portal_a.collision_mask = 2
+	var shape_a := RectangleShape2D.new()
+	shape_a.size = Vector2(30.0, h1)
+	var col_a := CollisionShape2D.new()
+	col_a.shape = shape_a
+	portal_a.add_child(col_a)
+	portal_a.set_meta("target", Vector2(x2, y2))
+	portal_a.set_meta("cooldown", 0.0)
+	portal_a.set_meta("height", h1)
+	portal_a.set_meta("angle", angle1)
+	portal_a.add_to_group("teleports")
+
+	var portal_b := Area2D.new()
+	portal_b.position = Vector2(x2, y2)
+	portal_b.rotation_degrees = angle2
+	portal_b.collision_layer = 0
+	portal_b.collision_mask = 2
+	var shape_b := RectangleShape2D.new()
+	shape_b.size = Vector2(30.0, h2)
+	var col_b := CollisionShape2D.new()
+	col_b.shape = shape_b
+	portal_b.add_child(col_b)
+	portal_b.set_meta("target", Vector2(x1, y1))
+	portal_b.set_meta("cooldown", 0.0)
+	portal_b.set_meta("height", h2)
+	portal_b.set_meta("angle", angle2)
+	portal_b.add_to_group("teleports")
+
+	portal_a.body_entered.connect(func(body: Node2D) -> void:
+		_teleport_body(body, portal_a))
+	portal_b.body_entered.connect(func(body: Node2D) -> void:
+		_teleport_body(body, portal_b))
+
+	add_child(portal_a)
+	add_child(portal_b)
+
+
+## ══════ DESTRUCTIBLE PLATFORMS ══════
+func _create_destructible(
+	x: float, y: float, w: float, h: float, plat_hp: int
+) -> void:
+	var body := StaticBody2D.new()
+	body.position = Vector2(x, y)
+	var shape := RectangleShape2D.new()
+	shape.size = Vector2(w, h)
+	var col := CollisionShape2D.new()
+	col.shape = shape
+	col.one_way_collision = true
+	body.add_child(col)
+	body.set_meta("hp", plat_hp)
+	body.set_meta("max_hp", plat_hp)
+	body.set_meta("size", Vector2(w, h))
+	body.add_to_group("destructible_platforms")
+	add_child(body)
+
+
+func damage_platform_at(pos: Vector2) -> void:
+	for plat in get_tree().get_nodes_in_group("destructible_platforms"):
+		var sz: Vector2 = plat.get_meta("size")
+		var dist := pos.distance_to(plat.position)
+		if dist < maxf(sz.x, sz.y):
+			var hp: int = plat.get_meta("hp") - 1
+			plat.set_meta("hp", hp)
+			if hp <= 0:
+				plat.queue_free()
+			break
+
+
+## ══════ ITEMS ══════
+func _spawn_random_item() -> void:
+	if item_spawns.is_empty():
+		return
+	var idx: int = randi_range(0, item_spawns.size() - 1)
+	var spawn_pos: Vector2 = Vector2(item_spawns[idx][0], item_spawns[idx][1])
+	# Check if item already near this spot
+	for existing in get_tree().get_nodes_in_group("map_items"):
+		if existing.global_position.distance_to(spawn_pos) < 100:
+			return
+	var item_type: int = randi_range(0, 2)  # 0=health, 1=speed, 2=cd_reset
+	var item := Area2D.new()
+	item.position = spawn_pos
+	item.collision_layer = 0
+	item.collision_mask = 2
+	var shape := CircleShape2D.new()
+	shape.radius = 18.0
+	var col := CollisionShape2D.new()
+	col.shape = shape
+	item.add_child(col)
+	item.set_meta("item_type", item_type)
+	item.set_meta("time", 0.0)
+	item.add_to_group("map_items")
+	item.body_entered.connect(func(body: Node2D) -> void:
+		_pickup_item(body, item))
+	add_child(item)
+
+
+func _pickup_item(body: Node2D, item: Area2D) -> void:
+	if not body is CharacterBody2D or not body.has_method("heal"):
+		return
+	var itype: int = item.get_meta("item_type")
+	match itype:
+		0:  # Health
+			body.heal(body.MAX_HP * 0.3)
+		1:  # Speed boost
+			body.base_speed_mult *= 1.3
+			# Revert after 5 seconds
+			get_tree().create_timer(5.0).timeout.connect(func() -> void:
+				if is_instance_valid(body):
+					body.base_speed_mult /= 1.3)
+		2:  # Cooldown reset
+			for ci in range(body.ability_cds.size()):
+				body.ability_cds[ci] = 0.0
+	SoundManager.play_shield()
+	item.queue_free()
+
+
+## ══════ MAP EVENTS ══════
+func _trigger_random_event() -> void:
+	var event: int = randi_range(0, 2)
+	match event:
+		0:
+			_event_meteor()
+		1:
+			_event_lightning()
+		2:
+			_event_wave()
+
+
+func _event_meteor() -> void:
+	# Random meteor falls from top
+	var x := randf_range(
+		map_rect.position.x + danger_left + 200,
+		map_rect.end.x - danger_right - 200
+	)
+	# Damage all players near impact line
+	await get_tree().create_timer(1.0).timeout  # warning delay
+	for p in get_tree().get_nodes_in_group("players"):
+		if not p.is_alive:
+			continue
+		if absf(p.global_position.x - x) < 80.0:
+			p.take_damage(40.0)
+			p.apply_knockback(Vector2(0, -500))
+	SoundManager.play_explosion()
+	var cam := get_viewport().get_camera_2d()
+	if cam != null and cam.has_method("add_shake"):
+		cam.add_shake(6.0)
+
+
+func _event_lightning() -> void:
+	# Strike a random player
+	var players := get_tree().get_nodes_in_group("players")
+	var alive: Array = []
+	for p in players:
+		if p.is_alive:
+			alive.append(p)
+	if alive.is_empty():
+		return
+	var target: CharacterBody2D = alive[randi_range(0, alive.size() - 1)]
+	await get_tree().create_timer(0.5).timeout
+	if is_instance_valid(target) and target.is_alive:
+		target.take_damage(30.0)
+		target.apply_stun(0.5)
+		SoundManager.play_hit()
+
+
+func _event_wave() -> void:
+	# Horizontal wind pushes all players
+	var dir := 1.0 if randf() > 0.5 else -1.0
+	for p in get_tree().get_nodes_in_group("players"):
+		if p.is_alive:
+			p.apply_knockback(Vector2(dir * 400.0, -100.0))
+	SoundManager.play_dash()
+
+
+func _draw_decorations() -> void:
+	pass
