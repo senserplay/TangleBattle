@@ -1,5 +1,60 @@
 # TangleBattle — Рабочий лог
 
+## 2026-04-18 — feat: Lo-fi плейлист с плавным crossfade (новая система музыки)
+
+### Что сделано
+Полностью переработана система музыки. Теперь играет непрерывный плейлист
+из 5 lo-fi треков с плавным crossfade между ними. Музыка **не зависит от карты** —
+один и тот же плейлист идёт в меню и во всех боях.
+
+### Файлы
+- `assets/music/` (новая папка):
+  - `adventure_chill.mp3` (4.4 MB) — aventure-lofi-vlog-chill-beat-508265
+  - `empty_mind.mp3` (5.4 MB) — lofi_hour-empty-mind-118973
+  - `sentimental_jazz.mp3` (3.1 MB) — sonican-lo-fi-music-loop-sentimental-jazzy-love-473154
+  - `easter.mp3` (2.6 MB) — prettyjohn1-easter-490466
+  - `goodnight_cozy.mp3` (4.5 MB) — fassounds-good-night-lofi-cozy-chill-music-160166
+- `scripts/managers/music_manager.gd` — полностью переписан
+
+### Новая архитектура MusicManager
+- **Два AudioStreamPlayer** (`music_a`, `music_b`) для overlap при crossfade
+- **`tracks: Array[AudioStream]`** — 5 mp3 загружаются в `_ready()`, перемешиваются
+- **MP3 loop отключён программно** (`stream.loop = false`) — переключение треков
+  управляется crossfade, а не engine loop
+- **End-of-track watch** в `_process`: когда позиция активного плеера >= длина-CROSSFADE_DUR,
+  автоматически запускается следующий трек на втором плеере; tween на 4 секунды
+  поднимает громкость нового и снижает старого до тишины
+- **`set_intensity(alive, total)`** теперь модулирует только громкость в диапазоне
+  [-16dB .. -8dB], не переключает треки
+- **`play_map_theme(map_name)`** — параметр игнорируется; просто продолжает плейлист
+- **`play_menu_music()`** — то же поведение; меню → игра не прерывает музыку
+- **`stop_music()`** — fade-out за 1с с автоматической остановкой обоих плееров
+
+### Удалено
+- `_generate_menu_music`, `_generate_map_music`, `_generate_ambient` — процедурные
+  sine-wave мелодии больше не нужны
+- `_noise_at` — был для ambient
+- `ambient_player` — амбиент звуки (lava rumble, water bubble и т.п.) удалены,
+  потому что они тоже зависели от карты, что противоречит требованию
+
+### UI звуки сохранены
+`play_ui_click`, `play_ui_switch`, `play_ui_error`, `play_ui_confirm` — оставлены
+как есть (короткие процедурные тоны, не относятся к "музыке")
+
+### Тест
+- Godot 4.6.1: title_menu запускается без ошибок и предупреждений
+- Все 5 mp3 импортированы (`adventure_chill.mp3.import` и т.д.)
+- API совместим со всеми существующими call sites:
+  `play_menu_music`, `play_map_theme`, `play_ui_confirm`, `set_intensity`, `stop_music`
+
+### Константы (легко настроить)
+- `CROSSFADE_DUR = 4.0` — длительность crossfade между треками
+- `FADE_IN_DUR = 2.0` — fade-in первого трека или после stop
+- `FADE_OUT_DUR = 1.0` — fade-out при stop_music
+- `QUIET_DB = -16.0`, `LOUD_DB = -8.0` — диапазон громкости от intensity
+
+---
+
 ## 2026-04-18 — chore: Get-LastReleaseTag ищет глобально по version sort
 
 ### Что сделано
