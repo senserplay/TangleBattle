@@ -1,5 +1,22 @@
 # TangleBattle — Рабочий лог
 
+## 2026-04-18 — chore: Get-LastReleaseTag ищет глобально по version sort
+
+### Что сделано
+- `git describe --tags HEAD` возвращал `v0.1` из ветки develop, потому что
+  тег `v0.2` стоит на main-only мердж-коммите (вне ancestry develop).
+- Заменено на `git tag -l "v*" --sort=-version:refname | head -1` —
+  возвращает highest-version тег независимо от ветки.
+
+### Файлы
+- `scripts/release/config.ps1` (Get-LastReleaseTag)
+
+### Тест
+- `check_release.ps1` теперь корректно показывает `Last release tag: v0.2`,
+  `Next minor version: 0.3`
+
+---
+
 ## 2026-04-18 — fix: CRLF guard в make_release.ps1
 
 ### Что сделано
