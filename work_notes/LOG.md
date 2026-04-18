@@ -1,5 +1,85 @@
 # TangleBattle — Рабочий лог
 
+## 2026-04-18 — fix: промты — реальный клубок ниток вместо AI-cartoon
+
+### Проблема
+Предыдущие промты задавали стиль "Flat cartoon mascot illustration in
+the style of Kirby/Fall Guys". Это даёт "AI-look" — слишком гладкий,
+generic vector, узнаваемо машинно-сгенерированный, с жирным контуром
+и однотонной заливкой. Не выглядит как настоящий клубок.
+
+### Что сделано
+Переписан `docs/characters/PROMPTS.md` с новой философией:
+**персонаж = настоящий клубок ниток, нарисованный для игры**
+(не cartoon mascot, а текстурный клубок из реальной пряжи в hand-painted
+2D game illustration стиле).
+
+### Изменённые ключевые принципы
+
+#### Стиль (общий блок, §3)
+**Было**: Flat cartoon, 3px bold black outline, single flat color, like Kirby
+**Стало**:
+- Hand-painted 2D game illustration (Cuphead-era inanimate objects,
+  Hollow Knight props, hand-painted children's book illustration)
+- Видимые криво-перекрещивающиеся пряди ниток (criss-crossing strands)
+- Soft fuzziness — стрэй фибры по силуэту
+- 1-2px тонкий dark gray outline ТОЛЬКО на внутренних формах нитей,
+  НЕ толстый cartoon outline вокруг всего силуэта
+- 2-3 уровня естественных теней между слоями ниток
+- Слегка нерегулярная форма (реальный клубок не идеальная сфера)
+- Loose yarn ends — кончики пряжи, торчащие как у настоящего клубка
+
+#### Цветовая палитра (§1)
+**Было**: чистый белый `#FFFFFF` + `#D0D0D0` тени + `#000000` контур
+**Стало**:
+- Основные нитки: кремово-белый `#F5F0E5` (тёплее чистого белого)
+- Тени между нитками: `#B5B0A8` (естественная глубина)
+- Глубокие тени снизу: `#807870` (контактная тень)
+- Контур: `#3A352F` (тёмно-серый, не чёрный)
+
+Все цвета в нейтрально-кремово-серой гамме — тинт через `modulate`
+работает чисто.
+
+#### Лицо на теле — УБРАНО (§3, §6)
+**Было**: тело включало базовое "happy" лицо, лицевые оверлеи только для
+emotion change.
+**Стало**: тело **БЕЗ ЛИЦА вообще** — face overlay всегда видим в игре,
+включая default `face_happy` в idle. Это:
+- Упрощает позиционирование (нет конфликта между лицом тела и оверлеем)
+- Делает body спрайты переиспользуемыми между эмоциями
+- Полностью разделяет body и face ответственности
+
+#### Стиль лиц (§6)
+**Было**: kawaii anime eyes (сильно AI-look)
+**Стало**:
+- Hand-drawn cartoon с лёгкой нерегулярностью (не perfect digital strokes)
+- Цвет — тёплый `#2A2520` (very dark warm brown, не чёрный)
+- Будто лицо нарисовано/вышито на самом клубке
+
+#### Loose yarn strands добавлены везде
+- **idle**: 2 кончика — short top + long bottom-right
+- **run**: длинный кончик трэйлит назад от скорости
+- **jump**: оба кончика трэйлят вниз
+- **fall**: оба кончика трэйлят вверх (air resistance)
+- **hurt**: 6-8 popped strands вырывающихся при ударе
+- **dead**: 12-15 размотанных нитей образуют tangle
+
+Кончики ниток заменили "yarn tuft pompom" — выглядят как настоящие
+свободные концы пряжи, а не cartoon hair.
+
+### Новый раздел §10: борьба с AI-стилем
+Если nanobanana выдаёт slick AI-cartoon вместо hand-painted yarn:
+- Усилить требование: "hand-painted natural texture, NOT generic
+  vector cartoon. Show individual yarn fibers."
+- Negative prompt: `vector art, flat cartoon, smooth shading, perfect
+  circle, mascot logo, generic AI art`
+- Прямые референсы: Cuphead inanimate props, Studio MDHR background
+
+### Файлы
+- `docs/characters/PROMPTS.md` (полностью переписан)
+
+---
+
 ## 2026-04-18 — fix: промты персонажа — убраны все упоминания рук/ног
 
 ### Проблема
