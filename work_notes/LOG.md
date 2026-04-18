@@ -1,5 +1,21 @@
 # TangleBattle — Рабочий лог
 
+## 2026-04-18 — RELEASE v0.2
+
+Первый релиз через новый автоматизированный процесс.
+
+- **Тег**: `v0.2` на `main`
+- **Билд**: `builds/TangleBattle-v0.2.exe` (~102 MB)
+- **GitHub Release**: ожидает ручной публикации (требуется `gh auth login`)
+- **CHANGELOG**: обновлён
+- **v0.1 baseline**: тег на commit с накопленным контентом до введения релизного процесса
+
+### Ручные шаги для завершения
+1. `gh auth login` (один раз)
+2. `gh release create v0.2 builds/TangleBattle-v0.2.exe --title "TangleBattle v0.2" --notes-file release_notes_v0.2.md`
+
+---
+
 ## 2026-04-18 — Релизный процесс (новая система разработки)
 
 ### Что сделано
