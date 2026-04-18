@@ -1,5 +1,91 @@
 # TangleBattle — Рабочий лог
 
+## 2026-04-18 — fix: промты — multi-frame анимации вместо одиночных картинок
+
+### Проблема
+Предыдущая версия промтов давала **по одной картинке на действие**. Для
+живой анимации этого недостаточно — персонаж выглядел бы как plain stamp,
+просто меняющий картинку по событиям.
+
+### Что сделано
+Полностью переписан `docs/characters/PROMPTS.md` с разбивкой каждого
+действия на несколько кадров анимации.
+
+### Раздел кадров
+
+| Действие | Кадров | FPS | Тип |
+|----------|--------|-----|-----|
+| body_idle | 4 | 3 | Цикл (дыхание) |
+| body_run | 6 | 12 | Цикл (bounce + roll) |
+| body_jump | 3 | event | Anticipation → launch → apex |
+| body_fall | 2 | 4 | Цикл (стабильное падение) |
+| body_hurt | 2 | event | Импакт → recoil |
+| body_dead | 5 | 8 | Прогрессия unraveling |
+| face_happy | 2 | 0.3 | Моргание |
+| face_focus | 1 | — | Статика |
+| face_pain | 2 | event | Peak → fading |
+| face_angry | 2 | event | Snarl → relax |
+| face_scared | 2 | 6 | Дрожание |
+| face_dead | 1 | — | Статика |
+
+**Тело: 22 кадра. Лицо: 10 кадров. Всего: 32 кадра.**
+
+### Ключевые принципы multi-frame
+- **Каждый кадр — описание конкретного момента** в дуге движения, не
+  абстрактное "running pose"
+- **Image reference** = `body_idle_01.png` для всех body-кадров; для
+  face — `face_happy_01.png`
+- **Конвенция именования**: `body_<action>_<frame>.png`, frame с двумя
+  цифрами для сортировки (`01`, `02`, ...)
+- **Описание различий между кадрами**: aspect ratio, tilt, strand
+  positions, motion lines, dust — каждый параметр прописан явно
+- **Циклы должны замыкаться**: frame N сглаживается к frame 1
+
+### Примеры детализации (run cycle)
+- Frame 1: ground impact, max squash 1.3:0.85, strands trail far back,
+  dust puff
+- Frame 2: rebounding, squash 1.15:0.95, strands less extreme
+- Frame 3: airborne, neutral 1:1, more forward tilt, no dust
+- Frame 4: peak bounce, slight stretch 0.95:1.05, strands relaxed
+- Frame 5: descending, neutral 1:1, strands lift up (air resistance)
+- Frame 6: approaching ground, beginning squash 1.1:0.95
+
+### Прогрессия dead (5 кадров размотки)
+- Frame 1: ball intact, 3-4 strands начинают отделяться
+- Frame 2: ball 85%, 8-10 strands loose
+- Frame 3: ball 70%, 12 strands, начало tangle
+- Frame 4: ball 55%, 14 strands, full tangle
+- Frame 5: ball 50%, финальная статика, 15 strands, contact shadow
+
+### Новый раздел §7.2 — выравнивание центров
+Критично подчёркнуто: все кадры одной анимации должны иметь одинаковый
+**геометрический центр клубка** (через onion skin в Photopea/Krita),
+иначе персонаж "прыгает" при проигрывании. Подробная инструкция.
+
+### Новый раздел §7.3 — превью анимации в GIF
+Перед импортом в Godot собрать GIF из кадров (EZGif.com) с заданным FPS
+для проверки motion. Если "прыгает" — выровнять. Если неестественно —
+пере-генерить.
+
+### Изменённый раздел §9 — интеграция в Godot
+**Было**: `Sprite2D.texture = body_textures[pose]` (статичная текстура)
+**Стало**:
+- `AnimatedSprite2D` "Body" с `SpriteFrames` ресурсом
+- `AnimatedSprite2D` "Face" (child) с `SpriteFrames`
+- 6 анимаций body: `idle`, `run`, `jump`, `fall`, `hurt`, `dead`
+- 6 анимаций face с заданными FPS из таблицы
+- State machine через `play("animation_name")`
+
+### Файлы
+- `docs/characters/PROMPTS.md` (переписан, 600+ строк)
+
+### Минимальный тест (§8)
+8 кадров: 2 idle + 3 run + 1 hurt + 1 happy + 1 pain. Достаточно для
+проверки тинта, animation consistency, общего ощущения. Остальные 24 —
+после положительной оценки.
+
+---
+
 ## 2026-04-18 — fix: промты — реальный клубок ниток вместо AI-cartoon
 
 ### Проблема
