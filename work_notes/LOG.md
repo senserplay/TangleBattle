@@ -1,5 +1,22 @@
 # TangleBattle — Рабочий лог
 
+## 2026-04-18 — fix: CRLF guard в make_release.ps1
+
+### Что сделано
+- Первый релиз v0.2 упал на `git checkout main` из-за того, что Godot `--import`
+  в build.ps1 перегенерировал `.import` файлы с изменёнными line endings (LF→CRLF).
+- Добавлен safeguard в `make_release.ps1`: перед `git checkout main` проверяется
+  `git status --porcelain` и при наличии изменений делается `git checkout -- .`
+  для отмены транзитных изменений после билда.
+
+### Файлы
+- `scripts/release/make_release.ps1` (+6 строк)
+
+### Тест
+- Следующий релиз v0.3 автоматически пройдёт без ручного вмешательства
+
+---
+
 ## 2026-04-18 — RELEASE v0.2
 
 Первый релиз через новый автоматизированный процесс.
