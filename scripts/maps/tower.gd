@@ -3,6 +3,7 @@ extends "res://scripts/maps/map_base.gd"
 
 func _init() -> void:
 	map_name = "Tower"
+	platform_palette = "stone"
 	bg_color = Color(0.1, 0.08, 0.14)
 	platform_color = Color(0.4, 0.35, 0.45)
 	platform_edge_color = Color(0.65, 0.55, 0.75)

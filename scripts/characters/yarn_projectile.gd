@@ -114,6 +114,10 @@ func _on_body_entered(body: Node2D) -> void:
 			direction * knockback + Vector2.UP * knockback_up
 		)
 		body.apply_stun(stun_duration)
+		# Hit impact sprite
+		var SpriteEffect := load("res://scripts/effects/sprite_effect.gd")
+		SpriteEffect.spawn(get_tree().current_scene, "slash9",
+			global_position, 0.3, 0.3, 0.0, color)
 		queue_free()
 	elif body is StaticBody2D:
 		if phase:

@@ -3,6 +3,7 @@ extends "res://scripts/maps/map_base.gd"
 
 func _init() -> void:
 	map_name = "Jungle"
+	platform_palette = "grass"
 	bg_color = Color(0.05, 0.12, 0.06)
 	platform_color = Color(0.35, 0.25, 0.15)
 	platform_edge_color = Color(0.5, 0.4, 0.2)

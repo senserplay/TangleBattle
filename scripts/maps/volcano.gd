@@ -3,6 +3,7 @@ extends "res://scripts/maps/map_base.gd"
 
 func _init() -> void:
 	map_name = "Volcano"
+	platform_palette = "magma"
 	bg_color = Color(0.18, 0.08, 0.05)
 	platform_color = Color(0.4, 0.25, 0.15)
 	platform_edge_color = Color(0.8, 0.4, 0.15)

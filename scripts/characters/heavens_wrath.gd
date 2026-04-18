@@ -83,6 +83,14 @@ func _physics_process(delta: float) -> void:
 				p["impact_timer"] = 0.5
 				_deal_damage(p["x"], p["w"])
 				SoundManager.play_explosion()
+				# Big star burst at impact point
+				var SpriteEffect := load("res://scripts/effects/sprite_effect.gd")
+				SpriteEffect.spawn(get_tree().current_scene, "retro_explosion",
+					Vector2(p["x"], map_bottom - 30), 0.5, 2.5, 0.0,
+					Color(1.0, 0.95, 0.6))
+				SpriteEffect.spawn(get_tree().current_scene, "retro_burst",
+					Vector2(p["x"], map_bottom - 30), 0.4, 2.0, 0.0,
+					Color(1.0, 1.0, 0.8))
 		elif p["phase"] == "impact":
 			p["impact_timer"] -= delta
 			if p["impact_timer"] <= 0.0:

@@ -636,6 +636,10 @@ func _handle_dash(delta: float) -> void:
 	var cfg := AbilityRegistry.get_data(AbilityRegistry.NEEDLE_DASH)
 	# Velocity is set once in _ab_needle_dash, just move
 	move_and_slide()
+	# Spawn dash trail sprite each frame
+	_add_sprite_vfx("slash5", 0.25,
+		global_position, 0.35, dash_dir.angle(),
+		Color(1.0, 0.4, 0.3, 0.9))
 	# Hit each player at most once per dash
 	for p in get_tree().get_nodes_in_group("players"):
 		if p == self or not p.is_alive:
@@ -1982,6 +1986,23 @@ func _add_vfx(type: String, duration: float, data: Dictionary = {}) -> void:
 	data["timer"] = duration
 	data["max_time"] = duration
 	vfx.append(data)
+
+
+static var _sprite_effect_scene: PackedScene = preload(
+	"res://scenes/effects/sprite_effect.tscn")
+
+
+func _add_sprite_vfx(
+	effect: String, duration: float, pos: Vector2,
+	scale_mult: float = 1.0, rotation: float = 0.0,
+	modulate: Color = Color.WHITE,
+	spin: float = 0.0
+) -> void:
+	## Spawn a standalone animated sprite VFX node in world space.
+	var fx: Node2D = _sprite_effect_scene.instantiate()
+	fx.global_position = pos
+	get_tree().current_scene.add_child(fx)
+	fx.setup(effect, duration, scale_mult, rotation, modulate, spin)
 
 
 func _draw_vfx() -> void:

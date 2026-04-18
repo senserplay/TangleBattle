@@ -4,6 +4,7 @@ extends "res://scripts/maps/map_base.gd"
 
 func _init() -> void:
 	map_name = "Fortress"
+	platform_palette = "wood"
 	bg_color = Color(0.15, 0.12, 0.1)
 	platform_color = Color(0.4, 0.35, 0.28)
 	platform_edge_color = Color(0.55, 0.48, 0.38)
