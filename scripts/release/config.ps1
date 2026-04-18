@@ -33,10 +33,14 @@ function Get-CurrentVersion {
 }
 
 function Get-LastReleaseTag {
+    # Returns the highest-version v* tag in the repo (regardless of branch ancestry).
+    # `git describe --tags HEAD` would miss tags on main-only merge commits.
     Push-Location $script:RepoRoot
     try {
-        $tag = git describe --tags --abbrev=0 --match "v*" 2>$null
-        if ($LASTEXITCODE -eq 0) { return $tag.Trim() }
+        $tags = git tag -l "v*" --sort=-version:refname 2>$null
+        if ($LASTEXITCODE -ne 0 -or -not $tags) { return $null }
+        $first = ($tags -split "`n" | Select-Object -First 1).Trim()
+        if ($first) { return $first }
         return $null
     } finally { Pop-Location }
 }
