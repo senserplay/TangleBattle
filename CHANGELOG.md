@@ -11,6 +11,13 @@ _будущие изменения здесь_
 
 ---
 
+## [0.2] � 2026-04-18
+
+### Changed
+- Merge feature/release-process into develop - chore: setup release process (versioning, branches, CI scripts)
+
+---
+
 ## [0.1] — 2026-04-18
 
 Первый baseline-тег. Весь контент, накопленный до внедрения релизного процесса.
@@ -55,3 +62,6 @@ _будущие изменения здесь_
 
 [Unreleased]: https://github.com/senserplay/TangleBattle/compare/v0.1...HEAD
 [0.1]: https://github.com/senserplay/TangleBattle/releases/tag/v0.1
+
+
+[0.2]: https://github.com/senserplay/TangleBattle/releases/tag/v0.2
