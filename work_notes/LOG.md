@@ -1,5 +1,52 @@
 # TangleBattle — Рабочий лог
 
+## 2026-04-18 — fix: промты персонажа — убраны все упоминания рук/ног
+
+### Проблема
+Первая версия `docs/characters/PROMPTS.md` описывала клубок с "stubby arms"
+и "stubby legs" (мелкими ручками и ножками в стиле Fall Guys/Kirby). Это
+противоречит концепции персонажа — он буквально клубок ниток, без конечностей.
+
+### Что сделано
+Полностью переписан `docs/characters/PROMPTS.md`:
+- Добавлено чёткое "CRITICAL CHARACTER RULE" в общий стилевой блок:
+  "The character is a PURE YARN BALL ONLY. No arms, no legs, no hands,
+  no feet, no limbs of any kind."
+- Единственный допустимый "отросток" — yarn TUFT (хохолок ниток) на макушке
+- Переписаны все 6 промтов поз тела — движение/действия показываются
+  через:
+  - Деформацию клубка (squash/stretch)
+  - Motion-lines и частицы
+  - Наклон/поворот всего шара
+  - Хохолок ниток на макушке (стримит при беге, тянется вверх при прыжке)
+  - Расползающиеся loose yarn strands при уроне/смерти
+- Каждый промт содержит финальный REMINDER "no limbs" — последние токены
+  имеют больший вес при генерации
+- Добавлен раздел §10 "Частые ошибки nanobanana и как их обходить" — в
+  частности, как переубедить модель не добавлять руки/ноги (повтор в конце,
+  negative prompt, более категоричные формулировки)
+
+### Конкретные изменения по позам (без конечностей)
+- **idle**: был с "stubby arms at sides, stubby legs standing" — стало
+  чистый шар с хохолком
+- **run**: был "legs mid-stride, arms swung back" — стало "horizontal squash,
+  25° tilt forward, motion lines trailing, dust puff, tuft streams back"
+- **jump**: был "arms raised up, legs tucked" — стало "vertical stretch,
+  tuft stretched upward, upward motion arcs below"
+- **fall**: был "arms spread wide, legs down" — стало "slight stretch, tuft
+  trailing upward (air resistance), wind lines on sides"
+- **hurt**: был "arms splayed out" — стало "8 loose yarn strands popping out
+  of surface, asymmetric squash"
+- **dead**: был "arms limp, legs tangled" — стало "ball shrunk to 50%, 12 long
+  loose yarn strands trailing away"
+
+Лица (§6) не менялись — они и так без тела.
+
+### Файлы
+- `docs/characters/PROMPTS.md` (полностью переписан)
+
+---
+
 ## 2026-04-18 — chore: промты nanobanana 2 для спрайтов персонажа
 
 ### Что сделано
