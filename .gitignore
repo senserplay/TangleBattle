@@ -21,8 +21,15 @@ data_*/
 # Claude local settings
 .claude/settings.local.json
 
-# Build artifacts (large files like .exe go through LFS)
+# Source asset packs — extracted copies live in assets/, sources are not shipped
+my_assets/
+
+# Release build artifacts (binaries are uploaded to GitHub Releases)
+builds/
 *.pck
 *.pdb
 build/*.exp
 build/*.lib
+
+# Release process working files
+release_notes_v*.md
