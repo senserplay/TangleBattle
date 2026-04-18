@@ -417,12 +417,12 @@ func _draw_themed_platform(
 		var a := PI / 2.0 + float(i) / segs * (PI / 2.0)
 		pts.append(Vector2(cx - hw + r + cos(a) * r, cy + hh - r + sin(a) * r))
 
-	# UVs: tile horizontally, stretch vertically
-	var tex_w: float = float(tex.get_width())
-	var tile_scale: float = 1.0  # 1.0 means texture native pixel-per-pixel
+	# UVs: stretch-to-fit the entire texture across the platform.
+	# This avoids visible repeat-seams that appeared when wide platforms
+	# tiled the texture multiple times.
 	var uvs: PackedVector2Array = []
 	for p in pts:
-		var u: float = (p.x - (cx - hw)) / tex_w * tile_scale
+		var u: float = (p.x - (cx - hw)) / w
 		var v: float = (p.y - (cy - hh)) / h
 		uvs.append(Vector2(u, v))
 
