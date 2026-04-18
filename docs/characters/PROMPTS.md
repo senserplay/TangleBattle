@@ -3,32 +3,43 @@
 Файл содержит готовые промты для Google nanobanana 2 (Gemini 2.5 Flash Image)
 для генерации персонажа-клубка и его поз/эмоций.
 
-**Философия**: генерируем **ОДНОГО** персонажа в нейтрально-белом цвете, затем
-в Godot через `Sprite2D.modulate = player_color` получаем 4 цветных варианта
-(красный/синий/зелёный/жёлтый) без перегенерации.
+---
 
-**Ключевой принцип**: персонаж — **чистый клубок ниток БЕЗ рук, ног и каких-либо
-конечностей**. Никаких стоби-ручек, никаких ножек, никаких митенок. Это
-буквально шарик из ниток. Все действия передаются через:
-- Деформацию самого шарика (squash / stretch)
-- Движение хохолка ниток сверху
-- Motion-lines и частицы вокруг
-- Наклон/поворот всего клубка
-- Расползающиеся/торчащие нитки при уроне
+## Философия
+
+Персонаж = **настоящий клубок ниток, нарисованный для игры**. Не cartoon
+mascot а-ля Kirby/Fall Guys (получается AI-плоско), а текстурный клубок
+который выглядит как реальный кусок пряжи, но стилизован для использования
+как игровой спрайт.
+
+Образцы стиля для нейронки (упомянуть в промте):
+- Hand-painted 2D game illustration (Cuphead inanimate objects, Hollow Knight props)
+- Children's book illustration with visible texture
+- Soft digital painting (Procreate / Clip Studio Paint look)
+- НЕ flat vector cartoon, НЕ photorealistic 3D рендер
+
+**Один персонаж → 4 цвета через тинт в Godot** (`Sprite2D.modulate = player_color`).
+Базовый спрайт — кремово-белый. WHITE × player_color = чистый цвет игрока.
+
+**Персонаж — БЕЗ рук, БЕЗ ног, БЕЗ конечностей.** Это буквально шар из ниток.
+Единственные допустимые "отростки" — кончики ниток (loose strands), которые
+естественны для клубка пряжи.
 
 ---
 
 ## 1. Цветовая схема для чистого тинта
 
-| Элемент | Цвет | Почему |
-|---------|------|--------|
-| **Тело (нитки)** | Чистый белый `#FFFFFF` | `WHITE × player_color = player_color` — точный тинт |
-| **Тени** | Светло-серый `#D0D0D0` | `GRAY × RED = тёмно-красный` — естественная тень игрока |
-| **Контур** | Чистый чёрный `#000000` | `BLACK × anything = BLACK` — контур сохраняется при любом тинте |
-| **Фон** | **Полностью прозрачный** | Требование для спрайта в Godot |
+| Элемент | Цвет | После тинта в RED |
+|---------|------|-------------------|
+| Основные нитки | Кремово-белый `#F5F0E5` | Красный с лёгким тёплым оттенком |
+| Тени между нитками | Светло-серый `#B5B0A8` | Тёмно-красный (естественная глубина) |
+| Глубокие тени снизу | Средний серый `#807870` | Очень тёмный красный (контактные тени) |
+| Контур (тонкий, 1-2px) | Тёмно-серый `#3A352F` | Почти чёрный (контур читаемости) |
+| Лицо | Отдельный спрайт, не тинтуется | Остаётся тёмным на любом цвете |
 
-Лицо — **отдельный спрайт** (не тинтуется), чтобы глаза/рот остались
-чёрными на теле любого цвета.
+**Критично**: цвета шара должны быть в диапазоне светло-кремового → серого.
+Никаких насыщенных цветов, никакой коричневой пряжи, никакой синевы — только
+нейтральные тоны, чтобы тинт работал чисто.
 
 ---
 
@@ -36,41 +47,67 @@
 
 | Параметр | Значение |
 |----------|----------|
-| Размер генерации | 1024×1024 px (выше качество, даунскейл до 256 в игре) |
+| Размер генерации | 1024×1024 px (даунскейл до 256 в игре) |
 | Формат | PNG с альфа-каналом |
 | Центр | Геометрический центр клубка = центр изображения |
-| Поле вокруг | 10% padding по краям (чтобы не резать при кропе) |
-| Антиалиасинг контура | Минимальный (резкие края для игрового стиля) |
+| Поле вокруг | 12-15% padding (хохолок и стрэнды требуют места) |
+| Контур | Мягкий тонкий (1-2px), НЕ жирный cartoon outline |
+| **Лица** | НА ТЕЛЕ ЛИЦА НЕТ — только отдельные face-overlay спрайты |
 
 ---
 
-## 3. Общий шаблон (повторять в каждом промте для консистентности)
-
-Эта часть **добавляется в начало** каждого промта ниже:
+## 3. Общий стилевой блок (вставлять в начало каждого промта тела)
 
 ```
-STYLE: Flat cartoon mascot illustration, clean vector-art aesthetic
-in the style of Kirby or a Rovio/Angry Birds mascot. Bold 3-pixel-thick
-pure BLACK (#000000) outline around the entire silhouette. Body
-filled with pure WHITE (#FFFFFF). Visible spiral yarn-thread pattern
-wrapping around the ball as fine thin gray (#C0C0C0) curves showing
-the knitted/woven structure. Subtle cell-shading using ONE light
-gray tone (#D0D0D0) for shadows on the bottom-right side of the ball.
-NO gradients. NO colored fills. NO realistic rendering.
+STYLE: Hand-painted 2D game illustration of a soft realistic ball
+of yarn, stylized for use as a game sprite. Think Cuphead-era
+inanimate object art or hand-painted children's book illustration —
+NOT flat vector cartoon, NOT 3D render, NOT slick AI art. The yarn
+should look tactile and soft, like real wool or cotton fiber that
+you could touch.
 
-CRITICAL CHARACTER RULE: The character is a PURE YARN BALL ONLY.
-It has NO arms, NO legs, NO hands, NO feet, NO limbs of any kind.
-It is a complete round ball. Do not add any mittens, paws, stubs,
-protrusions-as-limbs, or anything resembling arms or legs. The only
-protrusion allowed is a short loose yarn TUFT at the top of the ball
-(3-4 strands sticking up like a pompom) and occasional loose yarn
-STRANDS that may trail off when the character moves or is hurt.
+YARN APPEARANCE: The ball is made of many criss-crossing strands of
+fluffy cream-white yarn (#F5F0E5) wound and knit together. The
+weave is irregular and organic — not a perfect spiral, but a real
+tangle of overlapping threads going in many directions. Individual
+strands are visible. Slight stray fibers stick out from the
+silhouette edge giving a soft fuzzy appearance. One or two loose
+yarn ends ("tails") trail off the ball — these are the start/end of
+the yarn strand.
 
-BACKGROUND: Fully transparent. Only the character is visible. No
-ground, no ground shadow, no border, no color fill behind character.
+SHADING: Soft natural shadows in the deeper gaps between thread
+layers (light gray #B5B0A8). A medium gray (#807870) shadow under
+the ball where it would meet the ground (but no actual ground
+visible — just a soft contact shadow on the bottom of the ball
+itself). NO gradients fading into colors. NO highlights other than
+small soft white spots on the topmost threads from natural
+top-light.
 
-COMPOSITION: Character centered in frame, 10% padding around all
-edges. Character takes up about 80% of image height. PNG 1024x1024.
+OUTLINE: Optional thin (1-2px) dark gray (#3A352F) outline only on
+the inner thread shapes for definition — NOT a thick cartoon outline
+around the whole silhouette. The ball's silhouette boundary is
+defined by the natural fluffy yarn edge fading into transparency.
+
+NO LIMBS RULE: The character is a PURE BALL OF YARN. Absolutely no
+arms, no legs, no hands, no feet, no mittens, no paws, no stumps,
+no anthropomorphic protrusions of any kind. The ONLY allowed
+protrusions are: (a) loose yarn ends/tails trailing from the wind,
+(b) stray fluff fibers. Nothing else.
+
+NO FACE RULE: Do NOT draw eyes, mouth, or any face features on the
+ball. The ball is just yarn texture — face will be added separately
+as a transparent overlay sprite in the game engine. Just generate a
+faceless yarn ball.
+
+BACKGROUND: Fully transparent. Only the yarn ball is visible.
+Checkerboard transparency pattern around the character. No ground,
+no shadow on ground, no border, no background color, no scenery.
+
+COMPOSITION: Yarn ball centered in 1024x1024 frame with 12-15%
+padding around all edges (extra padding because loose strands
+extend beyond the main ball). Ball takes up about 70-75% of image
+height (smaller than the previous version because we need room for
+trailing yarn strands).
 ```
 
 ---
@@ -81,32 +118,28 @@ edges. Character takes up about 80% of image height. PNG 1024x1024.
 используем как image reference для поз и эмоций.
 
 ```
-Generate a cute cartoon yarn-ball game character, idle pose, no limbs.
+Generate a soft hand-painted ball of cream-white yarn for use as a
+game sprite. No face, no limbs.
 
-[вставить STYLE + CRITICAL CHARACTER RULE + BACKGROUND + COMPOSITION блок сверху]
+[вставить полностью STYLE + YARN + SHADING + OUTLINE + NO LIMBS +
+NO FACE + BACKGROUND + COMPOSITION блок из раздела 3]
 
-SUBJECT: A round soft plush ball character made entirely of visible
-woven yarn threads. Pure white (#FFFFFF) body. Thin gray (#C0C0C0)
-curves on the body surface show the spiral knitted pattern wrapping
-around the sphere. The ball is slightly taller than wide (1:1.05
-ratio) from gentle breathing. A short loose yarn TUFT (4 separate
-strands, 2px black outlined, white-filled) sticks up from the top of
-the ball like a pompom — this is the ONLY thing protruding from the
-ball, no arms, no legs, no other protrusions.
+POSE: Idle resting pose. The ball is roughly spherical but with the
+natural slight irregularity of a real yarn ball — not perfectly
+round, slightly squashed at the bottom from its own weight, slightly
+oval (1:1.05 ratio, very subtle). Two loose yarn tails: one short
+2-3cm tail sticking up from the top of the ball (slightly curling,
+the "starting end"), one longer 5-6cm tail trailing down and to the
+right from the lower-right side of the ball (the "current working
+end" — the loose strand that would be unraveling).
 
-FACE: Large expressive round black eyes (#000000) with tiny WHITE
-highlight dots inside each pupil for sparkle. Eyes positioned in the
-upper-center of the ball. Simple closed upturned smile in solid
-black between them — friendly, confident mascot. NO eyebrows, NO nose,
-NO mouth interior details.
+DETAIL FOCUS: The viewer should be able to count individual visible
+threads on the ball surface. The criss-crossing weave is the
+character's main visual. Show the texture clearly.
 
-LIGHTING: Flat top-light. Soft light gray (#D0D0D0) shadow crescent
-along the bottom-right curve of the ball (bottom 30%). That is the
-only shading.
-
-REMINDER: The entire character silhouette is ONE BALL + tuft on top.
-Nothing else. Check: no arms sticking out sides, no legs at bottom,
-no hands, no feet. If you are about to add any of those — don't.
+REMINDER: NO FACE on the ball. NO arms, NO legs, NO limbs. Only the
+yarn ball with two loose strand tails (top short, bottom-right
+longer) and natural fuzzy fibers around the silhouette.
 ```
 
 ---
@@ -116,202 +149,233 @@ no hands, no feet. If you are about to add any of those — don't.
 **Важно**: для каждого промта ниже — **прикрепи `body_idle.png` как reference
 image** в nanobanana и добавь этот префикс:
 
-> `REFERENCE IMAGE: Keep the EXACT same character — same ball shape, same yarn-thread pattern, same eye size and style, same tuft style, same outline thickness, same size. Same yarn BALL with NO limbs. Only change the pose as described below.`
+> `REFERENCE IMAGE: Use the attached image as the EXACT character to modify. Keep the same yarn texture, same cream-white color, same thread weave style, same outline thickness, same loose strand style. Same faceless yarn ball with no limbs. Only change the pose and any deformation/strand-behavior as described below.`
 
-### `body_run.png` — "бег" (катится / скачет)
+### `body_run.png` — катится / прыгает вперёд
 ```
-Pose change: Running/rolling pose. The ball has NO legs, so motion is
-shown by: (1) body horizontally squashed (1.2:1 aspect, wider than
-tall), (2) body tilted 25° forward to the right in direction of
-motion, (3) five short dark motion-blur streaks trailing from the
-left (back) side of the ball (2px black, curved), (4) small puff of
-white cartoon dust (2-3 tiny soft clouds with black outlines) behind
-the ball on the ground line (but still transparent background),
-(5) yarn tuft on top streams backwards to the left from speed.
-Eyes show focused excited expression with the same smile — mouth
-slightly open in a small determined "haa".
-
-REMINDER: No legs, no arms. Just a rolling/bouncing ball with
-deformation and motion lines.
+Pose change: Rolling/bouncing forward motion (the ball has no legs,
+so movement is shown through deformation and trails). Changes:
+1. Body horizontally squashed (1.2:1 aspect, wider than tall)
+2. Body tilted 25° forward to the right (in motion direction)
+3. The longer bottom-right loose yarn tail now trails far behind
+   to the LEFT (5-6 strand-curves), as if dragging from speed
+4. The short top tail is bent backward (to the left)
+5. Three to four soft yarn-fiber motion streaks trailing behind the
+   ball on the left side (made of the same cream-white fiber, very
+   soft, fading into transparency — like motion trails of fluff)
+6. A soft gray dust puff (no hard outline, just soft cream-gray
+   smudges) below the ball where it would have just bounced
+7. A few extra stray fibers fluffed out on the back-left side from
+   the wind
+NO FACE. NO LIMBS. Just a deformed rolling yarn ball with trailing
+strands and motion fluff.
 ```
 
 ### `body_jump.png` — прыжок вверх
 ```
-Pose change: Jumping upward pose. The ball has NO legs to push off
-with, so jump is shown by: (1) body vertically stretched (1:1.2
-aspect, taller than wide), (2) yarn tuft on top stretched upward
-(strands pointing straight up from upward acceleration), (3) three
-small upward-curving motion arcs below the ball (2px black lines,
-short) suggesting it was launched, (4) eyes wide open excited,
-(5) mouth in an open happy "whee!" curve.
-
-REMINDER: Do not add any limbs. Pure stretched ball with tuft up
-and motion arcs below.
+Pose change: Jumping/launching upward (ball has no legs to push off
+with, so jump is shown through stretch and trails below). Changes:
+1. Body vertically stretched (1:1.2 aspect, taller than wide)
+2. Both loose yarn tails trail STRAIGHT DOWN below the ball as if
+   pulled by gravity / the take-off force (long curving strands
+   pointing toward bottom of frame)
+3. Three to five faint upward-curving cream-fiber motion trails
+   below the ball (soft fluff trails, not hard lines) — implying
+   the ball was just launched from below
+4. Extra stray fibers on the bottom of the ball (more fuzz than
+   idle) from the launch
+5. Top of the ball slightly more compressed than bottom (acceleration
+   stretching the bottom)
+NO FACE. NO LIMBS. Just a stretched yarn ball with trailing strands
+pointing down and fluff trails below.
 ```
 
 ### `body_fall.png` — падение
 ```
-Pose change: Falling pose. The ball has NO limbs, so falling is
-shown by: (1) body slightly vertically stretched (1:1.1 aspect) with
-downward momentum, (2) yarn tuft on top trailing UPward and
-backward (air resistance pulling it up), (3) two small wind-lines on
-either side of the ball (short 2px dark streaks pointing upward from
-the falling motion), (4) eyes widened with smaller pupils showing
-concentration, (5) mouth in a small worried "o".
-
-REMINDER: Pure ball with deformation and wind streaks, no limbs.
+Pose change: Falling downward (ball has no limbs, falling is shown
+through subtle stretch and air-resistance behavior of strands).
+Changes:
+1. Body slightly vertically stretched (1:1.08 aspect — less than
+   jump because falling is more passive)
+2. Both loose yarn tails trail STRAIGHT UP above the ball, as if
+   air resistance is pulling them upward (the ball is falling, the
+   strands lag behind)
+3. Some stray fibers around the upper edge of the ball are pushed
+   upward by air resistance (subtle "hair-up" effect)
+4. Two faint vertical wind-streak fibers on either side of the ball
+   (very soft, fading)
+5. Slight blurring at the bottom of the ball from downward motion
+NO FACE. NO LIMBS. Just a yarn ball with strands trailing UPWARD
+showing it's falling down.
 ```
 
 ### `body_hurt.png` — получил урон
 ```
-Pose change: Hit-reaction pose. The ball has NO limbs. Damage is
-shown by: (1) body horizontally squashed and deformed (1.3:1 aspect,
-as if punched from the side), asymmetric — slightly flattened on the
-right side where the "hit" landed, (2) six to eight LOOSE YARN
-STRANDS popping out from random spots on the ball surface (2px
-black outline, white-filled curved lines) — the ball is getting
-frayed, (3) yarn tuft on top is displaced sideways (bent right),
-(4) four small impact stars (4-point sparkle shapes, black outline
-only) around the body edges on the right side, (5) eyes scrunched
-closed into tight >_< curve shapes (2px black lines), (6) mouth in
-a small downturned grimace.
-
-REMINDER: No limbs. Damage is shown through ball deformation and
-frayed yarn strands popping out of the surface.
+Pose change: Hit reaction (the ball is a yarn ball, so damage shows
+as the yarn getting frayed/disrupted). Changes:
+1. Body horizontally squashed and asymmetric (1.3:1 aspect, with the
+   right side more flattened — as if struck from the right)
+2. Six to eight loose yarn strands suddenly POPPED OUT of the ball
+   surface (medium-length 3-4cm cream-white strands at random angles,
+   each with the same hand-painted style as the main yarn — these are
+   threads that got pulled loose from the impact)
+3. The original two loose tails are now displaced — top tail is bent
+   to the left, bottom-right tail is twisted/kinked
+4. A burst of stray fluff fibers around the impacted side (right)
+5. Four small impact stars around the ball (4-point sparkle marks,
+   thin dark gray outline only, no fill — like a comic book "hit"
+   indicator)
+6. The yarn texture is slightly more disheveled than idle — some
+   threads visibly out of place, weave looking messier
+NO FACE. NO LIMBS. Just a fraying, deformed yarn ball with popped
+strands and impact marks.
 ```
 
 ### `body_dead.png` — размотан (смерть)
 ```
-Pose change: Defeated/unraveled pose. The ball has NO limbs. Death
-is shown by UNRAVELING: (1) the main ball has shrunk to 50% of its
-original size and is tilted 35° to the side, (2) roughly 12 long
-loose yarn strands (2px black outline, white-filled curves) trail
-out to the bottom-right of the image forming chaotic loops and
-tangled curves — the ball is coming apart, (3) 2-3 small yarn loops
-are visible detached from the main ball floating near it, (4) yarn
-tuft on top is gone or barely visible, (5) X-shaped eyes made of two
-crossed 3px black lines each (classic dead expression), (6) mouth
-is a flat straight horizontal short line.
-
-REMINDER: No limbs — death is pure unraveling yarn. Main ball
-smaller, many loose strands trailing away.
+Pose change: Defeated / unraveled. The yarn ball is coming undone.
+Changes:
+1. The main ball has shrunk to about 50% of its original volume — a
+   smaller, looser, less tightly wound version
+2. The ball is tilted 35° to the side (rolled over)
+3. Approximately 12-15 long loose yarn strands trail out from the
+   ball forming chaotic loops, curls, and tangles in the bottom-right
+   half of the image. These should look like real unraveled yarn —
+   long curving lines with natural sag and curl, not straight lines.
+4. Two or three small detached yarn loops floating near the ball
+   (loose loops that came completely off)
+5. The remaining ball weave is much looser — gaps visible between
+   threads, you can see the inner structure
+6. A couple of single stray thread fibers floating in the air around
+   the unraveled tangle
+7. Soft contact shadow under the unraveled mess
+NO FACE. NO LIMBS. Just a smaller deflated yarn ball with massive
+unraveled tangle of strands beside it.
 ```
 
 ---
 
 ## 6. Промты для лиц (отдельные спрайты 512×512)
 
-Лицо рендерится как **отдельный Sprite2D** поверх тела, без тинта.
-Лицо содержит ТОЛЬКО глаза и рот — без головы, без контура, без тела.
+Лицо рендерится как **отдельный Sprite2D** поверх тела, без тинта. Поскольку
+тело теперь без лица, лицевой оверлей **всегда виден** в игре (включая
+default happy в idle).
+
+Стиль лица должен соответствовать "hand-painted yarn ball" эстетике —
+не slick anime kawaii, а будто лицо нарисовано/вышито на клубке.
 
 **Стилевой блок для всех лиц:**
 ```
-STYLE: Minimalist cartoon face elements ONLY — just eyes and mouth,
-nothing else. Pure black (#000000) for all features, with tiny white
-dots inside eye pupils for sparkle highlights (except where noted).
-No head shape, no body, no outline around face area, no ball, no
-silhouette. Transparent background. PNG 512x512.
+STYLE: Minimalist hand-drawn cartoon face elements ONLY — eyes and
+mouth, nothing else. The features should look hand-painted with
+slight irregularity (not perfect digital strokes), as if drawn or
+stitched onto the yarn surface. Solid dark color (#2A2520 — very
+dark warm brown, almost black but warmer to fit the yarn theme).
+Tiny soft white highlight dots inside eye pupils for life.
 
-LAYOUT: Features positioned as if they would overlay a round face.
-Eyes in the upper center area (~35% from top edge of image), spaced
-about 40% of image width apart (so ~25% image width from center to
-each eye center). Mouth centered horizontally, ~18% below the eye
-centerline.
+LAYOUT: Features positioned to overlay a round face. Eyes in the
+upper-center area (~38% from top edge of image), spaced about 38%
+of image width apart (so eye centers are ~24% image width from
+center). Mouth centered horizontally, ~20% below the eye centerline.
 
-REMINDER: Only draw the eyes and mouth, nothing else. No hair, no
-head, no outline, no extras.
+NO HEAD SHAPE. NO BODY. NO OUTLINE around face area. NO ball, NO
+yarn, NO silhouette. ONLY the eyes and mouth lines.
+
+BACKGROUND: Fully transparent. PNG 512x512 with alpha channel.
+
+REMINDER: Only draw the eyes and mouth strokes — nothing else.
 ```
 
 ### `face_happy.png` (генерить первым, использовать как reference для остальных)
 ```
-Subject: Two large round solid-black eyes, each with a tiny WHITE
-highlight dot (small circle in upper-left of each pupil) for
-sparkle. Eyes are perfect circles. Small upturned crescent smile
-(curved arc, 3px stroke) centered between and below the eyes.
-Classic cute mascot face expression.
+Subject: Two medium-sized round dark-brown eyes, each with a small
+white highlight dot in the upper-left of the pupil for sparkle. Eyes
+have very slight irregularity in their roundness (hand-drawn feel,
+not perfect circles). Small upturned crescent smile (curved arc, 3px
+hand-painted stroke) centered between and below the eyes. Friendly
+calm expression, not aggressively happy — confident mascot.
 ```
 
 ### `face_focus.png` — прицеливание
 ```
-Same style as face_happy reference. Change: eyes are narrowed into
-sharp determined horizontal squints (thick lens/leaf shape, 60%
-width of original eye, 40% height — like determined focused eyes).
-Each squint has a tiny white highlight. Mouth is a straight
-horizontal line (3px) showing serious concentration. No smile.
+Same hand-drawn style as face_happy reference. Change: Eyes are
+narrowed into determined focused horizontal squints (lens/leaf
+shape, ~60% width of original eye, ~40% height). Each squint is
+solid dark brown with a tiny highlight. Mouth is a slightly downward-
+slanted straight horizontal line (3px) — serious concentrated
+expression, not angry, just focused.
 ```
 
 ### `face_pain.png` — боль
 ```
-Same style as face_happy reference. Change: eyes are closed tight
-into scrunched >_< shapes (two small inverted V curves, 3px thick)
-— no highlights since eyes are closed. Mouth is a small downturned
-frowny U-shape (inverted arc) with a small triangular "ow" gap
-inside showing upper lip.
+Same hand-drawn style as face_happy reference. Change: Eyes are
+closed tight into scrunched >_< shapes (two small inverted V
+curves, 3px thick, hand-drawn feel). No highlight dots since eyes
+are closed. Mouth is a small downturned frowny U-shape with a tiny
+triangular gap inside showing an "ow" expression.
 ```
 
 ### `face_angry.png` — ярость (после килла)
 ```
-Same style as face_happy reference. Change: eyes are angry narrowed
-slits with sharp angled ANGRY EYEBROWS above each (V-shape wedges,
-3px thick, tilted inward toward the nose). Pupils visible but
-smaller and more intense, NO highlight dots. Mouth is a snarl
-showing 2-3 small sharp pointed teeth (triangular shapes, pointing
-downward from upper lip) in an upward-curving growl. Menacing.
+Same hand-drawn style as face_happy reference. Change: Eyes are
+angry narrowed slits (similar to focus but more extreme — only ~30%
+height of normal eyes) with sharp angled angry EYEBROWS above each
+(V-shape wedges, 3px thick, tilted inward toward the nose, hand-
+painted with slight irregularity). Pupils visible inside the slits.
+NO highlight dots. Mouth is a snarl showing 2-3 small sharp pointed
+"teeth" (triangular shapes pointing downward from upper lip line) in
+an upward-curving growl. Menacing but still cute (not horror).
 ```
 
 ### `face_scared.png` — страх (HP < 30%)
 ```
-Same style as face_happy reference. Change: eyes are WIDE open in
-shock — larger circles than idle, with TINY pupils (small dots in
-the center, showing fear-shrink). Three small motion-wobble curves
-around the outside of each eye (short 2px arcs, 3 per eye,
-suggesting shaking). Mouth is a tiny worried "o" (small vertical
-oval). Add one small teardrop sweat shape next to the left eye
-(outside the eye, below it).
+Same hand-drawn style as face_happy reference. Change: Eyes are
+WIDE OPEN (larger than idle by ~20%), with TINY pupils as small
+dots in the center (showing fear-shrink). Three small motion-wobble
+arcs around the OUTSIDE of each eye (short 2px curves, 3 per eye,
+suggesting trembling). Mouth is a tiny worried "o" shape (small
+vertical oval). Add one small teardrop/sweat shape next to the
+left eye (outside the eye, below it, dark color matching the eyes).
 ```
 
 ### `face_dead.png` — мёртвый (X-eyes)
 ```
-Same style as face_happy reference. Change: eyes are simple X-shapes
-made from two crossed diagonal lines each (3px thick strokes,
-crossing at the center, 40% of normal eye size). No white dots.
-Mouth is a slightly open small vertical oval (just a short 3px
-outlined oval) showing unconsciousness.
+Same hand-drawn style as face_happy reference. Change: Eyes are
+simple X-shapes made from two crossed diagonal lines each (3px
+hand-painted strokes, crossing at the center, ~40% size of normal
+eyes). No highlight dots. Mouth is a slightly open small vertical
+oval (just a short outlined oval, 3px stroke) showing
+unconsciousness.
 ```
 
 ---
 
 ## 7. После генерации — обязательные шаги
 
-### 7.1 Проверить прозрачность фона
-Если nanobanana оставила светлый фон (встречается) — прогнать через GIMP:
-```
-Layer → Transparency → Color to Alpha → выбрать фон → OK
-```
-Но **осторожно с телом**: там нужен WHITE как цвет тела, нельзя просто
-удалить весь белый. Лучше:
-- Использовать magic wand с threshold 5-10 по углу канваса
-- Или Quick Mask вокруг силуэта → inverse → delete
+### 7.1 Очистить фон до полной прозрачности
+1. Открыть PNG в Photopea
+2. Если nanobanana оставила любой фон — `Magic Wand` (threshold 5-15) на
+   углу, удалить
+3. Для тела: **аккуратно** не удалить кремовые/серые пиксели самого клубка
+   (использовать selection с порогом, не Color to Alpha)
+4. Для лиц: можно жёстко — `Image → Adjustments → Threshold` на 128, всё
+   тёмное оставить, всё светлое в прозрачность
 
-Для **лиц** проще: все пиксели кроме чёрных — прозрачные. Можно даже
-`Colors → Threshold` сразу на 128, потом `Color to Alpha` белый.
-
-### 7.2 Кроп + единый канвас для всех 6 поз тела
-Все 6 PNG должны иметь **одинаковый центр клубка**. Минимум:
-- Открыть все 6 в Photopea
-- Наложить все 6 слоями, выровнять по центру клубка (не по центру bounding
-  box, а именно по геометрическому центру шара)
-- Сохранить каждый на канвасе 1024×1024 с единым центром
+### 7.2 Выровнять центры всех 6 поз тела
+Все 6 PNG должны иметь одинаковый **центр клубка** (не bounding box):
+- Открыть все 6 как слои в Photopea
+- Включить полупрозрачность каждого слоя (50%)
+- Подвинуть каждый так, чтобы центры клубков совпадали (не края, не центр
+  bbox — именно геометрический центр шара)
+- Сохранить каждый отдельно как 1024×1024 PNG с тем же центром
 - Иначе клубок будет "прыгать" при смене позы в игре
 
 ### 7.3 Даунскейл до рабочего размера
-1024 — для генерации (максимум деталей).
-Для игры достаточно **256×256** (Godot сам масштабирует под радиус игрока):
-```
-Image → Scale → 256×256, Cubic resampling
-```
+- Генерация: 1024×1024 (для деталей)
+- Игра: **256×256** (Godot скейлит под радиус игрока)
+- В Photopea: `Image → Image Size → 256×256, Bicubic Sharper`
 
-### 7.4 Сохранить в проект
+### 7.4 Файлы в проект
 ```
 assets/characters/body/
     body_idle.png
@@ -331,64 +395,74 @@ assets/characters/face/
 
 ---
 
-## 8. Минимальный тест (3 спрайта вместо 12)
+## 8. Минимальный тест (3 спрайта)
 
-Если хочешь быстро проверить подход, начни с минимума:
-1. `body_idle.png` — главный промт из раздела 4
-2. `face_happy.png` — промт из раздела 6.1
-3. `face_pain.png` — промт из раздела 6
+Для быстрой проверки подхода до генерации всех 12:
+1. `body_idle.png` — главный промт (раздел 4)
+2. `face_happy.png` — главный лицевой промт (раздел 6.1)
+3. `face_pain.png` — для проверки смены эмоции
 
-Подложи в `assets/characters/` и Claude сделает интеграцию в `player.gd`
-без остальных поз (они упадут в idle). Потом дженеришь остальные.
+Положи в `assets/characters/`. Claude интегрирует в `player.gd` без
+остальных поз/эмоций (они будут падать в idle/happy fallback). Если выглядит
+хорошо в игре — генерим остальные 9.
 
 ---
 
 ## 9. Что Claude сделает после генерации
 
-1. `feature/character-sprites` ветка
-2. Заменит `_draw_ball` в `player.gd` на `Sprite2D` (body) + `Sprite2D` (face)
-3. `body_sprite.modulate = player_color` для тинта
-4. State machine: idle/run/jump/fall/hurt/dead → body_texture swap
-5. Emotion machine: happy/focus/pain/angry/scared/dead → face_texture swap
-6. Сохранит эмблемы способностей поверх (они уже процедурные)
-7. Анимация дыхания/squash-stretch останется (scale tween поверх спрайта)
-8. Smoke test в Godot + LOG + finish_branch
+1. `feature/character-sprites` ветка (новая)
+2. Заменит `_draw_ball` в `player.gd` на:
+   - `Sprite2D` "Body" с `texture = body_textures[current_pose]`
+   - `Sprite2D` "Face" (child of Body) с `texture = face_textures[current_emotion]`
+3. `body_sprite.modulate = player_color` — тинт цветом игрока
+4. `face_sprite.modulate = Color.WHITE` — лицо не тинтуется
+5. Pose state machine в `_physics_process`:
+   - `velocity.y < -50` → `jump`
+   - `velocity.y > 50` → `fall`
+   - `abs(velocity.x) > 20` → `run`
+   - `hurt_flash_timer > 0` → `hurt`
+   - `not is_alive` → `dead`
+   - иначе → `idle`
+6. Emotion state machine:
+   - `not is_alive` → `dead`
+   - `hurt_flash_timer > 0` → `pain`
+   - `kill_glow_timer > 0` → `angry`
+   - `hp < MAX_HP * 0.3` → `scared`
+   - `is_aiming or attacking` → `focus`
+   - иначе → `happy`
+7. Squash/stretch анимация дыхания через scale tween на Body Sprite2D
+8. Эмблемы способностей остаются процедурными в `_draw()` поверх спрайтов
+9. Smoke test в Godot + LOG + finish_branch
 
 ---
 
-## 10. Частые ошибки nanobanana и как их обходить
+## 10. Если nanobanana всё-таки рисует AI-стиль
 
-### Проблема: модель добавляет руки/ноги несмотря на запрет
-**Решение**: повторить "no limbs, pure ball only" в самом конце промта, после
-всей субъектной части. Последние токены имеют больший вес на генерации.
+Признаки "AI cartoon vector":
+- Идеально круглый ball, симметричный
+- Гладкая заливка без видимой текстуры ниток
+- Жирный 5px чёрный контур
+- Slick shading с градиентами
+- Generic anime eyes
 
-Если первая генерация всё равно с руками/ногами:
-- Пере-генерить с более категоричным "The character is LITERALLY just a
-  sphere-shaped yarn ball. Period. No protrusions except the tuft."
-- Или использовать negative prompt (если доступен): "arms, legs, hands,
-  feet, limbs, mittens, paws, stumps, protrusions"
-
-### Проблема: фон не полностью прозрачный
-**Решение**: в промте жёстко требовать "FULLY TRANSPARENT PNG BACKGROUND,
-checkerboard pattern around character". После — пост-обработка (раздел 7.1).
-
-### Проблема: позы между спрайтами не консистентные
-**Решение**: всегда прикреплять `body_idle.png` как reference image, и в
-промте писать "keep EXACT same character". Если nanobanana игнорирует
-референс — сказать в промте "use the attached image as the character to
-modify, only change the described pose".
-
-### Проблема: контур не чёрный а цветной
-**Решение**: "solid pure black (#000000) outline, not brown, not dark
-gray, pure hex 000000 black".
+Если получилось так — пере-генерить с усилением:
+- Добавить в начало: `IMPORTANT: hand-painted natural texture, NOT
+  generic vector cartoon. Show individual yarn fibers and weave structure.
+  NO smooth gradients, NO perfect shapes, NO thick outline.`
+- Добавить негативный промт (если поддерживается): `vector art, flat
+  cartoon, smooth shading, perfect circle, mascot logo, generic AI art`
+- Указать конкретные референсы: `art style of Cuphead inanimate objects,
+  or hand-painted Studio MDHR background props`
 
 ---
 
 ## 11. Итого промтов
 
 - **1 главный** (body_idle — без референса)
-- **5 вариаций поз** (с body_idle как reference image)
+- **5 вариаций поз тела** (с body_idle как reference image)
 - **1 главный лицевой** (face_happy — без референса)
 - **5 вариаций эмоций** (с face_happy как reference)
 
 **Всего**: 12 генераций, из них 2 — "с нуля", 10 — "с reference image".
+
+Минимум для теста: **3 спрайта** (см. раздел 8).
