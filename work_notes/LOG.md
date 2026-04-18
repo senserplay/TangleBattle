@@ -1,5 +1,66 @@
 # TangleBattle — Рабочий лог
 
+## 2026-04-18 — chore: промты nanobanana 2 для спрайтов персонажа
+
+### Что сделано
+Подготовлен документ `docs/characters/PROMPTS.md` с полным набором промтов
+для генерации спрайтов персонажа-клубка через Google nanobanana 2
+(Gemini 2.5 Flash Image).
+
+### Архитектурное решение
+**Один персонаж → 4 цвета через тинт в движке.** Базовый спрайт тела —
+чисто белый (`#FFFFFF`) с чёрным контуром (`#000000`) и светло-серыми тенями
+(`#D0D0D0`). В Godot: `body_sprite.modulate = player_color` даёт
+красный/синий/зелёный/жёлтый клубок:
+- `WHITE × RED = RED` (тело)
+- `GRAY × RED = dark RED` (естественная тень)
+- `BLACK × RED = BLACK` (контур сохраняется)
+
+Лицо — **отдельный Sprite2D**, не тинтуется (остаётся чёрным на любом цвете).
+
+### Раздел спрайтов
+12 файлов:
+- **6 поз тела** (256×256 в игре, 1024×1024 при генерации): idle, run, jump, fall, hurt, dead
+- **6 эмоций лица** (отдельные оверлеи): happy, focus, pain, angry, scared, dead
+
+### Промты
+- **1 главный промт для `body_idle.png`** — без референса, задаёт характер
+- **5 промтов-вариаций** для остальных поз с `body_idle` как image reference
+- **1 главный промт для `face_happy.png`** — без референса
+- **5 промтов-вариаций** для остальных эмоций с `face_happy` как reference
+
+Все промты содержат:
+- Общий STYLE-блок (flat cartoon, чёрный контур, белое тело, прозрачный фон)
+- Описание субъекта с характером (stubby arms/legs, yarn tuft on top,
+  spiral thread pattern)
+- Точные деформации для каждой позы (stretch/squash, mid-stride, scrunched eyes и т.п.)
+
+### Пост-обработка (описано в PROMPTS.md §7)
+- Проверить прозрачность фона, при необходимости убрать фон в Photopea/GIMP
+- Выровнять все 6 поз тела по единому центру на канвасе 1024×1024
+- Даунскейл до 256×256 для игры
+
+### Интеграция (описано в PROMPTS.md §9, будет отдельной feature-веткой)
+- `feature/character-sprites` ветка
+- `_draw_ball` → `Sprite2D` (body) + `Sprite2D` (face)
+- State machine для body_texture (idle/run/jump/fall/hurt/dead)
+- Emotion machine для face_texture (happy/focus/pain/angry/scared/dead)
+- Эмблемы способностей остаются процедурными поверх спрайта
+- Squash/stretch анимация через scale tween
+
+### Минимальный тест
+В §8 описан MVP-путь: генерация всего 3 спрайтов (`body_idle`, `face_happy`,
+`face_pain`) для быстрой проверки подхода — остальные поддержатся
+fallback-ом к idle.
+
+### Что делать дальше
+1. Прогнать промты из `docs/characters/PROMPTS.md` через nanobanana 2
+2. Положить PNG в `my_assets/nanobanana/` или сразу в
+   `assets/characters/body/` и `assets/characters/face/`
+3. Claude сделает feature-ветку `character-sprites` и интегрирует
+
+---
+
 ## 2026-04-18 — fix: платформы — убран чёрный фон, stretch-to-fit текстура
 
 ### Проблемы
