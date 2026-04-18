@@ -38,6 +38,9 @@ var floor_color: Color = Color(0.3, 0.2, 0.18)
 var floor_edge_color: Color = Color(0.5, 0.35, 0.25)
 var map_name: String = "Unknown"
 
+# Platform material: "" (default capsule) or "grass"/"stone"/"wood"/"ice"/"magma"
+var platform_palette: String = ""
+
 var spawn_points: Array[Vector2] = [
 	Vector2(800, 2600), Vector2(4000, 2600),
 	Vector2(2000, 1800), Vector2(2800, 1800),
@@ -341,7 +344,6 @@ func _draw_platforms() -> void:
 			var sticky_fill := Color(0.45, 0.15, 0.55, 0.9)
 			var sticky_edge := Color(0.7, 0.3, 0.8, 1.0)
 			_draw_capsule(x, y, w, h, sticky_fill, sticky_edge)
-			# Web texture lines
 			var hw := w / 2.0
 			var hh := h / 2.0
 			var web_gap := 30.0
@@ -350,10 +352,101 @@ func _draw_platforms() -> void:
 				draw_line(Vector2(xi, y - hh), Vector2(xi + web_gap * 0.5, y + hh),
 					Color(0.8, 0.4, 1.0, 0.25), 1.0)
 				xi += web_gap
+		elif platform_palette != "":
+			_draw_themed_platform(x, y, w, h, platform_palette)
 		elif platform_type is bool and platform_type:
 			_draw_capsule(x, y, w, h, platform_color, platform_edge_color)
 		else:
 			_draw_capsule(x, y, w, h, floor_color, floor_edge_color)
+
+
+# ══════════════════ TEXTURED THEMED PLATFORMS ══════════════════
+
+# Cache loaded platform textures by palette name
+static var _palette_tex_cache: Dictionary = {}
+
+
+static func _get_palette_texture(palette: String) -> Texture2D:
+	if _palette_tex_cache.has(palette):
+		return _palette_tex_cache[palette]
+	var path := "res://assets/textures/platforms/%s.png" % palette
+	var tex: Texture2D = null
+	if ResourceLoader.exists(path):
+		tex = load(path)
+	_palette_tex_cache[palette] = tex
+	return tex
+
+
+# Edge color per palette for outline / shadows
+static func _get_palette_edge(palette: String) -> Color:
+	match palette:
+		"grass": return Color(0.25, 0.18, 0.08)
+		"stone": return Color(0.30, 0.30, 0.32)
+		"wood":  return Color(0.30, 0.18, 0.08)
+		"ice":   return Color(0.30, 0.55, 0.80)
+		"magma": return Color(0.30, 0.10, 0.05)
+		_: return Color(0.2, 0.2, 0.2)
+
+
+func _draw_themed_platform(
+	cx: float, cy: float, w: float, h: float, palette: String
+) -> void:
+	var tex: Texture2D = _get_palette_texture(palette)
+	if tex == null:
+		_draw_capsule(cx, cy, w, h, platform_color, platform_edge_color)
+		return
+
+	var hw := w / 2.0
+	var hh := h / 2.0
+	var r := minf(hh, hw * 0.15)
+	r = clampf(r, 4.0, 20.0)
+
+	# Build rounded-rect polygon (capsule)
+	var pts: PackedVector2Array = []
+	var segs := 6
+	for i in range(segs + 1):
+		var a := PI + float(i) / segs * (PI / 2.0)
+		pts.append(Vector2(cx - hw + r + cos(a) * r, cy - hh + r + sin(a) * r))
+	for i in range(segs + 1):
+		var a := -PI / 2.0 + float(i) / segs * (PI / 2.0)
+		pts.append(Vector2(cx + hw - r + cos(a) * r, cy - hh + r + sin(a) * r))
+	for i in range(segs + 1):
+		var a := 0.0 + float(i) / segs * (PI / 2.0)
+		pts.append(Vector2(cx + hw - r + cos(a) * r, cy + hh - r + sin(a) * r))
+	for i in range(segs + 1):
+		var a := PI / 2.0 + float(i) / segs * (PI / 2.0)
+		pts.append(Vector2(cx - hw + r + cos(a) * r, cy + hh - r + sin(a) * r))
+
+	# UVs: tile horizontally, stretch vertically
+	var tex_w: float = float(tex.get_width())
+	var tile_scale: float = 1.0  # 1.0 means texture native pixel-per-pixel
+	var uvs: PackedVector2Array = []
+	for p in pts:
+		var u: float = (p.x - (cx - hw)) / tex_w * tile_scale
+		var v: float = (p.y - (cy - hh)) / h
+		uvs.append(Vector2(u, v))
+
+	var colors := PackedColorArray([Color.WHITE])
+	draw_polygon(pts, colors, uvs, tex)
+
+	# Edge outline + top highlight + bottom shadow for crisp readability
+	var edge: Color = _get_palette_edge(palette)
+	# Outline
+	for i in range(pts.size()):
+		var i2 := (i + 1) % pts.size()
+		draw_line(pts[i], pts[i2], edge, 1.5)
+	# Top highlight
+	draw_line(
+		Vector2(cx - hw + r, cy - hh),
+		Vector2(cx + hw - r, cy - hh),
+		edge.lightened(0.35), 2.0
+	)
+	# Bottom shadow
+	draw_line(
+		Vector2(cx - hw + r, cy + hh),
+		Vector2(cx + hw - r, cy + hh),
+		edge.darkened(0.3), 2.0
+	)
 
 
 func _draw_objects() -> void:

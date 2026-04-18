@@ -7,6 +7,7 @@ const WIND_FORCE := 300.0
 
 func _init() -> void:
 	map_name = "Cloud Kingdom"
+	platform_palette = "ice"
 	bg_color = Color(0.4, 0.55, 0.8)
 	platform_color = Color(0.85, 0.88, 0.95)
 	platform_edge_color = Color(0.95, 0.95, 1.0)

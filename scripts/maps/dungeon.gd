@@ -7,6 +7,7 @@ var time: float = 0.0
 
 func _init() -> void:
 	map_name = "Dungeon"
+	platform_palette = "wood"
 	bg_color = Color(0.02, 0.02, 0.04)
 	platform_color = Color(0.3, 0.25, 0.2)
 	platform_edge_color = Color(0.5, 0.4, 0.3)

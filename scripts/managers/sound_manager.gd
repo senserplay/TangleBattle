@@ -1,9 +1,33 @@
 extends Node
-## Procedural sound effects using sine wave synthesis.
+## Sound effects using WAV files in assets/sounds/.
+## Falls back to procedural synthesis if WAV missing.
 
 var _players: Array[AudioStreamPlayer] = []
-const MAX_PLAYERS := 8
+const MAX_PLAYERS := 12
 const SAMPLE_RATE := 44100
+
+# Pre-loaded WAV streams
+var _streams: Dictionary = {}
+const SOUND_FILES := {
+	"jump": "res://assets/sounds/jump.wav",
+	"land": "res://assets/sounds/land.wav",
+	"hit": "res://assets/sounds/hit.wav",
+	"whip": "res://assets/sounds/whip.wav",
+	"toss": "res://assets/sounds/toss.wav",
+	"explosion": "res://assets/sounds/explosion.wav",
+	"dash": "res://assets/sounds/dash.wav",
+	"shield": "res://assets/sounds/shield.wav",
+	"blink": "res://assets/sounds/blink.wav",
+	"grapple": "res://assets/sounds/grapple.wav",
+	"death": "res://assets/sounds/death.wav",
+	"round_end": "res://assets/sounds/round_end.wav",
+}
+const VOLUMES := {
+	"jump": -10.0, "land": -12.0, "hit": -8.0,
+	"whip": -10.0, "toss": -12.0, "explosion": -6.0,
+	"dash": -10.0, "shield": -10.0, "blink": -12.0,
+	"grapple": -12.0, "death": -8.0, "round_end": -8.0,
+}
 
 
 func _ready() -> void:
@@ -12,6 +36,10 @@ func _ready() -> void:
 		ap.bus = "Master"
 		add_child(ap)
 		_players.append(ap)
+	for key in SOUND_FILES:
+		var path: String = SOUND_FILES[key]
+		if ResourceLoader.exists(path):
+			_streams[key] = load(path)
 
 
 func _get_free_player() -> AudioStreamPlayer:
@@ -21,56 +49,27 @@ func _get_free_player() -> AudioStreamPlayer:
 	return _players[0]
 
 
-func play_jump() -> void:
-	_play_sweep_sine(500.0, 900.0, 0.07, -14.0)
+func _play(key: String) -> void:
+	if not _streams.has(key):
+		return
+	var ap := _get_free_player()
+	ap.stream = _streams[key]
+	ap.volume_db = VOLUMES.get(key, -10.0)
+	ap.play()
 
 
-func play_land() -> void:
-	_play_thud(120.0, 0.08, -12.0)
-
-
-func play_hit() -> void:
-	_play_impact(0.08, -8.0)
-
-
-func play_whip() -> void:
-	_play_sweep_sine(700.0, 200.0, 0.1, -10.0)
-
-
-func play_toss() -> void:
-	_play_sweep_sine(300.0, 500.0, 0.08, -12.0)
-
-
-func play_explosion() -> void:
-	_play_boom(0.2, -6.0)
-
-
-func play_dash() -> void:
-	_play_sweep_sine(250.0, 700.0, 0.1, -11.0)
-
-
-func play_shield() -> void:
-	_play_chime(700.0, 0.15, -14.0)
-
-
-func play_blink() -> void:
-	_play_sweep_sine(300.0, 1400.0, 0.06, -13.0)
-
-
-func play_grapple() -> void:
-	_play_sweep_sine(350.0, 700.0, 0.08, -12.0)
-
-
-func play_death() -> void:
-	_play_sweep_sine(600.0, 80.0, 0.35, -8.0)
-
-
-func play_round_end() -> void:
-	_play_chime(523.0, 0.12, -10.0)
-	await get_tree().create_timer(0.14).timeout
-	_play_chime(659.0, 0.12, -10.0)
-	await get_tree().create_timer(0.14).timeout
-	_play_chime(784.0, 0.2, -10.0)
+func play_jump() -> void: _play("jump")
+func play_land() -> void: _play("land")
+func play_hit() -> void: _play("hit")
+func play_whip() -> void: _play("whip")
+func play_toss() -> void: _play("toss")
+func play_explosion() -> void: _play("explosion")
+func play_dash() -> void: _play("dash")
+func play_shield() -> void: _play("shield")
+func play_blink() -> void: _play("blink")
+func play_grapple() -> void: _play("grapple")
+func play_death() -> void: _play("death")
+func play_round_end() -> void: _play("round_end")
 
 
 ## Pure sine tone with smooth envelope

@@ -137,3 +137,62 @@ TangleBattle/
 | Баг-фикс | `LOG.md` |
 | Изменение управления | `PROJECT_STRUCTURE.md`, `LOG.md` |
 | Изменение баланса | Конфиг-файл + `LOG.md` |
+
+## 8. Релизный процесс — ОБЯЗАТЕЛЬНО ДЛЯ КАЖДОЙ СЕССИИ
+
+Полная спецификация: `docs/RELEASE_PROCESS.md`
+
+### 8.1 Версионирование
+- Формат: `MAJOR.MINOR` (без патча)
+- Текущая версия: файл `VERSION` + `project.godot/application/config/version`
+- Git-теги: `v0.1`, `v0.2`, ..., `v1.0`
+- Релизы публикуются на **GitHub Releases** (Windows билд `.exe`)
+
+### 8.2 Ветки — каждое изменение в новой ветке
+```
+feature/<name>   — новые фичи
+fix/<name>       — багфиксы
+chore/<name>     — рефакторинг, доки
+hotfix/<name>    — критфиксы от тега
+release/x.y      — подготовка релиза (создаётся make_release.ps1 автоматически)
+```
+Helper создания: `pwsh scripts/release/new_branch.ps1 <type> <name>`
+Helper мержа в develop: `pwsh scripts/release/finish_branch.ps1`
+
+**НИКОГДА** не коммитить напрямую в `develop` или `main`. Только через мердж feature-веток.
+
+### 8.3 Workflow одного изменения
+1. ОБЯЗАТЕЛЬНО прочитать `work_notes/LOG.md`
+2. `pwsh scripts/release/new_branch.ps1 feature my-feature`
+3. Реализация + тест через `mcp__godot__run_project`
+4. ОБЯЗАТЕЛЬНО обновить `work_notes/LOG.md`
+5. Коммит (с co-author Claude)
+6. `pwsh scripts/release/finish_branch.ps1` — мерж в develop, push, авто-проверка релиза
+
+### 8.4 Когда делать релиз — Claude сам решает
+Запускать `pwsh scripts/release/check_release.ps1`:
+- **В НАЧАЛЕ КАЖДОЙ СЕССИИ** (после прочтения LOG.md)
+- **ПОСЛЕ ЗАВЕРШЕНИЯ КАЖДОГО БЛОКА РАБОТЫ**
+
+Скрипт сообщит "release recommended" если:
+- ≥ 5 записей в LOG.md с прошлого тега, ИЛИ
+- ≥ 1 крупная запись (новая способность/пассивка/карта/режим), ИЛИ
+- ≥ 14 дней с прошлого релиза при наличии изменений
+
+При триггере: **сообщить пользователю** и запросить подтверждение перед запуском
+`pwsh scripts/release/make_release.ps1`. Не делать релиз без явного "ок".
+
+### 8.5 Запуск релиза
+```
+pwsh scripts/release/make_release.ps1               # minor bump
+pwsh scripts/release/make_release.ps1 -BumpType major
+pwsh scripts/release/make_release.ps1 -DryRun       # план без выполнения
+```
+Скрипт сам: создаст release/x.y → bump VERSION + project.godot → CHANGELOG →
+smoke test → билд .exe → merge в main → tag → push → GitHub Release → merge
+обратно в develop → запись в LOG.md.
+
+### 8.6 Зависимости
+- Godot: `C:\Users\belya\Downloads\Godot_v4.6.1-stable_mono_win64\` (config.ps1)
+- gh CLI (опционально): `winget install GitHub.cli` для автозалива на GitHub
+- PowerShell 5.1+ (есть на Win10/11)

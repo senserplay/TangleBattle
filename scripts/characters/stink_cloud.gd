@@ -36,12 +36,27 @@ func _exit_tree() -> void:
 		owner_p.ability_entity_count[ab_id] = maxi(count - 1, 0)
 
 
+var _puff_timer: float = 0.0
+
+
 func _physics_process(delta: float) -> void:
 	time_alive += delta
 	lifetime -= delta
 	if lifetime <= 0.0:
 		queue_free()
 		return
+
+	# Periodic green puff sprite at random offset
+	_puff_timer -= delta
+	if _puff_timer <= 0.0:
+		_puff_timer = 0.3
+		var SpriteEffect := load("res://scripts/effects/sprite_effect.gd")
+		var off := Vector2(
+			randf_range(-cloud_radius * 0.6, cloud_radius * 0.6),
+			randf_range(-cloud_radius * 0.6, cloud_radius * 0.6))
+		SpriteEffect.spawn(get_tree().current_scene, "cartoon_8",
+			global_position + off, 0.5, 0.3, randf() * TAU,
+			Color(0.5, 1.0, 0.4, 0.7))
 
 	# Check players inside cloud
 	for p in get_tree().get_nodes_in_group("players"):

@@ -216,8 +216,9 @@ func _use_ability(slot: int) -> void:
 func _ab_yarn_toss() -> void:
 	var cfg := AbilityRegistry.get_data(AbilityRegistry.YARN_TOSS)
 	SoundManager.play_toss()
-	player._add_vfx("muzzle_flash", 0.15,
-		{"dir": player.aim_direction, "color": player.player_color})
+	player._add_sprite_vfx("cartoon_9", 0.3,
+		player.global_position + player.aim_direction * 30.0,
+		0.4, player.aim_direction.angle())
 	if not _can_spawn_ability(AbilityRegistry.YARN_TOSS):
 		return
 	var proj: Area2D = _yarn_projectile_scene.instantiate()
@@ -264,6 +265,9 @@ func _ab_needle_dash() -> void:
 	var cfg := AbilityRegistry.get_data(AbilityRegistry.NEEDLE_DASH)
 	SoundManager.play_dash()
 	player._add_vfx("dash_trail", 0.3, {"dir": player.aim_direction})
+	player._add_sprite_vfx("slash5", 0.35,
+		player.global_position + player.aim_direction * 40.0,
+		0.5, player.aim_direction.angle())
 	player.dash_dir = player.aim_direction
 	player.dash_timer = cfg["dash_duration"]
 	player.dash_hit_ids.clear()
@@ -292,6 +296,11 @@ func _ab_yarn_bomb() -> void:
 			)
 	var exp_radius: float = cfg["explosion_radius"] * player.radius_multiplier
 	player._add_vfx("bomb_ring", 0.4, {"pos": target, "radius": exp_radius})
+	player._add_sprite_vfx("retro_explosion", 0.5, target,
+		exp_radius / 70.0, 0.0)
+	player._add_sprite_vfx("retro_burst", 0.4, target,
+		exp_radius / 80.0, 0.0,
+		Color(1.0, 0.85, 0.3))
 
 
 func _ab_thread_pull() -> bool:
@@ -328,6 +337,8 @@ func _ab_spin_attack() -> void:
 	player.spin_visual_timer = cfg.get("visual_duration", 0.2)
 	var spin_r: float = cfg["radius"] * player.radius_multiplier
 	player._add_vfx("spin_lines", 0.35, {"radius": spin_r})
+	player._add_sprite_vfx("cartoon_3", 0.4,
+		player.global_position, spin_r / 250.0, 0.0)
 	for p in get_tree().get_nodes_in_group("players"):
 		if p == player or not p.is_alive:
 			continue
@@ -386,6 +397,8 @@ func _ab_stink_cloud() -> void:
 		return
 	SoundManager.play_toss()
 	player._add_vfx("stink_puff", 0.4)
+	player._add_sprite_vfx("cartoon_6", 0.6,
+		player.global_position, 0.4, 0.0)
 	var cloud: Node2D = _stink_cloud_scene.instantiate()
 	cloud.setup_from_config(player.player_id, cfg)
 	cloud.cloud_radius *= player.radius_multiplier
@@ -400,6 +413,8 @@ func _ab_spike_armor() -> void:
 	player.spike_armor_timer = cfg["armor_duration"]
 	player.spike_armor_max = cfg["armor_duration"]
 	player.spike_contact_cds.clear()
+	player._add_sprite_vfx("cartoon_5", 0.4,
+		player.global_position, 0.3, 0.0)
 
 
 func _ab_swap() -> bool:
@@ -459,8 +474,9 @@ func _ab_boomerang() -> void:
 	if not _can_spawn_ability(AbilityRegistry.BOOMERANG):
 		return
 	SoundManager.play_toss()
-	player._add_vfx("muzzle_flash", 0.15,
-		{"dir": player.aim_direction, "color": cfg["color"]})
+	player._add_sprite_vfx("cartoon_4", 0.3,
+		player.global_position + player.aim_direction * 30.0,
+		0.45, player.aim_direction.angle())
 	var boom: Node2D = _boomerang_scene.instantiate()
 	boom.setup_from_config(
 		player.player_id, player.aim_direction, player.player_color, cfg)
@@ -532,8 +548,9 @@ func _ab_guided_rocket() -> void:
 	if not _can_spawn_ability(AbilityRegistry.GUIDED_ROCKET):
 		return
 	SoundManager.play_toss()
-	player._add_vfx("muzzle_flash", 0.2,
-		{"dir": player.aim_direction, "color": Color(1, 0.5, 0)})
+	player._add_sprite_vfx("slash", 0.25,
+		player.global_position + player.aim_direction * 40.0,
+		0.4, player.aim_direction.angle())
 	var rocket: Area2D = _guided_rocket_scene.instantiate()
 	rocket.setup_from_config(
 		player.player_id, player.aim_direction, player.player_color, cfg)
@@ -710,6 +727,8 @@ func _ab_black_hole() -> void:
 	if not _can_spawn_ability(AbilityRegistry.BLACK_HOLE):
 		return
 	SoundManager.play_explosion()
+	player._add_sprite_vfx("cartoon_10", 0.6,
+		player.global_position, 0.5, 0.0)
 	var hole: Node2D = _black_hole_scene.instantiate()
 	hole.setup_from_config(player.player_id, cfg)
 	hole.owner_ref = player
@@ -776,7 +795,9 @@ func _ab_heavens_wrath() -> void:
 	if not _can_spawn_ability(AbilityRegistry.HEAVENS_WRATH):
 		return
 	SoundManager.play_explosion()
-	player._add_vfx("shield_flash", 0.3)
+	player._add_sprite_vfx("slash3", 0.5,
+		player.global_position, 0.5, 0.0,
+		Color(1.0, 0.95, 0.6))
 	var wrath: Node2D = _heavens_wrath_scene.instantiate()
 	wrath.setup_from_config(
 		player.player_id, player.aim_direction, player.player_color, cfg)
@@ -798,6 +819,8 @@ func _burst_parry(count: int) -> void:
 		player.parry_visual = 0.3
 		SoundManager.play_shield()
 		player._add_vfx("shield_flash", 0.2)
+		player._add_sprite_vfx("cartoon_7", 0.4,
+			player.global_position, 0.3, 0.0)
 		player._parry_detach_grapples()
 		if player.shockwave_radius_mult > 0.0:
 			player._do_shockwave()

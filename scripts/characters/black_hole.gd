@@ -37,11 +37,24 @@ func _exit_tree() -> void:
 		owner_p.ability_entity_count[ab_id] = maxi(count - 1, 0)
 
 
+var _swirl_timer: float = 0.0
+
+
 func _physics_process(delta: float) -> void:
 	time_alive += delta
 	if time_alive >= total_lifetime:
 		queue_free()
 		return
+
+	# Periodic swirl effect — purple spiraling sprite
+	_swirl_timer -= delta
+	if _swirl_timer <= 0.0:
+		_swirl_timer = 0.4
+		var SpriteEffect := load("res://scripts/effects/sprite_effect.gd")
+		var sc := current_radius / 250.0
+		SpriteEffect.spawn(get_tree().current_scene, "cartoon_10",
+			global_position, 0.6, sc, randf() * TAU,
+			Color(0.6, 0.3, 0.9, 0.9), 4.0)
 
 	if time_alive < expand_time:
 		# Expanding phase — grow radius, pull starts immediately but weaker
