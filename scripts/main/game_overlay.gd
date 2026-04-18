@@ -211,6 +211,7 @@ func _draw_stats_overlay() -> void:
 		draw_rect(Rect2(label_x, sy - 10, bar_w * hp_ratio, 10),
 			Color(0.2, 0.8, 0.3))
 		sy += gap * 0.7
+		 
 
 		# Damage multiplier
 		_txt(font, Vector2(label_x + 20, sy), "DMG", 16.0,

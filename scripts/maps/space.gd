@@ -3,6 +3,7 @@ extends "res://scripts/maps/map_base.gd"
 
 func _init() -> void:
 	map_name = "Space"
+	platform_palette = "ice"
 	bg_color = Color(0.02, 0.02, 0.06)
 	platform_color = Color(0.3, 0.35, 0.45)
 	platform_edge_color = Color(0.5, 0.6, 0.8)

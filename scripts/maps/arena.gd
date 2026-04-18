@@ -13,6 +13,7 @@ var initial_danger_top: float = 200.0
 
 func _init() -> void:
 	map_name = "Arena"
+	platform_palette = "stone"
 	bg_color = Color(0.15, 0.08, 0.08)
 	platform_color = Color(0.45, 0.25, 0.2)
 	platform_edge_color = Color(0.7, 0.4, 0.3)

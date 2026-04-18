@@ -5,6 +5,7 @@ var clock_time: float = 0.0
 
 func _init() -> void:
 	map_name = "Clockwork"
+	platform_palette = "magma"
 	bg_color = Color(0.12, 0.1, 0.08)
 	platform_color = Color(0.5, 0.4, 0.3)
 	platform_edge_color = Color(0.7, 0.6, 0.45)

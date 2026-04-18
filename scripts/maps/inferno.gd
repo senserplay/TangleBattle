@@ -3,6 +3,7 @@ extends "res://scripts/maps/map_base.gd"
 
 func _init() -> void:
 	map_name = "Inferno"
+	platform_palette = "magma"
 	bg_color = Color(0.2, 0.05, 0.02)
 	platform_color = Color(0.35, 0.2, 0.15)
 	platform_edge_color = Color(0.55, 0.3, 0.15)

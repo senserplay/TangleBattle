@@ -21,6 +21,12 @@ var returning: bool = false
 var spin: float = 0.0
 var hit_players: Dictionary = {}  # player_id → phase (0=outgoing, 1=returning)
 
+# Vortex trail effect
+var trail_timer: float = 0.0
+const TRAIL_INTERVAL := 0.06
+var _vortex_scene: PackedScene = preload(
+	"res://scenes/effects/sprite_effect.tscn")
+
 # Trail
 var trail: Array[Vector2] = []
 const TRAIL_MAX := 10
@@ -61,6 +67,15 @@ func _physics_process(delta: float) -> void:
 	if lifetime <= 0.0:
 		queue_free()
 		return
+
+	# Vortex trail effect — spawn periodically
+	trail_timer -= delta
+	if trail_timer <= 0.0:
+		trail_timer = TRAIL_INTERVAL
+		var SpriteEffect := load("res://scripts/effects/sprite_effect.gd")
+		# Cyan horizontal slash for vortex
+		SpriteEffect.spawn(get_tree().current_scene, "cartoon_4",
+			global_position, 0.35, 0.25, spin, color, 8.0)
 
 	# Trail
 	trail.push_front(global_position)

@@ -146,6 +146,13 @@ func _physics_process(delta: float) -> void:
 func _explode() -> void:
 	exploded = true
 	SoundManager.play_explosion()
+	# Unified retro explosion sprite
+	var SpriteEffect := load("res://scripts/effects/sprite_effect.gd")
+	SpriteEffect.spawn(get_tree().current_scene, "retro_explosion",
+		global_position, 0.6, 2.5)
+	SpriteEffect.spawn(get_tree().current_scene, "retro_burst",
+		global_position, 0.5, 2.0, 0.0,
+		Color(1.0, 0.85, 0.3))
 	var cam := get_viewport().get_camera_2d()
 	if cam != null and cam.has_method("add_shake"):
 		cam.add_shake(10.0)
