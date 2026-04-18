@@ -185,6 +185,13 @@ try {
     }
 
     # 9. Merge to main, tag
+    # Godot --import pass may re-render .import files with different line endings;
+    # discard those transient changes so checkout main doesn't abort.
+    $dirtyAfterBuild = git status --porcelain
+    if ($dirtyAfterBuild) {
+        Write-Host "Discarding transient working tree changes from build pass..."
+        Invoke-Cmd "git checkout -- ."
+    }
     Write-Host "[8/10] Merging to main and tagging..."
     Invoke-Cmd "git checkout main"
     Invoke-Cmd "git merge --no-ff $releaseBranch -m `"Release $newTag`""
