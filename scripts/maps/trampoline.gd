@@ -6,6 +6,7 @@ func _init() -> void:
 	map_name = "Trampoline"
 	platform_palette = "grass"
 	bg_color = Color(0.08, 0.1, 0.18)
+	bg_theme = "clouds_blue"
 	platform_color = Color(0.3, 0.35, 0.5)
 	platform_edge_color = Color(0.45, 0.5, 0.7)
 	floor_color = Color(0.25, 0.3, 0.45)

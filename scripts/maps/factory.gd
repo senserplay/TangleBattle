@@ -5,6 +5,9 @@ func _init() -> void:
 	map_name = "Factory"
 	platform_palette = "stone"
 	bg_color = Color(0.1, 0.1, 0.12)
+	bg_theme = "dawn"
+	bg_tint = Color(0.50, 0.50, 0.55)
+	death_zone_style = "abyss"
 	platform_color = Color(0.35, 0.35, 0.38)
 	platform_edge_color = Color(0.55, 0.55, 0.6)
 	floor_color = Color(0.28, 0.28, 0.32)

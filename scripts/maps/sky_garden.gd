@@ -5,6 +5,9 @@ func _init() -> void:
 	map_name = "Sky Garden"
 	platform_palette = "grass"
 	bg_color = Color(0.15, 0.2, 0.35)
+	bg_theme = "forest"
+	bg_tint = Color(0.95, 1.0, 0.95)
+	death_zone_style = "mist"
 	platform_color = Color(0.3, 0.5, 0.35)
 	platform_edge_color = Color(0.5, 0.8, 0.45)
 	floor_color = Color(0.25, 0.4, 0.3)
