@@ -1,5 +1,49 @@
 # TangleBattle — Рабочий лог
 
+## 2026-04-19 — fix(maps): floor_strip удалён — palette-текстуры сами являются strip'ами
+
+### Проблема (по новым скриншотам)
+Поверх широких платформ виден ВТОРОЙ декоративный strip. Visible как
+дублирование — две green-grass-with-stones полосы одна над другой.
+
+### Корневая причина
+Открыл файлы `assets/textures/platforms/{grass,stone,ice,magma,wood}.png`
+и **обнаружил что это те же craftpix landscape strips**:
+- `stone.png` ≈ `landscape_strips/strip_05` (alien_teal — green grass)
+- `grass.png` ≈ `strip_01` (grass + dirt)
+- `ice.png` ≈ `strip_12` (ice frozen)
+- `magma.png` ≈ `strip_03` (lava crystal)
+- `wood.png` ≈ `strip_07` (sand + grass)
+
+`_draw_themed_platform()` рендерит ВСЮ palette-текстуру (с deco grass tops
+и substrate dirt) натянутую на shape платформы. Это уже выглядит как
+strip. А я сверху накладывал floor_strip — получалось ДВА strip'а.
+
+Особенно плохо в `mystic_hollow`: palette="stone" (зелёный) + floor_strip
+"amethyst_purple" (фиолетовый) → видно green-strip ниже purple-strip'а.
+
+### Решение
+Удалена вся `floor_strip` система целиком:
+- Поле `floor_strip` и cache `_strip_tex_cache` из `map_base.gd`
+- Функции `_get_strip_texture` и `_draw_floor_strip_overlay`
+- Wrapper в `_draw_platforms` (`if floor_strip != "" ...`)
+- `is_floor` local var (использовалась только для overlay)
+- `floor_strip = "..."` строки из 5 карт (forest_glade, frozen_lake,
+  ancient_ruins, mystic_hollow, volcano_crater)
+- Папка `assets/textures/platforms/strips/` удалена (6 PNG + .import)
+
+Теперь palette-текстура сама даёт визуальный strip, без overlay-наслоений.
+
+### Файлы
+- `scripts/maps/map_base.gd`: -50 строк
+- 5 map скриптов: -1 строка каждая
+- `assets/textures/platforms/strips/` удалена
+
+### Тест
+Godot 4.6.1: компилируется без новых warning'ов.
+
+---
+
 ## 2026-04-19 — fix(maps): strip-текстуры были RGB без alpha (чёрный фон)
 
 ### Проблема (по новому скриншоту)

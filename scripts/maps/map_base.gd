@@ -58,12 +58,9 @@ var bg_tint: Color = Color.WHITE
 var death_zone_style: String = "default"
 
 # Platform material: "" (default capsule) or "grass"/"stone"/"wood"/"ice"/"magma"
+# The palette textures are themselves decorative landscape strips, so they
+# already provide grass/ice/lava deco on top of the platform body.
 var platform_palette: String = ""
-# Decorative strip texture overlaid on top edge of "floor"-tagged platforms.
-# Names available: "grass_dirt", "lava_crystal", "alien_teal", "sand_grass",
-#                  "amethyst_purple", "ice_frozen". Empty = no overlay.
-var floor_strip: String = ""
-static var _strip_tex_cache: Dictionary = {}
 
 var spawn_points: Array[Vector2] = [
 	Vector2(800, 2600), Vector2(4000, 2600),
@@ -771,7 +768,6 @@ func _draw_platforms() -> void:
 		var w: float = data[2]
 		var h: float = data[3]
 		var platform_type = data[4] if data.size() > 4 else false
-		var is_floor: bool = (platform_type is bool and not platform_type)
 		if platform_type is String and platform_type == "sticky":
 			# Purple/web-textured sticky platforms
 			var sticky_fill := Color(0.45, 0.15, 0.55, 0.9)
@@ -791,49 +787,6 @@ func _draw_platforms() -> void:
 			_draw_capsule(x, y, w, h, platform_color, platform_edge_color)
 		else:
 			_draw_capsule(x, y, w, h, floor_color, floor_edge_color)
-		# Optional decorative strip overlay on wide floor platforms
-		if floor_strip != "" and is_floor and w >= 500.0:
-			_draw_floor_strip_overlay(x, y, w, h)
-
-
-static func _get_strip_texture(strip_name: String) -> Texture2D:
-	if _strip_tex_cache.has(strip_name):
-		return _strip_tex_cache[strip_name]
-	var path := "res://assets/textures/platforms/strips/%s.png" % strip_name
-	var tex: Texture2D = null
-	if ResourceLoader.exists(path):
-		tex = load(path)
-	_strip_tex_cache[strip_name] = tex
-	return tex
-
-
-func _draw_floor_strip_overlay(cx: float, cy: float, w: float, h: float) -> void:
-	# Decorative top-only strip (grass/ice/crystals) sitting on a wide
-	# floor platform. Source PNGs are ~904x90 with the deco running across
-	# the full height (alpha is preserved — black bg was made transparent
-	# at asset prep time). The strip's bottom edge anchors at the
-	# platform's top edge so the deco stands up above the platform.
-	var tex: Texture2D = _get_strip_texture(floor_strip)
-	if tex == null:
-		return
-	var src_size: Vector2 = tex.get_size()
-	# Display height: scaled-up version of source so it reads at game scale
-	var disp_h: float = 75.0
-	var tile_w: float = disp_h * (src_size.x / src_size.y)
-	var rect_w: float = w + 40.0
-	var x_start: float = cx - rect_w / 2.0
-	var platform_top: float = cy - h / 2.0
-	# Strip's bottom edge sits ~10px below platform top (slight overlap so
-	# there's no visible seam between strip and platform body)
-	var y_top: float = platform_top - disp_h + 10.0
-	var n_tiles: int = int(ceil(rect_w / tile_w))
-	for i in range(n_tiles):
-		var tx: float = x_start + i * tile_w
-		var tw: float = minf(tile_w, x_start + rect_w - tx)
-		var dst := Rect2(Vector2(tx, y_top), Vector2(tw, disp_h))
-		var src := Rect2(Vector2.ZERO,
-			Vector2(src_size.x * (tw / tile_w), src_size.y))
-		draw_texture_rect_region(tex, dst, src)
 
 
 # ══════════════════ TEXTURED THEMED PLATFORMS ══════════════════
