@@ -1,5 +1,55 @@
 # TangleBattle — Рабочий лог
 
+## 2026-04-19 — fix(maps): strip-overlay substrate + ancient_ruins блоки + космос лаги
+
+### Проблемы по скриншотам
+
+**1. Frozen Lake — два слоя на платформе.** Strip overlay рисовал ВСЮ
+текстуру (110px), а у `ice_frozen.png` под верхушкой ice crystals идёт
+substrate (тёмный лёд + columns). Этот substrate бликовал ниже платформы
+и создавал визуальный "two-tier" mess.
+
+**Fix:** Только TOP 40% strip-текстуры через `draw_texture_rect_region`
+(SRC_DECO_RATIO = 0.40). Display height снижен с 110 → 70px. Теперь
+только декорация (ice crystals / grass tufts / lava crystals) вылезает
+над платформой, без substrate.
+
+**2. Ancient Ruins — непонятные коричневые блоки.** Destructible columns
+рендерились как plain brown капсулы (90×180px) без визуального индикатора
+"эту штуку можно сломать". Игрок видел абстрактные прямоугольники.
+
+**Fix:** Удалены destructibles. Заменены на 2 raised stone-block plinths
+(280×130, тип `false` = solid floor) — это понятные каменные постаменты.
+Поверх них поставлены **резные temple orbs** (decorative balls 55px),
+плюс добавлен **sky orb 45px** над алтарём. Теперь сцена читается как
+"храмовые постаменты с орбами".
+
+**3. Deep Space — лаги.** Procedural starfield итерировал ВСЁ bg_rect
+(extended map ± 3500 = ~12400×10200) с шагом 180-380px → ~3000+ ячеек ×
+2 layers × 60fps = ~360k cell-evals/sec + sin/cos calls. Плюс
+`_dz_stars` рисовал 40 star-circles на каждый из 4 dz rects = ещё 160
+звёзд/frame.
+
+**Fix:**
+- `stars_proc` теперь **viewport-culled**: получает `cam.position` +
+  `viewport.size`, вычисляет видимый прямоугольник + margin, итерирует
+  только cell-grid range пересекающийся с viewport. Тысячи cells →
+  десятки. Параллакс остаётся deterministic (origin сдвинут).
+- Spacing увеличен 180-380 → 320-540px, skip 60% → 75% (sparser).
+- `_dz_stars` упрощён: убраны star particles (bg даёт их), оставлен
+  только tinted dark veil + soft edge. -160 circles/frame.
+
+### Файлы
+- `scripts/maps/map_base.gd`: `_draw_floor_strip_overlay` (top-only),
+  `stars_proc` (viewport cull), `_dz_stars` (упрощён), shadowing fix
+- `scripts/maps/ancient_ruins.gd`: destructibles удалены, заменены
+  plinths + temple orbs
+
+### Тест
+Godot 4.6.1: компилируется без новых warning'ов.
+
+---
+
 ## 2026-04-19 — feat(maps): полный rewrite пула карт — 18 → 8 уникальных, тематически проработанных
 
 ### Запрос пользователя

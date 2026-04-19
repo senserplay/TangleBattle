@@ -415,32 +415,39 @@ func _draw_themed_background() -> void:
 					bg_rect.size + tex_size * 2.0)
 				draw_texture_rect(tex, dst2, true, tint)
 			"stars_proc":
-				# Deterministic procedural starfield across an extended area.
-				# Density driven by scroll_factor (more scroll = denser layer).
-				# 1 star per ~140 px² (sparse) so eyes don't strain.
-				var area := bg_rect.grow(0.0)
+				# Deterministic procedural starfield, viewport-culled.
+				# Only iterates cells inside the visible camera area + margin
+				# instead of the full extended bg_rect — keeps frame cost
+				# bounded regardless of map size.
+				var vp := get_viewport()
+				var vp_size: Vector2 = vp.get_visible_rect().size if vp else Vector2(1920, 1080)
+				var view_rect := Rect2(cam_pos - vp_size, vp_size * 2.0)
 				var seed_off: int = int(scroll * 1000.0) + 7
-				# Number of stars proportional to area / spacing²
-				var spacing_px := 180.0 + (1.0 - scroll) * 200.0
-				var cols: int = int(area.size.x / spacing_px) + 1
-				var rows: int = int(area.size.y / spacing_px) + 1
-				var twinkle_t := float(Engine.get_physics_frames()) * 0.02
-				for cx in range(cols):
-					for cy in range(rows):
+				var spacing_px: float = 320.0 + (1.0 - scroll) * 220.0
+				# Convert visible area into cell-grid range, with
+				# parallax-shifted origin so positions stay deterministic.
+				var origin := bg_rect.position - parallax
+				var col_min: int = int(floor((view_rect.position.x - origin.x) / spacing_px)) - 1
+				var col_max: int = int(ceil((view_rect.end.x - origin.x) / spacing_px)) + 1
+				var row_min: int = int(floor((view_rect.position.y - origin.y) / spacing_px)) - 1
+				var row_max: int = int(ceil((view_rect.end.y - origin.y) / spacing_px)) + 1
+				var twinkle_t: float = float(Engine.get_physics_frames()) * 0.02
+				for cx in range(col_min, col_max):
+					for cy in range(row_min, row_max):
 						var idx: int = cx * 977 + cy * 31 + seed_off
+						var rs_seed: float = sin(float(idx) * 39.347) * 43758.5453
+						var rs: float = rs_seed - floor(rs_seed)
+						# Skip 75% of cells for sparsity
+						if rs > 0.25:
+							continue
 						var rx_seed: float = sin(float(idx) * 12.9898) * 43758.5453
 						var ry_seed: float = sin(float(idx) * 78.233) * 43758.5453
-						var rs_seed: float = sin(float(idx) * 39.347) * 43758.5453
 						var rx: float = rx_seed - floor(rx_seed)
 						var ry: float = ry_seed - floor(ry_seed)
-						var rs: float = rs_seed - floor(rs_seed)
-						# Skip 60% of cells for sparsity
-						if rs > 0.4:
-							continue
-						var sx: float = area.position.x + (float(cx) + rx) * spacing_px + parallax.x
-						var sy: float = area.position.y + (float(cy) + ry) * spacing_px + parallax.y
-						var radius: float = 1.5 + rs * 4.5
-						var twink: float = (sin(twinkle_t * 1.7 + float(idx) * 0.7) * 0.4 + 0.6)
+						var sx: float = origin.x + (float(cx) + rx) * spacing_px + parallax.x
+						var sy: float = origin.y + (float(cy) + ry) * spacing_px + parallax.y
+						var radius: float = 1.8 + rs * 6.0
+						var twink: float = sin(twinkle_t * 1.7 + float(idx) * 0.7) * 0.35 + 0.65
 						var col := Color(tint.r, tint.g, tint.b, tint.a * twink)
 						draw_circle(Vector2(sx, sy), radius, col)
 			"scatter_x":
@@ -616,15 +623,10 @@ func _draw_dz_abyss(rect: Rect2) -> void:
 
 
 func _draw_dz_stars(rect: Rect2) -> void:
-	# Open space — almost transparent so the bg shows through
-	draw_rect(rect, Color(0.02, 0.02, 0.06, 0.55))
-	var t := float(Engine.get_physics_frames()) * 0.02
-	for i in range(40):
-		var sx := rect.position.x + fmod(i * 311.0, rect.size.x)
-		var sy := rect.position.y + fmod(i * 419.0, rect.size.y)
-		var twink := (sin(t + i * 0.7) * 0.5 + 0.5) * 0.9 + 0.1
-		draw_circle(Vector2(sx, sy), 2.5 + (i % 3) * 0.8,
-			Color(1.0, 0.95, 0.85, twink))
+	# Open space — translucent dark veil so the proc-starfield bg shows
+	# through. We skip extra star particles here because the bg already
+	# provides them; just darken slightly + soft fade.
+	draw_rect(rect, Color(0.02, 0.02, 0.06, 0.40))
 	_dz_soft_edge(rect, Color(0.02, 0.02, 0.06, 0.55), 240.0)
 
 
@@ -794,40 +796,41 @@ func _draw_platforms() -> void:
 			_draw_floor_strip_overlay(x, y, w, h)
 
 
-static func _get_strip_texture(name: String) -> Texture2D:
-	if _strip_tex_cache.has(name):
-		return _strip_tex_cache[name]
-	var path := "res://assets/textures/platforms/strips/%s.png" % name
+static func _get_strip_texture(strip_name: String) -> Texture2D:
+	if _strip_tex_cache.has(strip_name):
+		return _strip_tex_cache[strip_name]
+	var path := "res://assets/textures/platforms/strips/%s.png" % strip_name
 	var tex: Texture2D = null
 	if ResourceLoader.exists(path):
 		tex = load(path)
-	_strip_tex_cache[name] = tex
+	_strip_tex_cache[strip_name] = tex
 	return tex
 
 
 func _draw_floor_strip_overlay(cx: float, cy: float, w: float, h: float) -> void:
-	# Lay decorative grass/ice/lava strip on top of a wide floor platform.
-	# Source strip is ~960x400 with a visible "ground line" near 30% from top;
-	# we anchor that line to the platform's top edge so the deco rises up
-	# above the platform surface.
+	# Lay decorative top strip on a wide floor platform — ONLY the top ~40%
+	# of the source texture (the grass/ice/crystal deco), so the substrate
+	# (dirt/water/dark ice) doesn't bleed under the platform body.
 	var tex: Texture2D = _get_strip_texture(floor_strip)
 	if tex == null:
 		return
-	var disp_h := 110.0
+	const SRC_DECO_RATIO := 0.40  # top 40% of the strip = visible deco
+	var disp_h := 70.0
 	var src_size: Vector2 = tex.get_size()
-	var tile_w: float = disp_h * (src_size.x / src_size.y)
-	var rect_w: float = w + 80.0
-	var ground_offset: float = disp_h * 0.30  # where deco "soil" begins
+	var src_h: float = src_size.y * SRC_DECO_RATIO
+	var tile_w: float = disp_h * (src_size.x / src_h)
+	var rect_w: float = w + 60.0
+	# Anchor the strip's bottom edge at the platform's top edge so the
+	# deco rises above the platform without overlapping its body.
 	var x_start: float = cx - rect_w / 2.0
-	var y_top: float = cy - h / 2.0 - (disp_h - ground_offset)
-	# Tile horizontally so wide platforms get repeating deco
+	var y_top: float = cy - h / 2.0 - disp_h * 0.85
 	var n_tiles: int = int(ceil(rect_w / tile_w))
 	for i in range(n_tiles):
 		var tx: float = x_start + i * tile_w
 		var tw: float = minf(tile_w, x_start + rect_w - tx)
 		var dst := Rect2(Vector2(tx, y_top), Vector2(tw, disp_h))
 		var src := Rect2(Vector2.ZERO,
-			Vector2(src_size.x * (tw / tile_w), src_size.y))
+			Vector2(src_size.x * (tw / tile_w), src_h))
 		draw_texture_rect_region(tex, dst, src)
 
 
