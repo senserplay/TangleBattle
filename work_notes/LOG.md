@@ -1,5 +1,262 @@
 # TangleBattle — Рабочий лог
 
+## 2026-04-19 — fix(maps): корневая причина — wrong scale + procedural starfield
+
+### Проблема
+Скриншоты показали 2 серьёзных бага:
+1. **Dawn theme** — всё ещё 2 слоя силуэтов (горизонт + foreground trees) при
+  тёмных tint'ах сливаются в "vertical repetition"
+2. **Space stars** — рябит в глазах: повторяются плотно по вертикали
+
+### Корневая причина
+Проверил реальные размеры текстур:
+- `dawn/02.png`, `07.png`, `08.png` = **1980x1080** (не маленькие!)
+- `forest/*` = 928x793
+- `clouds/*` = 576x324
+- **`stars.png` = 144x9** (тонкая полоска, 9 пикселей высотой!)
+
+**Я скейлил dawn в 14-16x** при том что текстура уже 1980x1080. Получалось
+27000+ пикселей — слои катастрофически большие, что усугубляло наложение.
+
+**stars.png — 9px высотой**, при tile_xy в любом scale тайлится по вертикали
+плотными рядами (виде vertical pinstripes).
+
+### Что сделано
+
+#### 1. Dawn — scale 14x → 1.5-2x, оставлен только горизонт
+- `02.png` (sky+sun) — `stretch_full` scale=1.5 (текстура уже большая)
+- `07.png` (red landscape) — `tile_x` scale=2.0 (один силуэт-горизонт)
+- **Удалён** `08.png` (bare trees) — был лишним overlap
+Теперь dawn — чистый sky + чистый горизонт.
+
+#### 2. Forest упрощён — sky + 1 foreground band
+- `00_sky.png` stretch_full
+- `08_front_trees.png` scatter_x scale=8 (был 14x)
+- Distant tier удалён — был источником "горизонтальных полос"
+
+#### 3. Clouds — sky + 1 cumulus band
+- Удалён `01_far.png` (был источник vertical repeat)
+- Только `03_close.png` scatter_x scale=10x
+
+#### 4. Space — procedural starfield (новый mode `stars_proc`)
+Текстура 144x9 непригодна для tile_xy. Заменена на полностью procedural:
+- Deterministic grid 180-380px spacing (зависит от scroll factor)
+- 60% клеток пропускается → редкие звёзды
+- Per-star: random offset, radius 1.5-6px, twinkle alpha
+- **2 layer'а** stars_proc (foreground big stars + background small stars)
+  с разным spacing для depth illusion
+
+### Файлы
+- `scripts/maps/map_base.gd`:
+  - BG_THEMES упрощён (-15 строк layer'ов)
+  - `_get_theme_layers` поддерживает null-textures для proc modes
+  - Новый case `stars_proc` (+30 строк)
+  - Все scale'ы выверены под реальные размеры текстур
+
+### Тест
+Godot 4.6.1: компилируется чисто. Pre-existing warnings only.
+
+---
+
+## 2026-04-19 — fix(maps): меньше overlap слоёв + soft edges на death zones + реже звёзды
+
+### Запрос пользователя
+По скриншотам видны проблемы:
+- На jungle деревья наслаиваются "снизу вверх" — горизонтальные полосы
+  мелких деревьев одна над другой
+- Резкие переходы между death zone и playable area
+- В space звёзды слишком плотно
+- Видны вертикальные швы (это split-screen, см. ниже)
+
+### Что сделано
+
+#### 1. Упрощены темы — убран overlap silhouettes
+До: 6-8 слоёв per тема, многие с tree silhouettes на разной y → визуально
+наслаивались бандами.
+После: **3 layer'а максимум** на тему (sky + 1 distant horizon + 1 foreground).
+- `forest`: 3 layer'а (sky → 1 distant tree band → 1 big foreground trees)
+- `dawn`: 3 layer'а (sky+sun → 1 red landscape → 1 bare front trees)
+- `clouds_blue/sunset`: 3 layer'а (sky → 1 thin far cloud → 1 big cumulus)
+- `space`: **1 layer** stars (был 2 — `stars_special` убран)
+
+Plus масштабы подняты ещё выше для foreground (14-16x), чтобы каждый объект
+был заметен и редко повторялся.
+
+#### 2. Soft edge на death zones (`_dz_soft_edge` helper)
+Новая функция — рисует deterministic gradient strip от edge зоны в сторону
+playable area. Alpha спадает с `pow(1-t, 1.6)` — мягкий нелинейный спад на
+~140-260px. Применён ко всем стилям death-zone (lava 220, void 200, abyss
+220, stars 240, spikes 140, swamp 200, mist 260, default 120).
+
+Теперь стенка death zone "втекает" туманом/дымом в зону игрока вместо
+жёсткой полосы.
+
+#### 3. Реже звёзды (space)
+- Был: 2 layer'а stars + stars_special, оба scale=4x
+- Стал: 1 layer stars, scale=12x → меньше копий на экран, звёзды крупнее
+- В `_draw_dz_stars` сократил count 80→40, увеличил радиус 1.5→2.5
+
+#### 4. Больше bg padding
+- Был: bg_rect = map ± 1500
+- Стал: bg_rect = map ± 3500 — невидно "конец неба" даже при отдалённой
+  камере или больших картах
+
+### О split-screen швах
+Скриншоты показали вертикальные швы между половинами экрана. Это
+**неустранимо в текущей архитектуре** — каждый sub-viewport рендерит сцену
+со своей камеры, parallax считается на её позиции, поэтому в каждой
+половине bg сдвинут по-разному. Решение требовало бы перенести bg в
+CanvasLayer per-viewport, что серьёзный рефакторинг.
+
+### Файлы
+- `scripts/maps/map_base.gd`: упрощён BG_THEMES (-30 строк layer'ов),
+  добавлен `_dz_soft_edge` helper (+38 строк), 8 death-zone функций
+  обновлены вызовом `_dz_soft_edge`, bg_rect padding расширен.
+
+### Тест
+Godot 4.6.1: компилируется без новых warning'ов. Pre-existing warnings
+от sprite_effect/boomerang/player не связаны.
+
+---
+
+## 2026-04-19 — fix(maps): крупнее silhouettes + scatter_x mode (меньше повтора, больше 3D)
+
+### Запрос пользователя
+"На картах одни и те же объекты очень мелкие и часто повторяются, нужно
+сделать их более крупными и разнообразными, 3d эффект хорошо работает."
+
+### Что сделано
+
+#### 1. Новый mode `scatter_x` в `_draw_themed_background`
+Раньше foreground silhouettes использовали `tile_x` — одна и та же текстура
+повторяется идеально. Теперь `scatter_x`:
+- Расставляет N инстансов вдоль карты с deterministic pseudo-random позициями
+- Каждый инстанс: размер 0.85x..1.30x, jitter ±35% spacing, 50% горизонтальный flip
+- Стабильно между фреймами (seed на индексе) — без мерцания
+- Spacing = `tex_size.x * 0.65` (лёгкий overlap для естественности)
+
+#### 2. Увеличены масштабы текстур (объекты крупнее)
+- `forest`: 5x → 9-12x (foreground trees 12x)
+- `dawn`: 7x → 12-16x (front trees 16x)
+- `clouds_blue/sunset`: 7x → 10-14x (большие кучевые облака)
+
+#### 3. Больше layer-вариаций (меньше повтора одной картинки)
+- `forest`: добавлены `01_lights` (sun halo), `07_close_trees` — теперь 8
+  слоёв вместо 6 (всего в паке 10)
+- `dawn`: пересобран — правильный порядок layer'ов:
+  `02 (sky+sun) → 07 (red landscape) → 04 (pines) → 03 (mid) → 05 (purple
+  pines) → 08 (bare trees foreground)`. Раньше использовал layer 06 как sky
+  по ошибке — это нижний градиент.
+- `clouds`: mid + close переведены в `scatter_x` для разнобоя
+
+#### 4. Гибридный подход tile_x + scatter_x
+- **Дальние слои** остаются `tile_x` (горизонт читается ровно)
+- **Средние и foreground** используют `scatter_x` (deterministic variety)
+
+### Файлы
+- `scripts/maps/map_base.gd` — новый match case `scatter_x` в
+  `_draw_themed_background` (+30 строк), пересобраны 4 темы (forest, dawn,
+  clouds_blue, clouds_sunset)
+
+### Тест
+Godot 4.6.1: запускается без ошибок. Все warning'и — pre-existing
+(sprite_effect, boomerang, player) и не связаны с этим изменением.
+
+---
+
+## 2026-04-19 — feat(maps): текстурные бэкграунды + тематические death zones на всех 16 картах + 2 новые карты
+
+### Запрос пользователя
+"Я добавил 4 новых архива для бэкграунда карт в my_assets, а еще там был до
+этого архив craftpix-net-558275-free-sky-with-clouds-background-pixel-art-set.
+Замени бэкграунд, зоны смерти на ВСЕХ картах, используя ассеты из этих
+архивов, можно также добавить новые карты под данные тематики."
+
+### Что сделано
+
+#### 1. Скопированы ассеты в `assets/textures/backgrounds/`
+| Папка | Источник | Содержимое |
+|-------|----------|-----------|
+| `forest/` | Free Pixel Art Forest | 10 слоёв (sky → grass) |
+| `dawn/` | The Dawn | 8 слоёв silhouettes (горы) |
+| `clouds_blue/` | craftpix-558275 / Clouds 1 | 4 слоя (небо + облака) |
+| `clouds_sunset/` | craftpix-558275 / Clouds 4 | 4 слоя (закат + облака) |
+| `space/` | SpaceBackgroundSource | stars.png + stars_special.png |
+| `nature/` | Nature Landscapes | n1..n8 — full-frame |
+
+#### 2. Новый bg-theme система в `map_base.gd`
+- Константа `BG_THEMES` — словарь тем с layers config
+- Каждый layer: `[path, scroll, anchor_y, offset_y, scale, tint, mode]`
+  - `mode = "stretch_full"` (одно растянутое изображение для неба)
+  - `mode = "tile_x"` (горизонтальная полоса с tile-репитом)
+  - `mode = "tile_xy"` (звёзды — тайл в обоих направлениях)
+- Static cache `_bg_layer_cache` — текстуры подгружаются 1 раз на тему
+- Параллакс: layer.scroll = 0.0 → закреплено к карте, 1.0 → следует за камерой
+
+Карты задают: `bg_theme = "forest"`, `bg_tint = Color(...)`,
+`death_zone_style = "..."` в `_init()` — всё остальное base class рисует сам.
+
+#### 3. Тематические death zones (`death_zone_style`)
+Заменили старые красные полоски на стилизованные зоны:
+- `lava` — оранжевое свечение, пузырьки, hot edge (volcano)
+- `void` — тёмно-фиолетовый с мерцающими частицами (mirror)
+- `abyss` — чёрный ink с фиолетовыми каплями + glow edge
+- `stars` — открытое пространство со звёздами (space)
+- `spikes` — красная зона с зубчатой кромкой (arena)
+- `swamp` — токсично-зелёная жижа с пузырями (jungle)
+- `mist` — холодный голубой туман (ice_cave, sky)
+- `default` — старый красный striped (fallback)
+
+#### 4. Назначение тем по 16 картам
+| Карта | bg_theme | bg_tint | death_zone |
+|-------|----------|---------|-----------|
+| arena | dawn | warm sunset | spikes |
+| workshop | dawn | dusk grey | abyss |
+| sky_garden | forest | bright | mist |
+| volcano | clouds_sunset | hot orange | lava |
+| ice_cave | clouds_blue | cold blue | mist |
+| tower | dawn | twilight purple | abyss |
+| factory | dawn | grey | abyss |
+| jungle | forest | natural | swamp |
+| space | space | (white) | stars |
+| dungeon | dawn | night purple | abyss |
+| cloud_kingdom | clouds_blue | (white) | mist |
+| clockwork | dawn | brass | abyss |
+| mirror | clouds_sunset | violet | void |
+| fortress | dawn | noble | (walls — N/A) |
+| inferno | clouds_sunset | crimson | (fire walls — N/A) |
+| trampoline | clouds_blue | (white) | (bouncy walls — N/A) |
+
+#### 5. Две новые карты
+- **Meadow** (`scenes/maps/meadow.tscn`, `scripts/maps/meadow.gd`):
+  forest theme с белым tint, swamp pit, открытый верх. 11 платформ
+  scattered как лесные островки на 5000×3200 поле.
+- **Twin Peaks** (`scenes/maps/twin_peaks.tscn`,
+  `scripts/maps/twin_peaks.gd`): dawn theme с тёплым sunset tint, abyss
+  внизу. Две большие плато-горы (1500px) + sky bridge между вершинами +
+  телепорт между twin summits на 5200×3200.
+- Зарегистрированы в `game.gd::MAP_SCENES` (теперь 18 карт).
+
+### Файлы
+- **Новые ассеты**: ~30 файлов в `assets/textures/backgrounds/{forest,dawn,clouds_blue,clouds_sunset,space,nature}/`
+- **Новые скрипты**: `scripts/maps/meadow.gd`, `scripts/maps/twin_peaks.gd`
+- **Новые сцены**: `scenes/maps/meadow.tscn`, `scenes/maps/twin_peaks.tscn`
+- **map_base.gd**: +260 строк (BG_THEMES, _draw_themed_background,
+  _draw_themed_danger_zones, 7 функций dz_lava/void/abyss/stars/spikes/swamp/mist)
+- **16 map scripts**: добавлены 2-3 строки `bg_theme/bg_tint/death_zone_style`
+- **game.gd**: +2 строки в MAP_SCENES
+
+### Тест
+Godot 4.6.1 — `mcp__godot__run_project` (jungle.tscn + main): запускается без
+ошибок и без warnings. Class cache obnovлён корректно.
+
+### Дальше
+- Visual playtest всех 16 карт (нужно проиграть в lobby) — поправить anchor_y
+  для конкретных карт если silhouettes окажутся слишком высоко/низко
+- Возможно добавить subtle ambient звуки под темы (forest cricket, dawn wind)
+
+---
+
 ## 2026-04-19 — feat: текстура yarn ball вместо процедурных кругов на всех UI экранах
 
 ### Запрос пользователя

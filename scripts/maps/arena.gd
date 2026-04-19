@@ -15,6 +15,9 @@ func _init() -> void:
 	map_name = "Arena"
 	platform_palette = "stone"
 	bg_color = Color(0.15, 0.08, 0.08)
+	bg_theme = "dawn"
+	bg_tint = Color(1.0, 0.65, 0.55)
+	death_zone_style = "spikes"
 	platform_color = Color(0.45, 0.25, 0.2)
 	platform_edge_color = Color(0.7, 0.4, 0.3)
 	floor_color = Color(0.35, 0.2, 0.15)

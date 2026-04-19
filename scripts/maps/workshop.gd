@@ -5,6 +5,9 @@ func _init() -> void:
 	map_name = "Workshop"
 	platform_palette = "wood"
 	bg_color = Color(0.14, 0.11, 0.16)
+	bg_theme = "dawn"
+	bg_tint = Color(0.55, 0.50, 0.60)
+	death_zone_style = "abyss"
 	platform_color = Color(0.45, 0.3, 0.2)
 	platform_edge_color = Color(0.7, 0.5, 0.3)
 	floor_color = Color(0.35, 0.22, 0.15)

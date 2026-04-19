@@ -5,6 +5,9 @@ func _init() -> void:
 	map_name = "Volcano"
 	platform_palette = "magma"
 	bg_color = Color(0.18, 0.08, 0.05)
+	bg_theme = "clouds_sunset"
+	bg_tint = Color(1.0, 0.70, 0.50)
+	death_zone_style = "lava"
 	platform_color = Color(0.4, 0.25, 0.15)
 	platform_edge_color = Color(0.8, 0.4, 0.15)
 	floor_color = Color(0.35, 0.18, 0.1)

@@ -20,6 +20,8 @@ const MAP_SCENES: Array[String] = [
 	"res://scenes/maps/fortress.tscn",
 	"res://scenes/maps/inferno.tscn",
 	"res://scenes/maps/trampoline.tscn",
+	"res://scenes/maps/meadow.tscn",
+	"res://scenes/maps/twin_peaks.tscn",
 ]
 
 @onready var map_container: Node2D = $MapContainer

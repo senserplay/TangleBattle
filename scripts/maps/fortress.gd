@@ -6,6 +6,8 @@ func _init() -> void:
 	map_name = "Fortress"
 	platform_palette = "wood"
 	bg_color = Color(0.15, 0.12, 0.1)
+	bg_theme = "dawn"
+	bg_tint = Color(0.85, 0.75, 0.65)
 	platform_color = Color(0.4, 0.35, 0.28)
 	platform_edge_color = Color(0.55, 0.48, 0.38)
 	floor_color = Color(0.35, 0.28, 0.22)
