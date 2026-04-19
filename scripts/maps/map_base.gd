@@ -808,29 +808,31 @@ static func _get_strip_texture(strip_name: String) -> Texture2D:
 
 
 func _draw_floor_strip_overlay(cx: float, cy: float, w: float, h: float) -> void:
-	# Lay decorative top strip on a wide floor platform — ONLY the top ~40%
-	# of the source texture (the grass/ice/crystal deco), so the substrate
-	# (dirt/water/dark ice) doesn't bleed under the platform body.
+	# Decorative top-only strip (grass/ice/crystals) sitting on a wide
+	# floor platform. Source PNGs are ~904x90 with the deco running across
+	# the full height (alpha is preserved — black bg was made transparent
+	# at asset prep time). The strip's bottom edge anchors at the
+	# platform's top edge so the deco stands up above the platform.
 	var tex: Texture2D = _get_strip_texture(floor_strip)
 	if tex == null:
 		return
-	const SRC_DECO_RATIO := 0.40  # top 40% of the strip = visible deco
-	var disp_h := 70.0
 	var src_size: Vector2 = tex.get_size()
-	var src_h: float = src_size.y * SRC_DECO_RATIO
-	var tile_w: float = disp_h * (src_size.x / src_h)
-	var rect_w: float = w + 60.0
-	# Anchor the strip's bottom edge at the platform's top edge so the
-	# deco rises above the platform without overlapping its body.
+	# Display height: scaled-up version of source so it reads at game scale
+	var disp_h: float = 75.0
+	var tile_w: float = disp_h * (src_size.x / src_size.y)
+	var rect_w: float = w + 40.0
 	var x_start: float = cx - rect_w / 2.0
-	var y_top: float = cy - h / 2.0 - disp_h * 0.85
+	var platform_top: float = cy - h / 2.0
+	# Strip's bottom edge sits ~10px below platform top (slight overlap so
+	# there's no visible seam between strip and platform body)
+	var y_top: float = platform_top - disp_h + 10.0
 	var n_tiles: int = int(ceil(rect_w / tile_w))
 	for i in range(n_tiles):
 		var tx: float = x_start + i * tile_w
 		var tw: float = minf(tile_w, x_start + rect_w - tx)
 		var dst := Rect2(Vector2(tx, y_top), Vector2(tw, disp_h))
 		var src := Rect2(Vector2.ZERO,
-			Vector2(src_size.x * (tw / tile_w), src_h))
+			Vector2(src_size.x * (tw / tile_w), src_size.y))
 		draw_texture_rect_region(tex, dst, src)
 
 
