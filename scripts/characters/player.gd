@@ -198,7 +198,7 @@ var roll_rotation: float = 0.0          # accumulated rolling angle from movemen
 const BODY_TEXTURE_SIZE := 512.0        # native px (texture is square 512x512)
 const FACE_TEXTURE_PATH := "res://assets/characters/face/face_%s.png"
 const BODY_TEXTURE_PATH := "res://assets/characters/body/yarn_ball.png"
-const SPRITE_FILL_FACTOR := 1.7         # ball texture has ~60% real ball, scale up
+const SPRITE_FILL_FACTOR := 1.4         # ball texture has ~70% real ball, scale up
 
 # Status effect particles
 var burn_particles: Array[Dictionary] = []
@@ -249,9 +249,14 @@ func _setup_visual_sprites() -> void:
 	var body_tex: Texture2D = null
 	if ResourceLoader.exists(BODY_TEXTURE_PATH):
 		body_tex = load(BODY_TEXTURE_PATH)
+	else:
+		push_error("Player: missing body texture %s" % BODY_TEXTURE_PATH)
 	body_sprite = Sprite2D.new()
 	body_sprite.texture = body_tex
-	body_sprite.z_index = -2  # below particles, above background
+	# Use absolute z so platforms (z=0) don't occlude the player.
+	body_sprite.z_as_relative = false
+	body_sprite.z_index = 5
+	body_sprite.modulate = player_color
 	add_child(body_sprite)
 
 	# Face sprite — emotion overlay (not tinted, stays upright)
@@ -259,9 +264,12 @@ func _setup_visual_sprites() -> void:
 		var path: String = FACE_TEXTURE_PATH % emo
 		if ResourceLoader.exists(path):
 			face_textures[emo] = load(path)
+		else:
+			push_warning("Player: missing face %s" % path)
 	face_sprite = Sprite2D.new()
 	face_sprite.texture = face_textures.get("happy", null)
-	face_sprite.z_index = -1
+	face_sprite.z_as_relative = false
+	face_sprite.z_index = 6  # above body
 	add_child(face_sprite)
 	current_emotion = "happy"
 

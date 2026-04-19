@@ -1,5 +1,63 @@
 # TangleBattle — Рабочий лог
 
+## 2026-04-19 — fix: персонаж не виден за платформой + белые внутренности лиц
+
+### Проблемы по скриншоту пользователя
+1. **Тело клубка не отображается** — видны только HP-бар и иконки способностей,
+   персонажа нет
+2. **Лица без белых элементов** — глазные яблоки и зубы прозрачные
+
+### Причины
+
+**#1 z_index**: спрайты создавались с `z_index = -2` (body) и `-1` (face),
+а `z_as_relative` по умолчанию `true`. Поэтому абсолютный z = parent_z + (-2)
+= -2. Платформы рисуются на z=0 → персонаж оказывался ЗА платформой. HP-бар
+и иконки способностей рисовались через _draw() родителя на z=0 → они видны.
+
+**#2 white interior**: первая обработка face cells:
+```python
+keep = is_dark | is_red
+```
+Белые "белки" глаз и зубы (неокрашенные пиксели внутри чёрного контура)
+попадали в категорию "background" → стали прозрачными.
+
+### Исправления
+
+**Fix 1 — sprites выше платформ:**
+```gdscript
+body_sprite.z_as_relative = false
+body_sprite.z_index = 5  # абсолютный z, выше платформ (z=0)
+face_sprite.z_as_relative = false
+face_sprite.z_index = 6  # выше body
+```
+
+**Fix 2 — flood-fill от углов вместо color threshold:**
+```python
+bg_candidate = is_lightish & is_neutral  # светло-серые/белые
+# Connected components с padded edges
+labels, _ = ndimage.label(padded)
+bg_connected = (labels == labels[0,0])  # только связное с углами
+arr[bg_connected] = [0,0,0,0]
+```
+Внутренности глаз/зубы окружены чёрным контуром → не связаны с углами →
+остаются непрозрачными.
+
+**Дополнительно:**
+- `SPRITE_FILL_FACTOR` 1.7 → 1.4 (1.7 был слишком крупный)
+- `body_sprite.modulate = player_color` ставится при создании (не ждём
+  первого `_update_visual_sprites`)
+- `push_error/push_warning` при отсутствии текстур (для дебага)
+
+### Файлы
+- `scripts/characters/player.gd` (z_index, modulate init, FILL_FACTOR)
+- `assets/characters/face/face_*.png` × 6 (re-cut с flood-fill)
+
+### Тест
+Godot 4.6.1: компилируется без ошибок, runtime issues отсутствуют.
+Визуальная проверка за пользователем.
+
+---
+
 ## 2026-04-19 — feat: спрайтовый персонаж (yarn ball + 6 эмоций) с анимацией через transforms
 
 ### Что сделано
