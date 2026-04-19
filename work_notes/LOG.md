@@ -1,5 +1,56 @@
 # TangleBattle — Рабочий лог
 
+## 2026-04-19 — hotfix: ability VFX не показывались в exported билде (DirAccess.list_dir)
+
+### Проблема
+Пользователь после v0.3 заметил: при использовании способностей (например
+ракета) в **exported билде** не показывались взрывы и другие VFX-анимации.
+В editor работало нормально.
+
+### Корневая причина
+`scripts/effects/sprite_effect.gd::get_frames()` сканировал директорию через
+`DirAccess.open(path)` + `dir.get_next()` + фильтр по `.png`.
+
+В Godot 4 при экспорте PNG-файлы импортируются в `.ctex` (compressed
+texture). В PCK файла лежат `.ctex`, а не `.png`. `DirAccess.list_dir` в
+PCK не возвращает оригинальные имена с `.png` — поэтому фильтр
+`f.ends_with(".png")` ничего не находил → `frames` пустой → анимация
+не рисовалась.
+
+В editor работало потому что real `.png` файлы лежат на диске рядом с
+`.import`.
+
+### Решение
+Заменил DirAccess-сканирование на sequential index loop через
+`ResourceLoader.exists()`:
+
+```gdscript
+var path := "res://assets/effects/%s/frame_%02d.png"
+var i := 0
+while i < 100:
+    var p := path % [effect, i]
+    if not ResourceLoader.exists(p):
+        break
+    var tex: Texture2D = load(p)
+    arr.append(tex)
+    i += 1
+```
+
+`ResourceLoader.exists()` корректно работает в обоих режимах потому что
+проверяет import-system (а не filesystem). Все 25 effect-папок используют
+naming `frame_XX.png` (от 5 до 14 кадров), фикс универсален.
+
+### Файлы
+- `scripts/effects/sprite_effect.gd::get_frames()` — переписана функция
+
+### Тест
+Editor: компилируется + запускается без ошибок. Билд проверится при
+make_release. Затронуто: все 25 effect-наборов (cartoon_*, retro_*,
+slash*) — 245 PNG-кадров, используемых способностями (Yarn Bomb,
+Boomerang, Heaven's Wrath, Needle Dash и т.д.).
+
+---
+
 ## 2026-04-19 — fix(maps): корневая причина — wrong scale + procedural starfield
 
 ### Проблема
