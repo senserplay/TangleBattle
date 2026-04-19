@@ -1,5 +1,347 @@
 # TangleBattle — Рабочий лог
 
+## 2026-04-19 — fix+feat: 3 баг-фикса + zero-G space + slippery ice
+
+### Запрос пользователя
+Баги:
+1. При телепорте/swap/grab если игрок на нитке — перемещение не происходит.
+   Нитка должна обрываться при teleport/swap, а во время grab вообще нельзя
+   пускать нитку.
+2. После смерти остаётся фантомный коллайдер (нельзя пройти, можно стоять,
+   можно зацепиться). Также после round transition остаются объекты с
+   прошлого раунда (black hole, выстрелы, дым).
+3. Dash резко тормозит игрока в конце — должен сохранять импульс.
+
+Фичи:
+1. На карте Deep Space — нет гравитации (игроки + снаряды летают).
+2. Ice платформы скользкие — низкое трение.
+
+### Реализация
+
+#### Bug 1 — grapple integration
+- `map_base.gd::_teleport_body`: вызывает `_release_grapple()` перед
+  телепортом если у тела есть метод
+- `player_abilities.gd::_ab_swap`: cuts grapple на обоих swapped игроков
+  ДО смены позиций (раньше rope anchor возвращал игрока обратно)
+- `player_abilities.gd::_try_grab_nearby`: cuts grapple на жертве (чтобы
+  pull сработал)
+- `player_grapple.gd::start_grapple`: блокирует init если `is_grabbed`
+
+#### Bug 2a — corpse collision
+В `player.gd::die()`:
+- `collision_layer = 0`, `collision_mask = 0` (immediate, не deferred)
+- `CollisionShape2D.disabled = true` напрямую
+- `global_position = Vector2(-99999, -99999)` — корпус физически уезжает
+  за карту, не может быть hit'нут или зацеплен
+- `velocity = Vector2.ZERO`
+
+В `respawn()` — восстанавливает `collision_layer = 3, mask = 3`.
+
+#### Bug 2b — round cleanup
+`game.gd::_load_random_map` теперь iterрует группы и queue_free всё:
+- `ability_entities` (rocket, grenade, boomerang, yarn, black_hole,
+  stink_cloud, tripwire, heaven's_wrath)
+- `pickups` (dropped abilities)
+- `soul_essences` (death souls)
+
+Группа `players` сохраняется (они респавнятся через `_respawn_all`).
+Группы привязанные к map_container (hazards, walls, teleports,
+destructibles, items) очищаются автоматически с `child.queue_free()`.
+
+#### Bug 3 — dash momentum
+`player.gd::_handle_movement` ground-friction case: если |velocity.x| >
+max walk speed AND (no input OR same direction) → friction × 0.30.
+То есть после dash игрок плавно теряет скорость вместо abrupt brake.
+
+#### Feature 1 — zero-G in space
+Новые поля в `map_base.gd`:
+- `gravity_multiplier: float = 1.0`
+- `floor_friction_mult: float = 1.0`
+
+`deep_space.gd`: `gravity_multiplier = 0.0`.
+
+Player + grapple + grenade читают через helper `_map_gravity_mult()`.
+Прочие projectiles (rocket, boomerang, yarn) — propelled, не имеют
+gravity. Pickups оставлены с обычной gravity (иначе уплывали бы).
+
+#### Feature 2 — slippery ice
+`frozen_lake.gd`: `floor_friction_mult = 0.15`.
+
+`player.gd` ground-friction умножается на map's `floor_friction_mult`.
+Игроки скользят дальше, труднее остановиться.
+
+### Файлы
+- `scripts/maps/map_base.gd` — `_teleport_body`, новые physics поля
+- `scripts/maps/deep_space.gd` — `gravity_multiplier = 0.0`
+- `scripts/maps/frozen_lake.gd` — `floor_friction_mult = 0.15`
+- `scripts/characters/player.gd` — die/respawn collision, dash momentum,
+  gravity/friction map-aware, 2 helpers
+- `scripts/characters/player_abilities.gd` — swap/grab grapple cuts
+- `scripts/characters/player_grapple.gd` — block while grabbed +
+  grapple gravity scaled
+- `scripts/characters/grenade.gd` — gravity scaled by map
+- `scripts/main/game.gd::_load_random_map` — group-based cleanup
+
+### Тест
+Godot 4.6.1: компилируется чисто, все warning'и pre-existing. Полный
+playtest требуется для проверки в split-screen + всех способностей.
+
+---
+
+## 2026-04-19 — fix(maps): floor_strip удалён — palette-текстуры сами являются strip'ами
+
+### Проблема (по новым скриншотам)
+Поверх широких платформ виден ВТОРОЙ декоративный strip. Visible как
+дублирование — две green-grass-with-stones полосы одна над другой.
+
+### Корневая причина
+Открыл файлы `assets/textures/platforms/{grass,stone,ice,magma,wood}.png`
+и **обнаружил что это те же craftpix landscape strips**:
+- `stone.png` ≈ `landscape_strips/strip_05` (alien_teal — green grass)
+- `grass.png` ≈ `strip_01` (grass + dirt)
+- `ice.png` ≈ `strip_12` (ice frozen)
+- `magma.png` ≈ `strip_03` (lava crystal)
+- `wood.png` ≈ `strip_07` (sand + grass)
+
+`_draw_themed_platform()` рендерит ВСЮ palette-текстуру (с deco grass tops
+и substrate dirt) натянутую на shape платформы. Это уже выглядит как
+strip. А я сверху накладывал floor_strip — получалось ДВА strip'а.
+
+Особенно плохо в `mystic_hollow`: palette="stone" (зелёный) + floor_strip
+"amethyst_purple" (фиолетовый) → видно green-strip ниже purple-strip'а.
+
+### Решение
+Удалена вся `floor_strip` система целиком:
+- Поле `floor_strip` и cache `_strip_tex_cache` из `map_base.gd`
+- Функции `_get_strip_texture` и `_draw_floor_strip_overlay`
+- Wrapper в `_draw_platforms` (`if floor_strip != "" ...`)
+- `is_floor` local var (использовалась только для overlay)
+- `floor_strip = "..."` строки из 5 карт (forest_glade, frozen_lake,
+  ancient_ruins, mystic_hollow, volcano_crater)
+- Папка `assets/textures/platforms/strips/` удалена (6 PNG + .import)
+
+Теперь palette-текстура сама даёт визуальный strip, без overlay-наслоений.
+
+### Файлы
+- `scripts/maps/map_base.gd`: -50 строк
+- 5 map скриптов: -1 строка каждая
+- `assets/textures/platforms/strips/` удалена
+
+### Тест
+Godot 4.6.1: компилируется без новых warning'ов.
+
+---
+
+## 2026-04-19 — fix(maps): strip-текстуры были RGB без alpha (чёрный фон)
+
+### Проблема (по новому скриншоту)
+Поверх платформы виден ЧЁРНЫЙ band с декорациями (стонами/травинками)
+на ровно прямоугольной чёрной подложке. Не вписывается, острые границы.
+
+### Корневая причина
+Проверил формат strip-PNG через Python/PIL:
+```
+alien_teal: mode=RGB size=(904, 91)
+grass_dirt: mode=RGB size=(904, 93)
+ice_frozen: mode=RGB size=(904, 102)
+...
+```
+
+**Источник** (craftpix landscape strips) сохранён в **RGB без alpha**.
+"Прозрачные" участки между декорациями (между травинками, вокруг камней)
+— на самом деле литеральный `(0,0,0)` чёрный. Godot рендерит как opaque
+black, что даёт визуальный black-bar над платформой.
+
+Также я ранее ошибочно полагал что текстура 960×400 (с substrate ниже
+ground line) — на самом деле 904×~93, целиком декорация без substrate.
+Поэтому SRC_DECO_RATIO=0.40 был лишним.
+
+### Решение
+
+#### 1. Конвертация PNG: RGB → RGBA (чёрный → transparent)
+Python script прошёл по всем 6 strip-текстурам, заменил pure-black
+пиксели (R,G,B все < 8) на alpha=0:
+```
+alien_teal:      13119 px transparent (of 82264)
+amethyst_purple: 14429 px transparent (of 84072)
+grass_dirt:       9304 px transparent (of 84072)
+ice_frozen:      14313 px transparent (of 92208)
+lava_crystal:     9325 px transparent (of 79552)
+sand_grass:      18275 px transparent (of 93112)
+```
+
+Очищен `.godot/imported/` cache → Godot реимпортит с новыми alpha.
+
+#### 2. Переписан `_draw_floor_strip_overlay`
+- Использует ВЕСЬ source rect (не SRC_DECO_RATIO crop) — текстура и так
+  только декоративная, без substrate
+- disp_h = 75 (было 70 после crop)
+- Position: strip's bottom = platform_top + 10px overlap (для бесшовного
+  сопряжения с платформой)
+- aspect tile_w основан на real source ratio (~10:1)
+
+### Файлы
+- 6 PNG в `assets/textures/platforms/strips/` — RGB→RGBA
+- `scripts/maps/map_base.gd::_draw_floor_strip_overlay` переписан
+
+### Тест
+Godot 4.6.1: после очистки import cache — реимпортит strips с alpha.
+Запускается без ошибок.
+
+---
+
+## 2026-04-19 — fix(maps): strip-overlay substrate + ancient_ruins блоки + космос лаги
+
+### Проблемы по скриншотам
+
+**1. Frozen Lake — два слоя на платформе.** Strip overlay рисовал ВСЮ
+текстуру (110px), а у `ice_frozen.png` под верхушкой ice crystals идёт
+substrate (тёмный лёд + columns). Этот substrate бликовал ниже платформы
+и создавал визуальный "two-tier" mess.
+
+**Fix:** Только TOP 40% strip-текстуры через `draw_texture_rect_region`
+(SRC_DECO_RATIO = 0.40). Display height снижен с 110 → 70px. Теперь
+только декорация (ice crystals / grass tufts / lava crystals) вылезает
+над платформой, без substrate.
+
+**2. Ancient Ruins — непонятные коричневые блоки.** Destructible columns
+рендерились как plain brown капсулы (90×180px) без визуального индикатора
+"эту штуку можно сломать". Игрок видел абстрактные прямоугольники.
+
+**Fix:** Удалены destructibles. Заменены на 2 raised stone-block plinths
+(280×130, тип `false` = solid floor) — это понятные каменные постаменты.
+Поверх них поставлены **резные temple orbs** (decorative balls 55px),
+плюс добавлен **sky orb 45px** над алтарём. Теперь сцена читается как
+"храмовые постаменты с орбами".
+
+**3. Deep Space — лаги.** Procedural starfield итерировал ВСЁ bg_rect
+(extended map ± 3500 = ~12400×10200) с шагом 180-380px → ~3000+ ячеек ×
+2 layers × 60fps = ~360k cell-evals/sec + sin/cos calls. Плюс
+`_dz_stars` рисовал 40 star-circles на каждый из 4 dz rects = ещё 160
+звёзд/frame.
+
+**Fix:**
+- `stars_proc` теперь **viewport-culled**: получает `cam.position` +
+  `viewport.size`, вычисляет видимый прямоугольник + margin, итерирует
+  только cell-grid range пересекающийся с viewport. Тысячи cells →
+  десятки. Параллакс остаётся deterministic (origin сдвинут).
+- Spacing увеличен 180-380 → 320-540px, skip 60% → 75% (sparser).
+- `_dz_stars` упрощён: убраны star particles (bg даёт их), оставлен
+  только tinted dark veil + soft edge. -160 circles/frame.
+
+### Файлы
+- `scripts/maps/map_base.gd`: `_draw_floor_strip_overlay` (top-only),
+  `stars_proc` (viewport cull), `_dz_stars` (упрощён), shadowing fix
+- `scripts/maps/ancient_ruins.gd`: destructibles удалены, заменены
+  plinths + temple orbs
+
+### Тест
+Godot 4.6.1: компилируется без новых warning'ов.
+
+---
+
+## 2026-04-19 — feat(maps): полный rewrite пула карт — 18 → 8 уникальных, тематически проработанных
+
+### Запрос пользователя
+"Удали все maps и составь план по реализации новых, используя ассеты, которые
+у тебя имеются" + "не опираясь на прошлую реализацию, делай новую, учитывая
+структуру/тему бэкграунда, наполняя их подходящими платформами, расположение
+платформ, ловушки, порталы, как выглядит опасная зона"
+
+### Что сделано
+
+#### 1. Удалены все 18 старых карт
+`scripts/maps/*.gd` (кроме `map_base.gd`) и `scenes/maps/*.tscn` — полностью
+с нуля. Список удалённых: arena, clockwork, cloud_kingdom, dungeon, factory,
+fortress, ice_cave, inferno, jungle, meadow, mirror, sky_garden, space,
+tower, trampoline, twin_peaks, volcano, workshop.
+
+#### 2. Новый ассет: landscape strips (декорация платформ)
+Скопировано 6 strip-текстур из `my_assets/extracted/landscape_strips/` в
+`assets/textures/platforms/strips/`:
+- `grass_dirt.png` — классическая зелёная трава с почвой
+- `lava_crystal.png` — красные кристаллы лавы на потрескавшейся породе
+- `alien_teal.png` — инопланетная teal-трава
+- `sand_grass.png` — пустынный песок с травой
+- `amethyst_purple.png` — фиолетовые аметистовые кристаллы
+- `ice_frozen.png` — лёд с сосульками
+
+#### 3. Новое поле `floor_strip` в `map_base.gd`
+- Строковое имя strip-текстуры (или "" для отключения)
+- Накладывается поверх широких (≥500px) `floor`-платформ
+- `_draw_floor_strip_overlay()` тайлит strip горизонтально, anchored по
+  ground-line strip'а ровно на верх платформы
+- Static cache `_strip_tex_cache` — load 1 раз на тему
+
+#### 4. **8 новых карт — каждая с уникальной тематикой**
+
+**1. Forest Glade** (`forest_glade.gd`) — 4400×2900
+- BG: forest, BRIGHT, DZ: swamp, palette: grass + grass_dirt strip
+- Симметричная лесная поляна, открытое небо, intro-friendly
+- 9 платформ ярусами, 2 декоративных шара, 4 item spawn
+
+**2. Sunset Spires** (`sunset_spires.gd`) — 5000×3400
+- BG: dawn (warm sunset), DZ: abyss, palette: stone
+- Две каменные башни-шпиля + sky bridge между вершинами
+- **Telepair между summit'ами** — стратегический high-ground swap
+- 19 платформ, 2 крупных каменных orb на пиках
+
+**3. Sky Citadel** (`sky_citadel.gd`) — 5000×3000
+- BG: clouds_blue, DZ: mist, palette: ice (cloud-look)
+- Floating cloud islands, открытое небо со всех сторон
+- **Wind events** каждые 11с — поток сдувает игроков в сторону
+- 13 платформ, 2 cloud-puff balls
+
+**4. Volcano Crater** (`volcano_crater.gd`) — 4200×2800
+- BG: clouds_sunset, fire_walls (нет падения), palette: magma + lava strip
+- Компактная огненная арена-чаша, **2 spike pit** между ramp'ами
+- Касание стен → fire damage
+- 9 платформ, 3 lava-bomb balls
+
+**5. Frozen Lake** (`frozen_lake.gd`) — 4800×2700
+- BG: clouds_blue (cold), bouncy_walls (отскоки), palette: ice + ice strip
+- Широкое плоское ледяное озеро + парящие ледяные осколки
+- Игроки отскакивают от стен — chaotic движение
+- 10 платформ, 3 ice-block balls
+
+**6. Deep Space** (`deep_space.gd`) — 5400×3200
+- BG: space (procedural starfield), DZ: stars, palette: stone (asteroid)
+- **Открыто во ВСЕ стороны** (включая верх) — космическая пустота
+- **2 telepair'а** — диагональные corner-to-corner warps
+- 15 платформ-астероидов, 3 spherical balls
+
+**7. Ancient Ruins** (`ancient_ruins.gd`) — 4400×3000
+- BG: nature4 (forest landscape), use_walls (solid stone), palette: stone + alien_teal strip
+- Закрытый храм с **3 destructible колоннами** — рушится за раунд
+- 12 платформ, 2 broken-column balls
+
+**8. Mystic Hollow** (`mystic_hollow.gd`) — 4800×3000
+- BG: clouds_sunset (violet tint), DZ: void, palette: stone + amethyst strip
+- Эзотерическая фиолетовая арена, void сверху И снизу (eerie enclosure)
+- **2 spike pit** между mid ledges, **cross-portal** между top summits
+- 12 платформ, 3 amethyst orbs
+
+### Распределение механик
+- Open top: forest_glade, sunset_spires, sky_citadel, deep_space
+- Walls: volcano_crater (fire), frozen_lake (bouncy), ancient_ruins (solid)
+- Void enclosure: mystic_hollow (top + bottom)
+- Portals: sunset_spires (1), deep_space (2), mystic_hollow (1)
+- Destructibles: ancient_ruins (3 columns)
+- Spikes: volcano_crater (2), mystic_hollow (2)
+- Custom event: sky_citadel (wind gusts)
+
+### Файлы
+- **Удалено**: 18 × `scripts/maps/*.gd` + `*.uid` + 18 × `scenes/maps/*.tscn`
+- **Создано**: 8 новых map скриптов + 8 .tscn + 6 strip ассетов
+- `scripts/maps/map_base.gd`: +25 строк (`floor_strip` field, `_get_strip_texture`,
+  `_draw_floor_strip_overlay`, integration в `_draw_platforms`)
+- `scripts/main/game.gd::MAP_SCENES`: новый список из 8 карт
+
+### Тест
+Godot 4.6.1: запускается без ошибок и без новых warning'ов.
+
+---
+
 ## 2026-04-19 — hotfix: ability VFX не показывались в exported билде (DirAccess.list_dir)
 
 ### Проблема

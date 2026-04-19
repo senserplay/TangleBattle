@@ -4,24 +4,14 @@ var player_scene: PackedScene = preload("res://scenes/characters/player.tscn")
 var pickup_scene: PackedScene = preload("res://scenes/characters/ability_pickup.tscn")
 
 const MAP_SCENES: Array[String] = [
-	"res://scenes/maps/workshop.tscn",
-	"res://scenes/maps/sky_garden.tscn",
-	"res://scenes/maps/volcano.tscn",
-	"res://scenes/maps/ice_cave.tscn",
-	"res://scenes/maps/tower.tscn",
-	"res://scenes/maps/factory.tscn",
-	"res://scenes/maps/jungle.tscn",
-	"res://scenes/maps/space.tscn",
-	"res://scenes/maps/dungeon.tscn",
-	"res://scenes/maps/cloud_kingdom.tscn",
-	"res://scenes/maps/clockwork.tscn",
-	"res://scenes/maps/arena.tscn",
-	"res://scenes/maps/mirror.tscn",
-	"res://scenes/maps/fortress.tscn",
-	"res://scenes/maps/inferno.tscn",
-	"res://scenes/maps/trampoline.tscn",
-	"res://scenes/maps/meadow.tscn",
-	"res://scenes/maps/twin_peaks.tscn",
+	"res://scenes/maps/forest_glade.tscn",
+	"res://scenes/maps/sunset_spires.tscn",
+	"res://scenes/maps/sky_citadel.tscn",
+	"res://scenes/maps/volcano_crater.tscn",
+	"res://scenes/maps/frozen_lake.tscn",
+	"res://scenes/maps/deep_space.tscn",
+	"res://scenes/maps/ancient_ruins.tscn",
+	"res://scenes/maps/mystic_hollow.tscn",
 ]
 
 @onready var map_container: Node2D = $MapContainer
@@ -407,6 +397,14 @@ func _spawn_pickup() -> void:
 func _load_random_map() -> void:
 	for child in map_container.get_children():
 		child.queue_free()
+	# Wipe all transient round-state objects that live outside map_container:
+	# in-flight projectiles (rockets, grenades, boomerangs, yarn shots,
+	# black holes, stink clouds, tripwires, heaven's wrath), dropped pickups
+	# from death, and lingering soul essences.
+	for grp in ["ability_entities", "pickups", "soul_essences"]:
+		for node in get_tree().get_nodes_in_group(grp):
+			if is_instance_valid(node):
+				node.queue_free()
 	var idx: int = randi_range(0, MAP_SCENES.size() - 1)
 	var scene: PackedScene = load(MAP_SCENES[idx])
 	current_map = scene.instantiate()

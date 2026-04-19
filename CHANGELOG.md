@@ -11,6 +11,13 @@ _будущие изменения здесь_
 
 ---
 
+## [0.5] � 2026-04-19
+
+### Changed
+- Merge feature/gameplay-fixes-physics into develop - feat+fix(gameplay): grapple/teleport/death cleanup; dash momentum; zero-G; ice - Revert "Merge fix/bg-no-parallax-seam into develop" - Merge fix/bg-no-parallax-seam into develop - fix(maps): lock bg to world coords ��� no parallax ��� no split-screen seam - Merge fix/remove-floor-strip into develop - fix(maps): remove floor_strip ��� palette textures already are landscape strips - Merge fix/strip-alpha into develop - fix(maps): strip textures had no alpha ��� black bg rendered as opaque band - Merge fix/map-visuals-polish into develop - chore: add strip texture .import files (godot-generated) - fix(maps): strip-overlay shows top-only deco; ancient_ruins blocks; space lag - Merge feature/map-rewrite-8 into develop - feat(maps): full pool rewrite ��� 18 ��� 8 unique themed maps - Merge release/0.4 into develop
+
+---
+
 ## [0.4] � 2026-04-19
 
 ### Changed
@@ -106,3 +113,5 @@ _будущие изменения здесь_
 [0.3]: https://github.com/senserplay/TangleBattle/releases/tag/v0.3
 
 [0.4]: https://github.com/senserplay/TangleBattle/releases/tag/v0.4
+
+[0.5]: https://github.com/senserplay/TangleBattle/releases/tag/v0.5
