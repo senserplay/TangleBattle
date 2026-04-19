@@ -5,7 +5,6 @@ extends "res://scripts/maps/map_base.gd"
 func _init() -> void:
 	map_name = "Frozen Lake"
 	platform_palette = "ice"
-	floor_strip = "ice_frozen"
 	bg_color = Color(0.20, 0.45, 0.70)
 	bg_theme = "clouds_blue"
 	bg_tint = Color(0.65, 0.78, 0.95)

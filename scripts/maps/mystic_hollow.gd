@@ -6,7 +6,6 @@ extends "res://scripts/maps/map_base.gd"
 func _init() -> void:
 	map_name = "Mystic Hollow"
 	platform_palette = "stone"
-	floor_strip = "amethyst_purple"
 	bg_color = Color(0.20, 0.10, 0.30)
 	bg_theme = "clouds_sunset"
 	bg_tint = Color(0.75, 0.60, 1.00)

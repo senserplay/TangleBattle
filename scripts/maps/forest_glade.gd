@@ -5,7 +5,6 @@ extends "res://scripts/maps/map_base.gd"
 func _init() -> void:
 	map_name = "Forest Glade"
 	platform_palette = "grass"
-	floor_strip = "grass_dirt"
 	bg_color = Color(0.40, 0.62, 0.74)
 	bg_theme = "forest"
 	bg_tint = Color(1.0, 1.0, 1.0)

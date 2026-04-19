@@ -6,7 +6,6 @@ extends "res://scripts/maps/map_base.gd"
 func _init() -> void:
 	map_name = "Volcano Crater"
 	platform_palette = "magma"
-	floor_strip = "lava_crystal"
 	bg_color = Color(0.20, 0.05, 0.02)
 	bg_theme = "clouds_sunset"
 	bg_tint = Color(1.0, 0.55, 0.40)

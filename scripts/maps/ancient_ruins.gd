@@ -6,7 +6,6 @@ extends "res://scripts/maps/map_base.gd"
 func _init() -> void:
 	map_name = "Ancient Ruins"
 	platform_palette = "stone"
-	floor_strip = "alien_teal"
 	bg_color = Color(0.18, 0.32, 0.20)
 	bg_theme = "nature4"
 	bg_tint = Color(1.0, 1.0, 1.0)
