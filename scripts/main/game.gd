@@ -4,24 +4,14 @@ var player_scene: PackedScene = preload("res://scenes/characters/player.tscn")
 var pickup_scene: PackedScene = preload("res://scenes/characters/ability_pickup.tscn")
 
 const MAP_SCENES: Array[String] = [
-	"res://scenes/maps/workshop.tscn",
-	"res://scenes/maps/sky_garden.tscn",
-	"res://scenes/maps/volcano.tscn",
-	"res://scenes/maps/ice_cave.tscn",
-	"res://scenes/maps/tower.tscn",
-	"res://scenes/maps/factory.tscn",
-	"res://scenes/maps/jungle.tscn",
-	"res://scenes/maps/space.tscn",
-	"res://scenes/maps/dungeon.tscn",
-	"res://scenes/maps/cloud_kingdom.tscn",
-	"res://scenes/maps/clockwork.tscn",
-	"res://scenes/maps/arena.tscn",
-	"res://scenes/maps/mirror.tscn",
-	"res://scenes/maps/fortress.tscn",
-	"res://scenes/maps/inferno.tscn",
-	"res://scenes/maps/trampoline.tscn",
-	"res://scenes/maps/meadow.tscn",
-	"res://scenes/maps/twin_peaks.tscn",
+	"res://scenes/maps/forest_glade.tscn",
+	"res://scenes/maps/sunset_spires.tscn",
+	"res://scenes/maps/sky_citadel.tscn",
+	"res://scenes/maps/volcano_crater.tscn",
+	"res://scenes/maps/frozen_lake.tscn",
+	"res://scenes/maps/deep_space.tscn",
+	"res://scenes/maps/ancient_ruins.tscn",
+	"res://scenes/maps/mystic_hollow.tscn",
 ]
 
 @onready var map_container: Node2D = $MapContainer

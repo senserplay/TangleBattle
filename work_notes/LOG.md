@@ -1,5 +1,107 @@
 # TangleBattle — Рабочий лог
 
+## 2026-04-19 — feat(maps): полный rewrite пула карт — 18 → 8 уникальных, тематически проработанных
+
+### Запрос пользователя
+"Удали все maps и составь план по реализации новых, используя ассеты, которые
+у тебя имеются" + "не опираясь на прошлую реализацию, делай новую, учитывая
+структуру/тему бэкграунда, наполняя их подходящими платформами, расположение
+платформ, ловушки, порталы, как выглядит опасная зона"
+
+### Что сделано
+
+#### 1. Удалены все 18 старых карт
+`scripts/maps/*.gd` (кроме `map_base.gd`) и `scenes/maps/*.tscn` — полностью
+с нуля. Список удалённых: arena, clockwork, cloud_kingdom, dungeon, factory,
+fortress, ice_cave, inferno, jungle, meadow, mirror, sky_garden, space,
+tower, trampoline, twin_peaks, volcano, workshop.
+
+#### 2. Новый ассет: landscape strips (декорация платформ)
+Скопировано 6 strip-текстур из `my_assets/extracted/landscape_strips/` в
+`assets/textures/platforms/strips/`:
+- `grass_dirt.png` — классическая зелёная трава с почвой
+- `lava_crystal.png` — красные кристаллы лавы на потрескавшейся породе
+- `alien_teal.png` — инопланетная teal-трава
+- `sand_grass.png` — пустынный песок с травой
+- `amethyst_purple.png` — фиолетовые аметистовые кристаллы
+- `ice_frozen.png` — лёд с сосульками
+
+#### 3. Новое поле `floor_strip` в `map_base.gd`
+- Строковое имя strip-текстуры (или "" для отключения)
+- Накладывается поверх широких (≥500px) `floor`-платформ
+- `_draw_floor_strip_overlay()` тайлит strip горизонтально, anchored по
+  ground-line strip'а ровно на верх платформы
+- Static cache `_strip_tex_cache` — load 1 раз на тему
+
+#### 4. **8 новых карт — каждая с уникальной тематикой**
+
+**1. Forest Glade** (`forest_glade.gd`) — 4400×2900
+- BG: forest, BRIGHT, DZ: swamp, palette: grass + grass_dirt strip
+- Симметричная лесная поляна, открытое небо, intro-friendly
+- 9 платформ ярусами, 2 декоративных шара, 4 item spawn
+
+**2. Sunset Spires** (`sunset_spires.gd`) — 5000×3400
+- BG: dawn (warm sunset), DZ: abyss, palette: stone
+- Две каменные башни-шпиля + sky bridge между вершинами
+- **Telepair между summit'ами** — стратегический high-ground swap
+- 19 платформ, 2 крупных каменных orb на пиках
+
+**3. Sky Citadel** (`sky_citadel.gd`) — 5000×3000
+- BG: clouds_blue, DZ: mist, palette: ice (cloud-look)
+- Floating cloud islands, открытое небо со всех сторон
+- **Wind events** каждые 11с — поток сдувает игроков в сторону
+- 13 платформ, 2 cloud-puff balls
+
+**4. Volcano Crater** (`volcano_crater.gd`) — 4200×2800
+- BG: clouds_sunset, fire_walls (нет падения), palette: magma + lava strip
+- Компактная огненная арена-чаша, **2 spike pit** между ramp'ами
+- Касание стен → fire damage
+- 9 платформ, 3 lava-bomb balls
+
+**5. Frozen Lake** (`frozen_lake.gd`) — 4800×2700
+- BG: clouds_blue (cold), bouncy_walls (отскоки), palette: ice + ice strip
+- Широкое плоское ледяное озеро + парящие ледяные осколки
+- Игроки отскакивают от стен — chaotic движение
+- 10 платформ, 3 ice-block balls
+
+**6. Deep Space** (`deep_space.gd`) — 5400×3200
+- BG: space (procedural starfield), DZ: stars, palette: stone (asteroid)
+- **Открыто во ВСЕ стороны** (включая верх) — космическая пустота
+- **2 telepair'а** — диагональные corner-to-corner warps
+- 15 платформ-астероидов, 3 spherical balls
+
+**7. Ancient Ruins** (`ancient_ruins.gd`) — 4400×3000
+- BG: nature4 (forest landscape), use_walls (solid stone), palette: stone + alien_teal strip
+- Закрытый храм с **3 destructible колоннами** — рушится за раунд
+- 12 платформ, 2 broken-column balls
+
+**8. Mystic Hollow** (`mystic_hollow.gd`) — 4800×3000
+- BG: clouds_sunset (violet tint), DZ: void, palette: stone + amethyst strip
+- Эзотерическая фиолетовая арена, void сверху И снизу (eerie enclosure)
+- **2 spike pit** между mid ledges, **cross-portal** между top summits
+- 12 платформ, 3 amethyst orbs
+
+### Распределение механик
+- Open top: forest_glade, sunset_spires, sky_citadel, deep_space
+- Walls: volcano_crater (fire), frozen_lake (bouncy), ancient_ruins (solid)
+- Void enclosure: mystic_hollow (top + bottom)
+- Portals: sunset_spires (1), deep_space (2), mystic_hollow (1)
+- Destructibles: ancient_ruins (3 columns)
+- Spikes: volcano_crater (2), mystic_hollow (2)
+- Custom event: sky_citadel (wind gusts)
+
+### Файлы
+- **Удалено**: 18 × `scripts/maps/*.gd` + `*.uid` + 18 × `scenes/maps/*.tscn`
+- **Создано**: 8 новых map скриптов + 8 .tscn + 6 strip ассетов
+- `scripts/maps/map_base.gd`: +25 строк (`floor_strip` field, `_get_strip_texture`,
+  `_draw_floor_strip_overlay`, integration в `_draw_platforms`)
+- `scripts/main/game.gd::MAP_SCENES`: новый список из 8 карт
+
+### Тест
+Godot 4.6.1: запускается без ошибок и без новых warning'ов.
+
+---
+
 ## 2026-04-19 — hotfix: ability VFX не показывались в exported билде (DirAccess.list_dir)
 
 ### Проблема
