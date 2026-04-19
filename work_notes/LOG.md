@@ -1,5 +1,102 @@
 # TangleBattle — Рабочий лог
 
+## 2026-04-19 — feat: спрайтовый персонаж (yarn ball + 6 эмоций) с анимацией через transforms
+
+### Что сделано
+Заменена процедурная отрисовка клубка (`_draw_ball` через `_draw_ellipse` +
+yarn lines + eyes) на спрайтовую: один статичный спрайт-клубок + спрайт-лицо,
+анимация через scale/rotation/modulate в реальном времени.
+
+### Ассеты
+Пользователь предоставил два изображения через nanobanana:
+1. **Hand-painted yarn ball** (2048×2048, без альфы) — реалистичный клубок ниток
+2. **32 cartoon faces** (2848×1504 grid 4×8, без альфы) — набор эмоций
+
+Pipeline обработки (Python + PIL + scipy):
+- Yarn ball: detect "warm" pixels (R > B+8), find biggest connected component,
+  binary closing/dilation для гладкого силуэта, distance transform → soft alpha
+  edge, crop по bbox + 12px padding, ресайз 512×512 → `assets/characters/body/yarn_ball.png`
+- Face sheet: разрезан на 32 cells (356×376 каждая), фон через color-threshold:
+  оставлены только тёмные/красные пиксели (face features), остальное → alpha=0
+- 32 cells сохранены в `my_assets/face_cells/r{1-4}c{1-8}.png` для review
+- Выбрано 6 best matches под наши эмоции:
+
+| Эмоция  | Cell  | Описание |
+|---------|-------|----------|
+| happy   | r4c2  | Большая улыбка с зубами |
+| focus   | r4c1  | Нейтральные глаза, прямая линия рта |
+| pain    | r1c6  | Грустные брови, frowning рот |
+| angry   | r2c4  | Злые брови + оскал |
+| scared  | r3c8  | Широкие глаза + красный рот + капли пота |
+| dead    | r2c2  | Закрытые глаза + открытый рот |
+
+### Изменения в `player.gd`
+
+#### Новые поля
+- `body_sprite: Sprite2D` — клубок, тинтуется player_color
+- `face_sprite: Sprite2D` — лицо-оверлей, не тинтуется
+- `face_textures: Dictionary` — кеш 6 текстур эмоций
+- `current_emotion: String` — текущая эмоция (для diff-update)
+- `roll_rotation: float` — накопленный угол перекатывания
+- Константы: BODY_TEXTURE_SIZE, SPRITE_FILL_FACTOR, paths
+
+#### Новая `_setup_visual_sprites()` (вызов из setup)
+- Загружает `yarn_ball.png` в body_sprite (z_index=-2)
+- Загружает 6 face textures, ставит "happy" в face_sprite (z_index=-1)
+
+#### Новая `_update_visual_sprites(delta)` (вызов в _physics_process)
+- **Scale**: `(diameter / BODY_TEXTURE_SIZE * SPRITE_FILL_FACTOR) × (squash_x, squash_y)`
+- **Modulate**: применяет fire/poison/stun/slow/hit_flash тинты как старый _draw
+- **Rotation (rolling)**: `roll_rotation += velocity.x / circumference × TAU × delta`
+  — клубок реально катится при движении по полу, как настоящий шар
+- **Visibility**: hides during invincibility flicker (та же логика что и раньше)
+- **Face**: scale 55% от body, остаётся UPRIGHT (не вращается с телом!),
+  flip_h через scale.x = -value при facing left, position (0, -radius*0.18)
+  чтобы лицо было в верхней части клубка
+
+#### Новая `_compute_emotion()`
+```
+not is_alive            → "dead"
+hit_flash_timer > 0     → "pain"
+hp < MAX_HP * 0.3       → "scared"
+charge/guided/grab slot → "focus"
+parry_visual > 0        → "angry"
+otherwise               → "happy"
+```
+Эмоция меняется только при diff (не каждый кадр).
+
+#### Удалено из `_draw()`
+- `_draw_ellipse(...)` для тела (~50 строк)
+- Yarn flowing lines
+- Eyes drawing (4 circles)
+
+Сохранены: trailing thread ends при velocity > 200 (декоративные), все эмблемы
+способностей, hooks, spikes, particles, parry/spawn/whip эффекты.
+
+### Файлы
+- `assets/characters/body/yarn_ball.png` (нов, 349 KB)
+- `assets/characters/face/face_{happy,focus,pain,angry,scared,dead}.png` (6 нов)
+- `scripts/characters/player.gd` (+87 строк сетапа/апдейта, -50 строк отрисовки)
+
+### Тест
+- Godot 4.6.1: запуск title_menu → lobby → game без ошибок (только pre-existing warnings)
+- Никаких runtime ошибок или null reference на спрайтах
+- Визуальное тестирование за пользователем
+
+### Преимущества подхода
+- 1 ball PNG → 4 цвета через `body_sprite.modulate = player_color`
+- Эмоции меняются мгновенно (texture swap), не нужно генерить per-pose
+- Анимация через transforms масштабируется с FPS, smooth
+- Реальное вращение клубка при беге = живой эффект
+- Лицо не вращается → читаемость в любом положении
+
+### Что делать дальше
+- Визуальный тест в игре, при необходимости тюнить SPRITE_FILL_FACTOR
+- Возможно подправить позицию лица (Y offset) если глаза слишком высоко/низко
+- В будущем — добавить особые эмоции (parry_burst → angry+, kill → angry, etc)
+
+---
+
 ## 2026-04-18 — fix: промты — multi-frame анимации вместо одиночных картинок
 
 ### Проблема
