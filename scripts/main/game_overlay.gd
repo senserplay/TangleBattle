@@ -77,32 +77,17 @@ func _draw_victory_screen() -> void:
 					3.0 * (1.0 - burst_t * 0.5), spark_col
 				)
 
-	# Big winner yarn ball
+	# Big winner yarn ball — texture-based icon
 	var ball_y := cy - 60.0
 	var ball_scale := clampf(t / 0.8, 0.0, 1.0)
 	ball_scale = 1.0 - (1.0 - ball_scale) * (1.0 - ball_scale)  # ease out
 	var ball_r := 70.0 * ball_scale
 
-	# Glow
+	# Glow halos
 	draw_circle(Vector2(cx, ball_y), ball_r + 30, Color(pc.r, pc.g, pc.b, 0.06))
 	draw_circle(Vector2(cx, ball_y), ball_r + 15, Color(pc.r, pc.g, pc.b, 0.08))
-	# Body
-	draw_circle(Vector2(cx, ball_y), ball_r, pc)
-	# Yarn lines
-	var dark := pc.darkened(0.3)
-	for i in range(7):
-		var angle := i * TAU / 7.0 + t * 0.3
-		var from := Vector2(cx + cos(angle) * ball_r * 0.4,
-			ball_y + sin(angle) * ball_r * 0.4)
-		var to := Vector2(cx + cos(angle + 1.0) * ball_r * 0.85,
-			ball_y + sin(angle + 1.0) * ball_r * 0.85)
-		draw_line(from, to, dark, 3.0)
-	# Eyes
-	var er := ball_r * 0.15
-	draw_circle(Vector2(cx - ball_r * 0.2, ball_y - ball_r * 0.15), er, Color.WHITE)
-	draw_circle(Vector2(cx + ball_r * 0.2, ball_y - ball_r * 0.15), er, Color.WHITE)
-	draw_circle(Vector2(cx - ball_r * 0.12, ball_y - ball_r * 0.15), er * 0.5, Color.BLACK)
-	draw_circle(Vector2(cx + ball_r * 0.28, ball_y - ball_r * 0.15), er * 0.5, Color.BLACK)
+	# Yarn ball icon (with face)
+	YarnBallIcon.draw_at(self, Vector2(cx, ball_y), ball_r, pc)
 	# Crown
 	var crown_y := ball_y - ball_r - 10.0
 	var crown_pts := PackedVector2Array([
@@ -180,14 +165,10 @@ func _draw_stats_overlay() -> void:
 		_txt(font, Vector2(bx + bw / 2.0, by + 22),
 			"PLAYER %d" % p.player_id, 22.0, pc)
 
-		# Yarn ball icon
+		# Yarn ball icon (texture asset)
 		var ball_x := bx + bw / 2.0
 		var ball_y := by + 80.0
-		draw_circle(Vector2(ball_x, ball_y), 25.0, pc)
-		draw_circle(Vector2(ball_x - 5, ball_y - 6), 5.0, Color.WHITE)
-		draw_circle(Vector2(ball_x + 5, ball_y - 6), 5.0, Color.WHITE)
-		draw_circle(Vector2(ball_x - 3, ball_y - 6), 2.5, Color.BLACK)
-		draw_circle(Vector2(ball_x + 7, ball_y - 6), 2.5, Color.BLACK)
+		YarnBallIcon.draw_at(self, Vector2(ball_x, ball_y), 25.0, pc)
 
 		# Stats list
 		var sy := by + 120.0
@@ -381,19 +362,8 @@ func _draw_passive_selection() -> void:
 
 	# Compact header: ball + title + timer on one row
 	var header_y := 55.0
-	# Ball
-	draw_circle(Vector2(cx, header_y), 40.0, pc)
-	var dark := pc.darkened(0.3)
-	for i in range(5):
-		var angle := i * TAU / 5.0 + bt * 0.5
-		var from := Vector2(cx + cos(angle) * 14, header_y + sin(angle) * 14)
-		var to := Vector2(cx + cos(angle + 1.0) * 35, header_y + sin(angle + 1.0) * 35)
-		draw_line(from, to, dark, 2.0)
-	# Eyes
-	draw_circle(Vector2(cx - 8, header_y - 8), 6.0, Color.WHITE)
-	draw_circle(Vector2(cx + 8, header_y - 8), 6.0, Color.WHITE)
-	draw_circle(Vector2(cx - 5, header_y - 8), 3.0, Color.BLACK)
-	draw_circle(Vector2(cx + 11, header_y - 8), 3.0, Color.BLACK)
+	# Yarn ball icon (texture asset, with face)
+	YarnBallIcon.draw_at(self, Vector2(cx, header_y), 40.0, pc)
 
 	# Title below ball
 	_txt(font, Vector2(cx, header_y + 58),
