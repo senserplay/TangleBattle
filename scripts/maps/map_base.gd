@@ -371,10 +371,6 @@ func _draw_themed_background() -> void:
 	)
 	draw_rect(bg_rect, base_col)
 
-	var cam := get_viewport().get_camera_2d()
-	var cam_pos: Vector2 = cam.position if cam != null else (map_rect.position + map_rect.size / 2.0)
-	var center: Vector2 = map_rect.position + map_rect.size / 2.0
-
 	for layer in _get_theme_layers(bg_theme):
 		var tex: Texture2D = layer[0]
 		var scroll: float = layer[1]
@@ -384,7 +380,12 @@ func _draw_themed_background() -> void:
 		var tint: Color = layer[5] * bg_tint
 		var mode: String = layer[6]
 		var tex_size: Vector2 = (tex.get_size() * tex_scale) if tex != null else Vector2.ZERO
-		var parallax := (cam_pos - center) * (1.0 - scroll)
+		# Bg is locked to world coords (no per-camera parallax shift).
+		# Split-screen renders _draw() once with a single camera context, so
+		# any cam-relative shift would create a visible seam between the
+		# two viewport halves. Letting bg sit in world space means each
+		# camera just shows its own slice — no inconsistency.
+		var parallax := Vector2.ZERO
 
 		match mode:
 			"stretch_full":
@@ -412,37 +413,28 @@ func _draw_themed_background() -> void:
 					bg_rect.size + tex_size * 2.0)
 				draw_texture_rect(tex, dst2, true, tint)
 			"stars_proc":
-				# Deterministic procedural starfield, viewport-culled.
-				# Only iterates cells inside the visible camera area + margin
-				# instead of the full extended bg_rect — keeps frame cost
-				# bounded regardless of map size.
-				var vp := get_viewport()
-				var vp_size: Vector2 = vp.get_visible_rect().size if vp else Vector2(1920, 1080)
-				var view_rect := Rect2(cam_pos - vp_size, vp_size * 2.0)
+				# Deterministic procedural starfield over the full bg_rect.
+				# Locked to world space (no parallax shift) so split-screen
+				# viewports see consistent stars without seams.
 				var seed_off: int = int(scroll * 1000.0) + 7
-				var spacing_px: float = 320.0 + (1.0 - scroll) * 220.0
-				# Convert visible area into cell-grid range, with
-				# parallax-shifted origin so positions stay deterministic.
-				var origin := bg_rect.position - parallax
-				var col_min: int = int(floor((view_rect.position.x - origin.x) / spacing_px)) - 1
-				var col_max: int = int(ceil((view_rect.end.x - origin.x) / spacing_px)) + 1
-				var row_min: int = int(floor((view_rect.position.y - origin.y) / spacing_px)) - 1
-				var row_max: int = int(ceil((view_rect.end.y - origin.y) / spacing_px)) + 1
+				var spacing_px: float = 380.0 + (1.0 - scroll) * 240.0
+				var cols: int = int(bg_rect.size.x / spacing_px) + 1
+				var rows: int = int(bg_rect.size.y / spacing_px) + 1
 				var twinkle_t: float = float(Engine.get_physics_frames()) * 0.02
-				for cx in range(col_min, col_max):
-					for cy in range(row_min, row_max):
+				for cx in range(cols):
+					for cy in range(rows):
 						var idx: int = cx * 977 + cy * 31 + seed_off
 						var rs_seed: float = sin(float(idx) * 39.347) * 43758.5453
 						var rs: float = rs_seed - floor(rs_seed)
-						# Skip 75% of cells for sparsity
-						if rs > 0.25:
+						# Skip 80% of cells for sparsity
+						if rs > 0.20:
 							continue
 						var rx_seed: float = sin(float(idx) * 12.9898) * 43758.5453
 						var ry_seed: float = sin(float(idx) * 78.233) * 43758.5453
 						var rx: float = rx_seed - floor(rx_seed)
 						var ry: float = ry_seed - floor(ry_seed)
-						var sx: float = origin.x + (float(cx) + rx) * spacing_px + parallax.x
-						var sy: float = origin.y + (float(cy) + ry) * spacing_px + parallax.y
+						var sx: float = bg_rect.position.x + (float(cx) + rx) * spacing_px
+						var sy: float = bg_rect.position.y + (float(cy) + ry) * spacing_px
 						var radius: float = 1.8 + rs * 6.0
 						var twink: float = sin(twinkle_t * 1.7 + float(idx) * 0.7) * 0.35 + 0.65
 						var col := Color(tint.r, tint.g, tint.b, tint.a * twink)

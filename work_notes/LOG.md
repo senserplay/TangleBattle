@@ -1,5 +1,42 @@
 # TangleBattle — Рабочий лог
 
+## 2026-04-19 — fix(maps): убран parallax-сдвиг bg → нет шва в split-screen
+
+### Проблема
+Между двумя половинами экрана в split-screen был виден чёткий
+вертикальный шов — bg в каждой половине имел немного разный сдвиг.
+
+### Корневая причина
+`_draw()` в `Node2D` вызывается ОДИН раз за кадр в контексте одного
+viewport. Мой `parallax := (cam_pos - center) * (1.0 - scroll)` использовал
+позицию **текущей** камеры. Результат рисовался в world coords, а **обе**
+viewports транслировали его через свои разные камеры → параллакс-сдвиг
+"правильный" только для одной половины.
+
+### Решение
+Убрал per-camera parallax: `parallax := Vector2.ZERO` для всех слоёв.
+Bg теперь зафиксирован в world coordinates — каждая viewport-камера
+показывает свой ракурс одного и того же бэкграунда. Шва нет.
+
+Цена: исчезла depth-illusion (parallax-сдвиг между слоями). Layer'ы
+по-прежнему имеют разные scale/anchor_y/alpha — глубина читается за счёт
+размытия и position'а, но без дополнительного motion-parallax.
+
+`stars_proc` тоже упрощён: убран viewport-cull (был привязан к одной
+камере), теперь итерирует full bg_rect с redKi spacing 380-620px и
+80% skip — ~300 stars total, performance ok.
+
+Удалены unused locals `cam_pos`, `center`.
+
+### Файлы
+- `scripts/maps/map_base.gd::_draw_themed_background`: parallax = ZERO
+  + cleanup; `stars_proc` без cam-cull
+
+### Тест
+Godot 4.6.1: компилируется без новых warning'ов.
+
+---
+
 ## 2026-04-19 — fix(maps): floor_strip удалён — palette-текстуры сами являются strip'ами
 
 ### Проблема (по новым скриншотам)
