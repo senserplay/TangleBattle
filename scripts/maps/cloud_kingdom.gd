@@ -9,6 +9,8 @@ func _init() -> void:
 	map_name = "Cloud Kingdom"
 	platform_palette = "ice"
 	bg_color = Color(0.4, 0.55, 0.8)
+	bg_theme = "clouds_blue"
+	death_zone_style = "mist"
 	platform_color = Color(0.85, 0.88, 0.95)
 	platform_edge_color = Color(0.95, 0.95, 1.0)
 	floor_color = Color(0.75, 0.8, 0.9)

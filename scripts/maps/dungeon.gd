@@ -9,6 +9,9 @@ func _init() -> void:
 	map_name = "Dungeon"
 	platform_palette = "wood"
 	bg_color = Color(0.02, 0.02, 0.04)
+	bg_theme = "dawn"
+	bg_tint = Color(0.40, 0.35, 0.45)
+	death_zone_style = "abyss"
 	platform_color = Color(0.3, 0.25, 0.2)
 	platform_edge_color = Color(0.5, 0.4, 0.3)
 	floor_color = Color(0.25, 0.2, 0.15)

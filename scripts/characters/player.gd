@@ -189,6 +189,21 @@ const TRAIL_MAX_POINTS := 12
 const TRAIL_SPEED_THRESHOLD := 400.0  # min speed to show trail
 var run_phase: float = 0.0  # animation phase for running
 
+# ── Sprite-based body+face system ──
+var body_sprite: Sprite2D = null
+var face_sprite: Sprite2D = null
+var face_textures: Dictionary = {}      # emotion name -> Texture2D
+var current_emotion: String = ""
+var roll_rotation: float = 0.0          # accumulated rolling angle from movement
+# Event-driven emotion override: when timer > 0, face shows this emotion
+# regardless of state; ticked down in _update_timers.
+var face_event_timer: float = 0.0
+var face_event_emotion: String = ""
+const BODY_TEXTURE_SIZE := 512.0        # native px (texture is square 512x512)
+const FACE_TEXTURE_PATH := "res://assets/characters/face/face_%s.png"
+const BODY_TEXTURE_PATH := "res://assets/characters/body/yarn_ball.png"
+const SPRITE_FILL_FACTOR := 1.25        # new ball asset fills ~80% of texture
+
 # Status effect particles
 var burn_particles: Array[Dictionary] = []
 var poison_particles: Array[Dictionary] = []
@@ -230,6 +245,37 @@ func setup(id: int) -> void:
 	_abilities = $PlayerAbilities
 	_grapple.setup(self)
 	_abilities.setup(self)
+	_setup_visual_sprites()
+
+
+func _setup_visual_sprites() -> void:
+	# Body sprite — yarn ball, tinted to player color
+	var body_tex: Texture2D = null
+	if ResourceLoader.exists(BODY_TEXTURE_PATH):
+		body_tex = load(BODY_TEXTURE_PATH)
+	else:
+		push_error("Player: missing body texture %s" % BODY_TEXTURE_PATH)
+	body_sprite = Sprite2D.new()
+	body_sprite.texture = body_tex
+	# Use absolute z so platforms (z=0) don't occlude the player.
+	body_sprite.z_as_relative = false
+	body_sprite.z_index = 5
+	body_sprite.modulate = player_color
+	add_child(body_sprite)
+
+	# Face sprite — emotion overlay (not tinted, stays upright)
+	for emo in ["happy", "focus", "pain", "angry", "scared", "dead"]:
+		var path: String = FACE_TEXTURE_PATH % emo
+		if ResourceLoader.exists(path):
+			face_textures[emo] = load(path)
+		else:
+			push_warning("Player: missing face %s" % path)
+	face_sprite = Sprite2D.new()
+	face_sprite.texture = face_textures.get("happy", null)
+	face_sprite.z_as_relative = false
+	face_sprite.z_index = 6  # above body
+	add_child(face_sprite)
+	current_emotion = "happy"
 
 
 func _ensure_actions() -> void:
@@ -259,7 +305,105 @@ func _physics_process(delta: float) -> void:
 	_update_animation(delta)
 	_update_particles(delta)
 	_check_bounds()
+	_update_visual_sprites(delta)
 	queue_redraw()
+
+
+func _update_visual_sprites(delta: float) -> void:
+	if body_sprite == null:
+		return
+
+	# Sprite scale derived from collision radius + squash/stretch.
+	# Squash is suppressed while running on ground — running ball just rotates,
+	# squash/stretch is reserved for jump and landing impact (anticipation
+	# from _handle_movement) for clearer visual language.
+	var radius := get_player_radius()
+	var diameter := radius * 2.0
+	var base_scale := diameter / BODY_TEXTURE_SIZE * SPRITE_FILL_FACTOR
+	var sx := squash_x
+	var sy := squash_y
+	if is_on_floor() and absf(velocity.x) > 20.0 and is_alive \
+			and absf(velocity.y) < 30.0:
+		# Running on the ground without vertical motion → no squash, just roll.
+		sx = 1.0
+		sy = 1.0
+	body_sprite.scale = Vector2(base_scale * sx, base_scale * sy)
+
+	# Body color tint — same state-effect math as the old _draw() did
+	var color := player_color
+	if has_meta("fire_burning"):
+		color = color.lerp(Color(1.0, 0.4, 0.1), 0.25)
+	if has_meta("poison_active"):
+		color = color.lerp(Color(0.3, 0.8, 0.2), 0.25)
+	if stun_timer > 0.0:
+		color = color.lerp(Color(0.5, 0.8, 1.0), 0.35)
+	if slow_timer > 0.0:
+		color = color.lerp(Color(0.5, 0.5, 0.7), 0.4)
+	if hit_flash_timer > 0.0:
+		color = color.lerp(Color.WHITE, 0.7)
+	body_sprite.modulate = color
+
+	# Rolling rotation while moving on ground (real ball physics feel)
+	if is_on_floor() and absf(velocity.x) > 20.0 and is_alive:
+		var circumference: float = TAU * radius
+		if circumference > 0.0:
+			roll_rotation += velocity.x / circumference * TAU * delta
+	# Combine continuous roll with body_rotation (lean from movement)
+	body_sprite.rotation = roll_rotation + body_rotation
+
+	# Hide during invincibility flicker (matches old _draw early return)
+	var flicker := is_invincible and fmod(invincible_timer, 0.2) < 0.1
+	body_sprite.visible = is_alive and not flicker
+
+	# ── Face: stays UPRIGHT (doesn't roll), faces the aim direction ──
+	# Bigger face for readability — covers most of the visible ball area.
+	var face_scale := base_scale * 0.85
+	var fx := face_scale * sx
+	if not facing_right:
+		fx = -fx  # mirror horizontally for facing direction
+	face_sprite.scale = Vector2(fx, face_scale * sy)
+	# Slightly above center so eyes look naturally placed on the ball top
+	face_sprite.position = Vector2(0.0, -radius * 0.10)
+	face_sprite.rotation = 0.0  # never rotate the face — body rolls around it
+	face_sprite.visible = body_sprite.visible
+
+	# Emotion state machine
+	var new_emotion := _compute_emotion()
+	if new_emotion != current_emotion:
+		current_emotion = new_emotion
+		if face_textures.has(new_emotion):
+			face_sprite.texture = face_textures[new_emotion]
+
+
+func _compute_emotion() -> String:
+	# Death always wins
+	if not is_alive:
+		return "dead"
+	# Event-driven emotion has priority over state-driven (e.g. ability use,
+	# kill, dash) — see trigger_face_event() for what fires this.
+	if face_event_timer > 0.0 and face_event_emotion != "":
+		return face_event_emotion
+	# Continuous state-driven emotions
+	if hit_flash_timer > 0.0:
+		return "pain"
+	if hp < MAX_HP * 0.3:
+		return "scared"
+	if charge_slot >= 0 or guided_rocket_slot >= 0 or grab_slot >= 0:
+		return "focus"
+	if parry_visual > 0.0:
+		return "angry"
+	return "happy"
+
+
+## Trigger an event-driven emotion that overrides state-based emotion for
+## `duration` seconds. Used when something dramatic happens — ability cast,
+## taking damage, getting a kill, dashing, etc.
+func trigger_face_event(emotion: String, duration: float) -> void:
+	# Don't override longer-lasting events with shorter ones
+	if face_event_timer > duration and face_event_emotion == emotion:
+		return
+	face_event_emotion = emotion
+	face_event_timer = duration
 
 
 # ══════════════════ ANIMATION ══════════════════
@@ -317,12 +461,10 @@ func _update_animation(delta: float) -> void:
 				"max_life": 0.25,
 			})
 
-	# Running deformation — slight horizontal stretch when moving fast
+	# Run phase — for legacy yarn-trail visuals (does NOT add squash anymore;
+	# rolling motion is shown by sprite rotation in _update_visual_sprites).
 	var ground_speed := absf(velocity.x)
 	if is_on_floor() and ground_speed > 100.0:
-		var run_stretch := clampf(ground_speed / 600.0, 0.0, 0.15)
-		squash_x = maxf(squash_x, 1.0 + run_stretch)
-		squash_y = minf(squash_y, 1.0 - run_stretch * 0.5)
 		run_phase += delta * ground_speed * 0.015
 	else:
 		run_phase += delta * 2.0
@@ -580,6 +722,7 @@ func _update_timers(delta: float) -> void:
 	parry_cooldown = maxf(parry_cooldown - delta, 0.0)
 	parry_visual = maxf(parry_visual - delta, 0.0)
 	spawn_anim_timer = maxf(spawn_anim_timer - delta, 0.0)
+	face_event_timer = maxf(face_event_timer - delta, 0.0)
 	if grab_stun_timer > 0.0:
 		grab_stun_timer -= delta
 		is_grabbed = true
@@ -833,6 +976,8 @@ func take_damage(amount: float, source: Node = null) -> void:
 	SoundManager.play_hit()
 	squash_x = 1.3
 	squash_y = 0.7
+	# Pain face for a brief window after taking damage
+	trigger_face_event("pain", 0.5)
 	# Burst particles on hit
 	var burst_count := int(clampf(actual_amount / 5.0, 4, 14))
 	_spawn_hit_burst("hit", burst_count)
@@ -869,6 +1014,10 @@ func take_damage(amount: float, source: Node = null) -> void:
 
 	if hp <= 0.0:
 		hp = 0.0
+		# Killer gets an "angry" face flash on landing the kill
+		if source != null and is_instance_valid(source) and source != self \
+				and source.has_method("trigger_face_event"):
+			source.trigger_face_event("angry", 1.5)
 		die()
 
 
@@ -1571,31 +1720,12 @@ func _draw() -> void:
 	if player_id != 1:
 		_draw_crosshair()
 
-	# ── Body with squash/stretch ──
+	# Body and eyes are drawn by Sprite2D nodes via _update_visual_sprites().
+	# Below variables are still needed by trailing draws (whip, grab hook, etc.).
 	var r := get_player_radius()
-	var sx := squash_x
-	var sy := squash_y
-
-	# Draw body as ellipse via transform
-	var dark := base_color.darkened(0.3)
-
-	# Main body ellipse (approximated with scaled circle points)
-	_draw_ellipse(Vector2.ZERO, r * sx, r * sy, base_color, body_rotation)
-
-	# Yarn lines on body — animated flowing
 	var s := hp_scale
-	var thread_count := 5 + int(s)
-	var flow_offset := run_phase  # makes threads wave when running
-	for i in range(thread_count):
-		var angle := i * TAU / thread_count + 0.3 + body_rotation
-		var wave := sin(flow_offset + i * 1.5) * 0.15
-		var from := Vector2(cos(angle) * sx, sin(angle) * sy) * 10.0 * s
-		var to := Vector2(
-			cos(angle + 1.2 + wave) * sx,
-			sin(angle + 1.2 + wave) * sy
-		) * 20.0 * s
-		draw_line(from, to, dark, 2.0 * s)
-	# Trailing thread ends when moving fast
+	var dark := base_color.darkened(0.3)
+	# Trailing yarn threads when moving fast — keep this decorative bit
 	if velocity.length() > 200.0:
 		var move_dir := -velocity.normalized()
 		for ti in range(3):
@@ -1607,17 +1737,6 @@ func _draw() -> void:
 				thread_end,
 				Color(dark.r, dark.g, dark.b, 0.4), 1.5 * s
 			)
-
-	# Eyes — scaled by hp_scale
-	var eye_x := (6.0 * s if facing_right else -6.0 * s) * sx
-	var eye_y := -6.0 * s * sy
-	var eye_r := 4.0 * s * minf(sx, sy)
-	var pupil_r := 2.0 * s * minf(sx, sy)
-	draw_circle(Vector2(eye_x - 4 * s * sx, eye_y), eye_r, Color.WHITE)
-	draw_circle(Vector2(eye_x + 4 * s * sx, eye_y), eye_r, Color.WHITE)
-	var ps := (2.0 * s if facing_right else -2.0 * s) * sx
-	draw_circle(Vector2(eye_x - 4 * s * sx + ps, eye_y), pupil_r, Color.BLACK)
-	draw_circle(Vector2(eye_x + 4 * s * sx + ps, eye_y), pupil_r, Color.BLACK)
 
 	# Whip visual — sweeping arc
 	if whip_visual_timer > 0.0:

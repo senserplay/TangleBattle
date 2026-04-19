@@ -7,6 +7,9 @@ func _init() -> void:
 	map_name = "Clockwork"
 	platform_palette = "magma"
 	bg_color = Color(0.12, 0.1, 0.08)
+	bg_theme = "dawn"
+	bg_tint = Color(0.70, 0.55, 0.40)
+	death_zone_style = "abyss"
 	platform_color = Color(0.5, 0.4, 0.3)
 	platform_edge_color = Color(0.7, 0.6, 0.45)
 	floor_color = Color(0.4, 0.32, 0.22)

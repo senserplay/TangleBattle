@@ -1,5 +1,990 @@
 # TangleBattle — Рабочий лог
 
+## 2026-04-19 — fix(maps): корневая причина — wrong scale + procedural starfield
+
+### Проблема
+Скриншоты показали 2 серьёзных бага:
+1. **Dawn theme** — всё ещё 2 слоя силуэтов (горизонт + foreground trees) при
+  тёмных tint'ах сливаются в "vertical repetition"
+2. **Space stars** — рябит в глазах: повторяются плотно по вертикали
+
+### Корневая причина
+Проверил реальные размеры текстур:
+- `dawn/02.png`, `07.png`, `08.png` = **1980x1080** (не маленькие!)
+- `forest/*` = 928x793
+- `clouds/*` = 576x324
+- **`stars.png` = 144x9** (тонкая полоска, 9 пикселей высотой!)
+
+**Я скейлил dawn в 14-16x** при том что текстура уже 1980x1080. Получалось
+27000+ пикселей — слои катастрофически большие, что усугубляло наложение.
+
+**stars.png — 9px высотой**, при tile_xy в любом scale тайлится по вертикали
+плотными рядами (виде vertical pinstripes).
+
+### Что сделано
+
+#### 1. Dawn — scale 14x → 1.5-2x, оставлен только горизонт
+- `02.png` (sky+sun) — `stretch_full` scale=1.5 (текстура уже большая)
+- `07.png` (red landscape) — `tile_x` scale=2.0 (один силуэт-горизонт)
+- **Удалён** `08.png` (bare trees) — был лишним overlap
+Теперь dawn — чистый sky + чистый горизонт.
+
+#### 2. Forest упрощён — sky + 1 foreground band
+- `00_sky.png` stretch_full
+- `08_front_trees.png` scatter_x scale=8 (был 14x)
+- Distant tier удалён — был источником "горизонтальных полос"
+
+#### 3. Clouds — sky + 1 cumulus band
+- Удалён `01_far.png` (был источник vertical repeat)
+- Только `03_close.png` scatter_x scale=10x
+
+#### 4. Space — procedural starfield (новый mode `stars_proc`)
+Текстура 144x9 непригодна для tile_xy. Заменена на полностью procedural:
+- Deterministic grid 180-380px spacing (зависит от scroll factor)
+- 60% клеток пропускается → редкие звёзды
+- Per-star: random offset, radius 1.5-6px, twinkle alpha
+- **2 layer'а** stars_proc (foreground big stars + background small stars)
+  с разным spacing для depth illusion
+
+### Файлы
+- `scripts/maps/map_base.gd`:
+  - BG_THEMES упрощён (-15 строк layer'ов)
+  - `_get_theme_layers` поддерживает null-textures для proc modes
+  - Новый case `stars_proc` (+30 строк)
+  - Все scale'ы выверены под реальные размеры текстур
+
+### Тест
+Godot 4.6.1: компилируется чисто. Pre-existing warnings only.
+
+---
+
+## 2026-04-19 — fix(maps): меньше overlap слоёв + soft edges на death zones + реже звёзды
+
+### Запрос пользователя
+По скриншотам видны проблемы:
+- На jungle деревья наслаиваются "снизу вверх" — горизонтальные полосы
+  мелких деревьев одна над другой
+- Резкие переходы между death zone и playable area
+- В space звёзды слишком плотно
+- Видны вертикальные швы (это split-screen, см. ниже)
+
+### Что сделано
+
+#### 1. Упрощены темы — убран overlap silhouettes
+До: 6-8 слоёв per тема, многие с tree silhouettes на разной y → визуально
+наслаивались бандами.
+После: **3 layer'а максимум** на тему (sky + 1 distant horizon + 1 foreground).
+- `forest`: 3 layer'а (sky → 1 distant tree band → 1 big foreground trees)
+- `dawn`: 3 layer'а (sky+sun → 1 red landscape → 1 bare front trees)
+- `clouds_blue/sunset`: 3 layer'а (sky → 1 thin far cloud → 1 big cumulus)
+- `space`: **1 layer** stars (был 2 — `stars_special` убран)
+
+Plus масштабы подняты ещё выше для foreground (14-16x), чтобы каждый объект
+был заметен и редко повторялся.
+
+#### 2. Soft edge на death zones (`_dz_soft_edge` helper)
+Новая функция — рисует deterministic gradient strip от edge зоны в сторону
+playable area. Alpha спадает с `pow(1-t, 1.6)` — мягкий нелинейный спад на
+~140-260px. Применён ко всем стилям death-zone (lava 220, void 200, abyss
+220, stars 240, spikes 140, swamp 200, mist 260, default 120).
+
+Теперь стенка death zone "втекает" туманом/дымом в зону игрока вместо
+жёсткой полосы.
+
+#### 3. Реже звёзды (space)
+- Был: 2 layer'а stars + stars_special, оба scale=4x
+- Стал: 1 layer stars, scale=12x → меньше копий на экран, звёзды крупнее
+- В `_draw_dz_stars` сократил count 80→40, увеличил радиус 1.5→2.5
+
+#### 4. Больше bg padding
+- Был: bg_rect = map ± 1500
+- Стал: bg_rect = map ± 3500 — невидно "конец неба" даже при отдалённой
+  камере или больших картах
+
+### О split-screen швах
+Скриншоты показали вертикальные швы между половинами экрана. Это
+**неустранимо в текущей архитектуре** — каждый sub-viewport рендерит сцену
+со своей камеры, parallax считается на её позиции, поэтому в каждой
+половине bg сдвинут по-разному. Решение требовало бы перенести bg в
+CanvasLayer per-viewport, что серьёзный рефакторинг.
+
+### Файлы
+- `scripts/maps/map_base.gd`: упрощён BG_THEMES (-30 строк layer'ов),
+  добавлен `_dz_soft_edge` helper (+38 строк), 8 death-zone функций
+  обновлены вызовом `_dz_soft_edge`, bg_rect padding расширен.
+
+### Тест
+Godot 4.6.1: компилируется без новых warning'ов. Pre-existing warnings
+от sprite_effect/boomerang/player не связаны.
+
+---
+
+## 2026-04-19 — fix(maps): крупнее silhouettes + scatter_x mode (меньше повтора, больше 3D)
+
+### Запрос пользователя
+"На картах одни и те же объекты очень мелкие и часто повторяются, нужно
+сделать их более крупными и разнообразными, 3d эффект хорошо работает."
+
+### Что сделано
+
+#### 1. Новый mode `scatter_x` в `_draw_themed_background`
+Раньше foreground silhouettes использовали `tile_x` — одна и та же текстура
+повторяется идеально. Теперь `scatter_x`:
+- Расставляет N инстансов вдоль карты с deterministic pseudo-random позициями
+- Каждый инстанс: размер 0.85x..1.30x, jitter ±35% spacing, 50% горизонтальный flip
+- Стабильно между фреймами (seed на индексе) — без мерцания
+- Spacing = `tex_size.x * 0.65` (лёгкий overlap для естественности)
+
+#### 2. Увеличены масштабы текстур (объекты крупнее)
+- `forest`: 5x → 9-12x (foreground trees 12x)
+- `dawn`: 7x → 12-16x (front trees 16x)
+- `clouds_blue/sunset`: 7x → 10-14x (большие кучевые облака)
+
+#### 3. Больше layer-вариаций (меньше повтора одной картинки)
+- `forest`: добавлены `01_lights` (sun halo), `07_close_trees` — теперь 8
+  слоёв вместо 6 (всего в паке 10)
+- `dawn`: пересобран — правильный порядок layer'ов:
+  `02 (sky+sun) → 07 (red landscape) → 04 (pines) → 03 (mid) → 05 (purple
+  pines) → 08 (bare trees foreground)`. Раньше использовал layer 06 как sky
+  по ошибке — это нижний градиент.
+- `clouds`: mid + close переведены в `scatter_x` для разнобоя
+
+#### 4. Гибридный подход tile_x + scatter_x
+- **Дальние слои** остаются `tile_x` (горизонт читается ровно)
+- **Средние и foreground** используют `scatter_x` (deterministic variety)
+
+### Файлы
+- `scripts/maps/map_base.gd` — новый match case `scatter_x` в
+  `_draw_themed_background` (+30 строк), пересобраны 4 темы (forest, dawn,
+  clouds_blue, clouds_sunset)
+
+### Тест
+Godot 4.6.1: запускается без ошибок. Все warning'и — pre-existing
+(sprite_effect, boomerang, player) и не связаны с этим изменением.
+
+---
+
+## 2026-04-19 — feat(maps): текстурные бэкграунды + тематические death zones на всех 16 картах + 2 новые карты
+
+### Запрос пользователя
+"Я добавил 4 новых архива для бэкграунда карт в my_assets, а еще там был до
+этого архив craftpix-net-558275-free-sky-with-clouds-background-pixel-art-set.
+Замени бэкграунд, зоны смерти на ВСЕХ картах, используя ассеты из этих
+архивов, можно также добавить новые карты под данные тематики."
+
+### Что сделано
+
+#### 1. Скопированы ассеты в `assets/textures/backgrounds/`
+| Папка | Источник | Содержимое |
+|-------|----------|-----------|
+| `forest/` | Free Pixel Art Forest | 10 слоёв (sky → grass) |
+| `dawn/` | The Dawn | 8 слоёв silhouettes (горы) |
+| `clouds_blue/` | craftpix-558275 / Clouds 1 | 4 слоя (небо + облака) |
+| `clouds_sunset/` | craftpix-558275 / Clouds 4 | 4 слоя (закат + облака) |
+| `space/` | SpaceBackgroundSource | stars.png + stars_special.png |
+| `nature/` | Nature Landscapes | n1..n8 — full-frame |
+
+#### 2. Новый bg-theme система в `map_base.gd`
+- Константа `BG_THEMES` — словарь тем с layers config
+- Каждый layer: `[path, scroll, anchor_y, offset_y, scale, tint, mode]`
+  - `mode = "stretch_full"` (одно растянутое изображение для неба)
+  - `mode = "tile_x"` (горизонтальная полоса с tile-репитом)
+  - `mode = "tile_xy"` (звёзды — тайл в обоих направлениях)
+- Static cache `_bg_layer_cache` — текстуры подгружаются 1 раз на тему
+- Параллакс: layer.scroll = 0.0 → закреплено к карте, 1.0 → следует за камерой
+
+Карты задают: `bg_theme = "forest"`, `bg_tint = Color(...)`,
+`death_zone_style = "..."` в `_init()` — всё остальное base class рисует сам.
+
+#### 3. Тематические death zones (`death_zone_style`)
+Заменили старые красные полоски на стилизованные зоны:
+- `lava` — оранжевое свечение, пузырьки, hot edge (volcano)
+- `void` — тёмно-фиолетовый с мерцающими частицами (mirror)
+- `abyss` — чёрный ink с фиолетовыми каплями + glow edge
+- `stars` — открытое пространство со звёздами (space)
+- `spikes` — красная зона с зубчатой кромкой (arena)
+- `swamp` — токсично-зелёная жижа с пузырями (jungle)
+- `mist` — холодный голубой туман (ice_cave, sky)
+- `default` — старый красный striped (fallback)
+
+#### 4. Назначение тем по 16 картам
+| Карта | bg_theme | bg_tint | death_zone |
+|-------|----------|---------|-----------|
+| arena | dawn | warm sunset | spikes |
+| workshop | dawn | dusk grey | abyss |
+| sky_garden | forest | bright | mist |
+| volcano | clouds_sunset | hot orange | lava |
+| ice_cave | clouds_blue | cold blue | mist |
+| tower | dawn | twilight purple | abyss |
+| factory | dawn | grey | abyss |
+| jungle | forest | natural | swamp |
+| space | space | (white) | stars |
+| dungeon | dawn | night purple | abyss |
+| cloud_kingdom | clouds_blue | (white) | mist |
+| clockwork | dawn | brass | abyss |
+| mirror | clouds_sunset | violet | void |
+| fortress | dawn | noble | (walls — N/A) |
+| inferno | clouds_sunset | crimson | (fire walls — N/A) |
+| trampoline | clouds_blue | (white) | (bouncy walls — N/A) |
+
+#### 5. Две новые карты
+- **Meadow** (`scenes/maps/meadow.tscn`, `scripts/maps/meadow.gd`):
+  forest theme с белым tint, swamp pit, открытый верх. 11 платформ
+  scattered как лесные островки на 5000×3200 поле.
+- **Twin Peaks** (`scenes/maps/twin_peaks.tscn`,
+  `scripts/maps/twin_peaks.gd`): dawn theme с тёплым sunset tint, abyss
+  внизу. Две большие плато-горы (1500px) + sky bridge между вершинами +
+  телепорт между twin summits на 5200×3200.
+- Зарегистрированы в `game.gd::MAP_SCENES` (теперь 18 карт).
+
+### Файлы
+- **Новые ассеты**: ~30 файлов в `assets/textures/backgrounds/{forest,dawn,clouds_blue,clouds_sunset,space,nature}/`
+- **Новые скрипты**: `scripts/maps/meadow.gd`, `scripts/maps/twin_peaks.gd`
+- **Новые сцены**: `scenes/maps/meadow.tscn`, `scenes/maps/twin_peaks.tscn`
+- **map_base.gd**: +260 строк (BG_THEMES, _draw_themed_background,
+  _draw_themed_danger_zones, 7 функций dz_lava/void/abyss/stars/spikes/swamp/mist)
+- **16 map scripts**: добавлены 2-3 строки `bg_theme/bg_tint/death_zone_style`
+- **game.gd**: +2 строки в MAP_SCENES
+
+### Тест
+Godot 4.6.1 — `mcp__godot__run_project` (jungle.tscn + main): запускается без
+ошибок и без warnings. Class cache obnovлён корректно.
+
+### Дальше
+- Visual playtest всех 16 карт (нужно проиграть в lobby) — поправить anchor_y
+  для конкретных карт если silhouettes окажутся слишком высоко/низко
+- Возможно добавить subtle ambient звуки под темы (forest cricket, dawn wind)
+
+---
+
+## 2026-04-19 — feat: текстура yarn ball вместо процедурных кругов на всех UI экранах
+
+### Запрос пользователя
+"Сделай теперь иконку персонажа на всех экранах именно с ассета, а не отрисованный.
+Экран подключения, выбор карт"
+
+### Что сделано
+
+#### Новый helper `scripts/ui/yarn_ball_icon.gd` (`class_name YarnBallIcon`)
+Статический helper для отрисовки yarn-ball icon с лицом на любом CanvasItem:
+```gdscript
+static func draw_at(canvas, center, radius, color, with_face = true):
+    # Tinted body + optional happy face overlay
+```
+- Кеширует body/face текстуры (загружает 1 раз)
+- При отсутствии текстуры fallback на `draw_circle`
+- `with_face = false` для декоративных не-character иконок
+
+#### Заменены 5 мест процедурной отрисовки
+
+| Файл | Где | Что было | Стало |
+|------|-----|----------|-------|
+| `lobby.gd` :426-440 | Слот игрока | 6 draw_circle (тело + 4 глаза + 5 yarn lines) | 1 строка `YarnBallIcon.draw_at(...)` |
+| `game_overlay.gd` :80-105 | Победный экран (winner ball) | 4 draw_circle + 7 yarn lines + 4 eye circles | `YarnBallIcon.draw_at(...)` (glow halos сохранены) |
+| `game_overlay.gd` :183-190 | TAB-stats panel | 5 draw_circle (тело + 4 глаза) | `YarnBallIcon.draw_at(...)` |
+| `game_overlay.gd` :384-396 | Заголовок выбора пассивки | 5 draw_circle + 5 yarn lines | `YarnBallIcon.draw_at(...)` |
+| `title_menu.gd` :292-300 | Декоративные орбитальные шарики | 4 draw_circle | 4 × `YarnBallIcon.draw_at(..., with_face=false)` |
+
+Не тронуты:
+- `lobby.gd` :489 — мелкий color-preview circle в селекторе цвета (не персонаж)
+- `hud_draw.gd` :70 — мини-точки счёта (не персонаж)
+
+### Файлы
+- `scripts/ui/yarn_ball_icon.gd` (новый, 47 строк)
+- `scripts/ui/lobby.gd` (-14 строк процедурной отрисовки)
+- `scripts/main/game_overlay.gd` (-30 строк, 3 места заменены)
+- `scripts/ui/title_menu.gd` (заменены 4 декор. круга)
+
+### Тест
+Godot 4.6.1: после `--import` для refresh class cache — компилируется без
+ошибок. Никаких runtime issues.
+
+---
+
+## 2026-04-19 — feat: новый clean ball, большее лицо, эмоции по событиям, без squash на беге
+
+### Запросы пользователя
+1. Заменить ассет персонажа на новый (более чистый cartoon-стиль)
+2. Сделать лицо больше
+3. При ходьбе НЕ сплющивать клубок — только катится; squash оставить только
+   на прыжке и приземлении
+4. Привязать эмоции лица к событиям (использование способности, урон и т.д.)
+
+### Что сделано
+
+#### 1. Новый ассет клубка (`assets/characters/body/yarn_ball.png`)
+Загружен новый Gemini PNG — чистый cartoon с жирным чёрным контуром.
+Обработка: flood-fill белого фона от углов через `scipy.ndimage.label`,
+crop по bbox + 12px padding, square center, ресайз 512×512.
+
+#### 2. Большее лицо (`player.gd::_update_visual_sprites`)
+- Face scale 0.55 → **0.85** (на 55% больше)
+- Face Y offset: -radius × 0.18 → -radius × 0.10 (чуть выше центра, не так
+  сильно)
+- `SPRITE_FILL_FACTOR` 1.4 → 1.25 (новый ассет занимает ~80% от текстуры,
+  не нужно так сильно скейлить)
+
+#### 3. Без squash на беге
+Раньше в `_handle_movement` при беге применялся `run_stretch`:
+```gdscript
+squash_x = maxf(squash_x, 1.0 + run_stretch)  # ←удалено
+squash_y = minf(squash_y, 1.0 - run_stretch * 0.5)
+```
+Теперь squash зарезервирован для:
+- **Приземление** (impact-based в `_handle_movement`)
+- **Прыжок** (squash_x=0.8, squash_y=1.25)
+- **Wall slide** (squash_x=0.85, squash_y=1.1)
+- **Урон** (take_damage: squash_x=1.3, squash_y=0.7)
+- **Swap способность** (мгновенный squash при свапе)
+
+В `_update_visual_sprites` добавлен override: если on_floor + horizontal
+movement + no vertical motion → sprite scale = (1, 1) (только rotation).
+
+Бег теперь = чистое перекатывание клубка без деформации, как просили.
+
+#### 4. Face Event System — эмоции по событиям
+
+Новая система `trigger_face_event(emotion, duration)` накладывает эмоцию
+поверх state-based с приоритетом:
+
+```gdscript
+# В _compute_emotion:
+if not is_alive: return "dead"
+if face_event_timer > 0: return face_event_emotion  # ← override
+if hit_flash_timer > 0: return "pain"
+if hp < MAX_HP * 0.3: return "scared"
+...
+```
+
+#### Привязка эмоций к событиям
+
+| Событие | Эмоция | Длительность | Где |
+|---------|--------|--------------|-----|
+| Использование способности | focus | 0.4s | `player_abilities.gd::_use_ability` |
+| Needle Dash (вместо общего focus) | focus | dash_duration + 0.1s | `_ab_needle_dash` |
+| Активация parry | angry | 0.4s | `handle_abilities` (parry block) |
+| Получение урона | pain | 0.5s | `player.gd::take_damage` |
+| Убийство врага | angry | 1.5s | `take_damage` (при hp ≤ 0, источнику) |
+
+State-based fallback (когда нет события):
+- not is_alive → dead
+- hp < 30% → scared
+- charge/guided/grab активны → focus
+- иначе → happy
+
+### Файлы
+- `assets/characters/body/yarn_ball.png` (новый ассет)
+- `scripts/characters/player.gd`:
+  - `face_event_timer`, `face_event_emotion` vars
+  - `face_event_timer` decrement в `_update_timers`
+  - `trigger_face_event()` функция
+  - `_compute_emotion()` с event override
+  - SPRITE_FILL_FACTOR 1.4 → 1.25
+  - face_scale 0.55 → 0.85, Y -0.18 → -0.10
+  - run_stretch удалён из `_handle_movement`
+  - В `_update_visual_sprites` — override sx/sy = 1 при беге
+  - `take_damage`: trigger pain 0.5s; при killing trigger angry 1.5s на источника
+- `scripts/characters/player_abilities.gd`:
+  - `_use_ability`: trigger focus 0.4s (кроме needle_dash)
+  - `_ab_needle_dash`: trigger focus на dash_duration+0.1s
+  - parry block в handle_abilities: trigger angry 0.4s
+
+### Тест
+Godot 4.6.1: компилируется без ошибок. Только pre-existing warnings.
+
+---
+
+## 2026-04-19 — fix: персонаж не виден за платформой + белые внутренности лиц
+
+### Проблемы по скриншоту пользователя
+1. **Тело клубка не отображается** — видны только HP-бар и иконки способностей,
+   персонажа нет
+2. **Лица без белых элементов** — глазные яблоки и зубы прозрачные
+
+### Причины
+
+**#1 z_index**: спрайты создавались с `z_index = -2` (body) и `-1` (face),
+а `z_as_relative` по умолчанию `true`. Поэтому абсолютный z = parent_z + (-2)
+= -2. Платформы рисуются на z=0 → персонаж оказывался ЗА платформой. HP-бар
+и иконки способностей рисовались через _draw() родителя на z=0 → они видны.
+
+**#2 white interior**: первая обработка face cells:
+```python
+keep = is_dark | is_red
+```
+Белые "белки" глаз и зубы (неокрашенные пиксели внутри чёрного контура)
+попадали в категорию "background" → стали прозрачными.
+
+### Исправления
+
+**Fix 1 — sprites выше платформ:**
+```gdscript
+body_sprite.z_as_relative = false
+body_sprite.z_index = 5  # абсолютный z, выше платформ (z=0)
+face_sprite.z_as_relative = false
+face_sprite.z_index = 6  # выше body
+```
+
+**Fix 2 — flood-fill от углов вместо color threshold:**
+```python
+bg_candidate = is_lightish & is_neutral  # светло-серые/белые
+# Connected components с padded edges
+labels, _ = ndimage.label(padded)
+bg_connected = (labels == labels[0,0])  # только связное с углами
+arr[bg_connected] = [0,0,0,0]
+```
+Внутренности глаз/зубы окружены чёрным контуром → не связаны с углами →
+остаются непрозрачными.
+
+**Дополнительно:**
+- `SPRITE_FILL_FACTOR` 1.7 → 1.4 (1.7 был слишком крупный)
+- `body_sprite.modulate = player_color` ставится при создании (не ждём
+  первого `_update_visual_sprites`)
+- `push_error/push_warning` при отсутствии текстур (для дебага)
+
+### Файлы
+- `scripts/characters/player.gd` (z_index, modulate init, FILL_FACTOR)
+- `assets/characters/face/face_*.png` × 6 (re-cut с flood-fill)
+
+### Тест
+Godot 4.6.1: компилируется без ошибок, runtime issues отсутствуют.
+Визуальная проверка за пользователем.
+
+---
+
+## 2026-04-19 — feat: спрайтовый персонаж (yarn ball + 6 эмоций) с анимацией через transforms
+
+### Что сделано
+Заменена процедурная отрисовка клубка (`_draw_ball` через `_draw_ellipse` +
+yarn lines + eyes) на спрайтовую: один статичный спрайт-клубок + спрайт-лицо,
+анимация через scale/rotation/modulate в реальном времени.
+
+### Ассеты
+Пользователь предоставил два изображения через nanobanana:
+1. **Hand-painted yarn ball** (2048×2048, без альфы) — реалистичный клубок ниток
+2. **32 cartoon faces** (2848×1504 grid 4×8, без альфы) — набор эмоций
+
+Pipeline обработки (Python + PIL + scipy):
+- Yarn ball: detect "warm" pixels (R > B+8), find biggest connected component,
+  binary closing/dilation для гладкого силуэта, distance transform → soft alpha
+  edge, crop по bbox + 12px padding, ресайз 512×512 → `assets/characters/body/yarn_ball.png`
+- Face sheet: разрезан на 32 cells (356×376 каждая), фон через color-threshold:
+  оставлены только тёмные/красные пиксели (face features), остальное → alpha=0
+- 32 cells сохранены в `my_assets/face_cells/r{1-4}c{1-8}.png` для review
+- Выбрано 6 best matches под наши эмоции:
+
+| Эмоция  | Cell  | Описание |
+|---------|-------|----------|
+| happy   | r4c2  | Большая улыбка с зубами |
+| focus   | r4c1  | Нейтральные глаза, прямая линия рта |
+| pain    | r1c6  | Грустные брови, frowning рот |
+| angry   | r2c4  | Злые брови + оскал |
+| scared  | r3c8  | Широкие глаза + красный рот + капли пота |
+| dead    | r2c2  | Закрытые глаза + открытый рот |
+
+### Изменения в `player.gd`
+
+#### Новые поля
+- `body_sprite: Sprite2D` — клубок, тинтуется player_color
+- `face_sprite: Sprite2D` — лицо-оверлей, не тинтуется
+- `face_textures: Dictionary` — кеш 6 текстур эмоций
+- `current_emotion: String` — текущая эмоция (для diff-update)
+- `roll_rotation: float` — накопленный угол перекатывания
+- Константы: BODY_TEXTURE_SIZE, SPRITE_FILL_FACTOR, paths
+
+#### Новая `_setup_visual_sprites()` (вызов из setup)
+- Загружает `yarn_ball.png` в body_sprite (z_index=-2)
+- Загружает 6 face textures, ставит "happy" в face_sprite (z_index=-1)
+
+#### Новая `_update_visual_sprites(delta)` (вызов в _physics_process)
+- **Scale**: `(diameter / BODY_TEXTURE_SIZE * SPRITE_FILL_FACTOR) × (squash_x, squash_y)`
+- **Modulate**: применяет fire/poison/stun/slow/hit_flash тинты как старый _draw
+- **Rotation (rolling)**: `roll_rotation += velocity.x / circumference × TAU × delta`
+  — клубок реально катится при движении по полу, как настоящий шар
+- **Visibility**: hides during invincibility flicker (та же логика что и раньше)
+- **Face**: scale 55% от body, остаётся UPRIGHT (не вращается с телом!),
+  flip_h через scale.x = -value при facing left, position (0, -radius*0.18)
+  чтобы лицо было в верхней части клубка
+
+#### Новая `_compute_emotion()`
+```
+not is_alive            → "dead"
+hit_flash_timer > 0     → "pain"
+hp < MAX_HP * 0.3       → "scared"
+charge/guided/grab slot → "focus"
+parry_visual > 0        → "angry"
+otherwise               → "happy"
+```
+Эмоция меняется только при diff (не каждый кадр).
+
+#### Удалено из `_draw()`
+- `_draw_ellipse(...)` для тела (~50 строк)
+- Yarn flowing lines
+- Eyes drawing (4 circles)
+
+Сохранены: trailing thread ends при velocity > 200 (декоративные), все эмблемы
+способностей, hooks, spikes, particles, parry/spawn/whip эффекты.
+
+### Файлы
+- `assets/characters/body/yarn_ball.png` (нов, 349 KB)
+- `assets/characters/face/face_{happy,focus,pain,angry,scared,dead}.png` (6 нов)
+- `scripts/characters/player.gd` (+87 строк сетапа/апдейта, -50 строк отрисовки)
+
+### Тест
+- Godot 4.6.1: запуск title_menu → lobby → game без ошибок (только pre-existing warnings)
+- Никаких runtime ошибок или null reference на спрайтах
+- Визуальное тестирование за пользователем
+
+### Преимущества подхода
+- 1 ball PNG → 4 цвета через `body_sprite.modulate = player_color`
+- Эмоции меняются мгновенно (texture swap), не нужно генерить per-pose
+- Анимация через transforms масштабируется с FPS, smooth
+- Реальное вращение клубка при беге = живой эффект
+- Лицо не вращается → читаемость в любом положении
+
+### Что делать дальше
+- Визуальный тест в игре, при необходимости тюнить SPRITE_FILL_FACTOR
+- Возможно подправить позицию лица (Y offset) если глаза слишком высоко/низко
+- В будущем — добавить особые эмоции (parry_burst → angry+, kill → angry, etc)
+
+---
+
+## 2026-04-18 — fix: промты — multi-frame анимации вместо одиночных картинок
+
+### Проблема
+Предыдущая версия промтов давала **по одной картинке на действие**. Для
+живой анимации этого недостаточно — персонаж выглядел бы как plain stamp,
+просто меняющий картинку по событиям.
+
+### Что сделано
+Полностью переписан `docs/characters/PROMPTS.md` с разбивкой каждого
+действия на несколько кадров анимации.
+
+### Раздел кадров
+
+| Действие | Кадров | FPS | Тип |
+|----------|--------|-----|-----|
+| body_idle | 4 | 3 | Цикл (дыхание) |
+| body_run | 6 | 12 | Цикл (bounce + roll) |
+| body_jump | 3 | event | Anticipation → launch → apex |
+| body_fall | 2 | 4 | Цикл (стабильное падение) |
+| body_hurt | 2 | event | Импакт → recoil |
+| body_dead | 5 | 8 | Прогрессия unraveling |
+| face_happy | 2 | 0.3 | Моргание |
+| face_focus | 1 | — | Статика |
+| face_pain | 2 | event | Peak → fading |
+| face_angry | 2 | event | Snarl → relax |
+| face_scared | 2 | 6 | Дрожание |
+| face_dead | 1 | — | Статика |
+
+**Тело: 22 кадра. Лицо: 10 кадров. Всего: 32 кадра.**
+
+### Ключевые принципы multi-frame
+- **Каждый кадр — описание конкретного момента** в дуге движения, не
+  абстрактное "running pose"
+- **Image reference** = `body_idle_01.png` для всех body-кадров; для
+  face — `face_happy_01.png`
+- **Конвенция именования**: `body_<action>_<frame>.png`, frame с двумя
+  цифрами для сортировки (`01`, `02`, ...)
+- **Описание различий между кадрами**: aspect ratio, tilt, strand
+  positions, motion lines, dust — каждый параметр прописан явно
+- **Циклы должны замыкаться**: frame N сглаживается к frame 1
+
+### Примеры детализации (run cycle)
+- Frame 1: ground impact, max squash 1.3:0.85, strands trail far back,
+  dust puff
+- Frame 2: rebounding, squash 1.15:0.95, strands less extreme
+- Frame 3: airborne, neutral 1:1, more forward tilt, no dust
+- Frame 4: peak bounce, slight stretch 0.95:1.05, strands relaxed
+- Frame 5: descending, neutral 1:1, strands lift up (air resistance)
+- Frame 6: approaching ground, beginning squash 1.1:0.95
+
+### Прогрессия dead (5 кадров размотки)
+- Frame 1: ball intact, 3-4 strands начинают отделяться
+- Frame 2: ball 85%, 8-10 strands loose
+- Frame 3: ball 70%, 12 strands, начало tangle
+- Frame 4: ball 55%, 14 strands, full tangle
+- Frame 5: ball 50%, финальная статика, 15 strands, contact shadow
+
+### Новый раздел §7.2 — выравнивание центров
+Критично подчёркнуто: все кадры одной анимации должны иметь одинаковый
+**геометрический центр клубка** (через onion skin в Photopea/Krita),
+иначе персонаж "прыгает" при проигрывании. Подробная инструкция.
+
+### Новый раздел §7.3 — превью анимации в GIF
+Перед импортом в Godot собрать GIF из кадров (EZGif.com) с заданным FPS
+для проверки motion. Если "прыгает" — выровнять. Если неестественно —
+пере-генерить.
+
+### Изменённый раздел §9 — интеграция в Godot
+**Было**: `Sprite2D.texture = body_textures[pose]` (статичная текстура)
+**Стало**:
+- `AnimatedSprite2D` "Body" с `SpriteFrames` ресурсом
+- `AnimatedSprite2D` "Face" (child) с `SpriteFrames`
+- 6 анимаций body: `idle`, `run`, `jump`, `fall`, `hurt`, `dead`
+- 6 анимаций face с заданными FPS из таблицы
+- State machine через `play("animation_name")`
+
+### Файлы
+- `docs/characters/PROMPTS.md` (переписан, 600+ строк)
+
+### Минимальный тест (§8)
+8 кадров: 2 idle + 3 run + 1 hurt + 1 happy + 1 pain. Достаточно для
+проверки тинта, animation consistency, общего ощущения. Остальные 24 —
+после положительной оценки.
+
+---
+
+## 2026-04-18 — fix: промты — реальный клубок ниток вместо AI-cartoon
+
+### Проблема
+Предыдущие промты задавали стиль "Flat cartoon mascot illustration in
+the style of Kirby/Fall Guys". Это даёт "AI-look" — слишком гладкий,
+generic vector, узнаваемо машинно-сгенерированный, с жирным контуром
+и однотонной заливкой. Не выглядит как настоящий клубок.
+
+### Что сделано
+Переписан `docs/characters/PROMPTS.md` с новой философией:
+**персонаж = настоящий клубок ниток, нарисованный для игры**
+(не cartoon mascot, а текстурный клубок из реальной пряжи в hand-painted
+2D game illustration стиле).
+
+### Изменённые ключевые принципы
+
+#### Стиль (общий блок, §3)
+**Было**: Flat cartoon, 3px bold black outline, single flat color, like Kirby
+**Стало**:
+- Hand-painted 2D game illustration (Cuphead-era inanimate objects,
+  Hollow Knight props, hand-painted children's book illustration)
+- Видимые криво-перекрещивающиеся пряди ниток (criss-crossing strands)
+- Soft fuzziness — стрэй фибры по силуэту
+- 1-2px тонкий dark gray outline ТОЛЬКО на внутренних формах нитей,
+  НЕ толстый cartoon outline вокруг всего силуэта
+- 2-3 уровня естественных теней между слоями ниток
+- Слегка нерегулярная форма (реальный клубок не идеальная сфера)
+- Loose yarn ends — кончики пряжи, торчащие как у настоящего клубка
+
+#### Цветовая палитра (§1)
+**Было**: чистый белый `#FFFFFF` + `#D0D0D0` тени + `#000000` контур
+**Стало**:
+- Основные нитки: кремово-белый `#F5F0E5` (тёплее чистого белого)
+- Тени между нитками: `#B5B0A8` (естественная глубина)
+- Глубокие тени снизу: `#807870` (контактная тень)
+- Контур: `#3A352F` (тёмно-серый, не чёрный)
+
+Все цвета в нейтрально-кремово-серой гамме — тинт через `modulate`
+работает чисто.
+
+#### Лицо на теле — УБРАНО (§3, §6)
+**Было**: тело включало базовое "happy" лицо, лицевые оверлеи только для
+emotion change.
+**Стало**: тело **БЕЗ ЛИЦА вообще** — face overlay всегда видим в игре,
+включая default `face_happy` в idle. Это:
+- Упрощает позиционирование (нет конфликта между лицом тела и оверлеем)
+- Делает body спрайты переиспользуемыми между эмоциями
+- Полностью разделяет body и face ответственности
+
+#### Стиль лиц (§6)
+**Было**: kawaii anime eyes (сильно AI-look)
+**Стало**:
+- Hand-drawn cartoon с лёгкой нерегулярностью (не perfect digital strokes)
+- Цвет — тёплый `#2A2520` (very dark warm brown, не чёрный)
+- Будто лицо нарисовано/вышито на самом клубке
+
+#### Loose yarn strands добавлены везде
+- **idle**: 2 кончика — short top + long bottom-right
+- **run**: длинный кончик трэйлит назад от скорости
+- **jump**: оба кончика трэйлят вниз
+- **fall**: оба кончика трэйлят вверх (air resistance)
+- **hurt**: 6-8 popped strands вырывающихся при ударе
+- **dead**: 12-15 размотанных нитей образуют tangle
+
+Кончики ниток заменили "yarn tuft pompom" — выглядят как настоящие
+свободные концы пряжи, а не cartoon hair.
+
+### Новый раздел §10: борьба с AI-стилем
+Если nanobanana выдаёт slick AI-cartoon вместо hand-painted yarn:
+- Усилить требование: "hand-painted natural texture, NOT generic
+  vector cartoon. Show individual yarn fibers."
+- Negative prompt: `vector art, flat cartoon, smooth shading, perfect
+  circle, mascot logo, generic AI art`
+- Прямые референсы: Cuphead inanimate props, Studio MDHR background
+
+### Файлы
+- `docs/characters/PROMPTS.md` (полностью переписан)
+
+---
+
+## 2026-04-18 — fix: промты персонажа — убраны все упоминания рук/ног
+
+### Проблема
+Первая версия `docs/characters/PROMPTS.md` описывала клубок с "stubby arms"
+и "stubby legs" (мелкими ручками и ножками в стиле Fall Guys/Kirby). Это
+противоречит концепции персонажа — он буквально клубок ниток, без конечностей.
+
+### Что сделано
+Полностью переписан `docs/characters/PROMPTS.md`:
+- Добавлено чёткое "CRITICAL CHARACTER RULE" в общий стилевой блок:
+  "The character is a PURE YARN BALL ONLY. No arms, no legs, no hands,
+  no feet, no limbs of any kind."
+- Единственный допустимый "отросток" — yarn TUFT (хохолок ниток) на макушке
+- Переписаны все 6 промтов поз тела — движение/действия показываются
+  через:
+  - Деформацию клубка (squash/stretch)
+  - Motion-lines и частицы
+  - Наклон/поворот всего шара
+  - Хохолок ниток на макушке (стримит при беге, тянется вверх при прыжке)
+  - Расползающиеся loose yarn strands при уроне/смерти
+- Каждый промт содержит финальный REMINDER "no limbs" — последние токены
+  имеют больший вес при генерации
+- Добавлен раздел §10 "Частые ошибки nanobanana и как их обходить" — в
+  частности, как переубедить модель не добавлять руки/ноги (повтор в конце,
+  negative prompt, более категоричные формулировки)
+
+### Конкретные изменения по позам (без конечностей)
+- **idle**: был с "stubby arms at sides, stubby legs standing" — стало
+  чистый шар с хохолком
+- **run**: был "legs mid-stride, arms swung back" — стало "horizontal squash,
+  25° tilt forward, motion lines trailing, dust puff, tuft streams back"
+- **jump**: был "arms raised up, legs tucked" — стало "vertical stretch,
+  tuft stretched upward, upward motion arcs below"
+- **fall**: был "arms spread wide, legs down" — стало "slight stretch, tuft
+  trailing upward (air resistance), wind lines on sides"
+- **hurt**: был "arms splayed out" — стало "8 loose yarn strands popping out
+  of surface, asymmetric squash"
+- **dead**: был "arms limp, legs tangled" — стало "ball shrunk to 50%, 12 long
+  loose yarn strands trailing away"
+
+Лица (§6) не менялись — они и так без тела.
+
+### Файлы
+- `docs/characters/PROMPTS.md` (полностью переписан)
+
+---
+
+## 2026-04-18 — chore: промты nanobanana 2 для спрайтов персонажа
+
+### Что сделано
+Подготовлен документ `docs/characters/PROMPTS.md` с полным набором промтов
+для генерации спрайтов персонажа-клубка через Google nanobanana 2
+(Gemini 2.5 Flash Image).
+
+### Архитектурное решение
+**Один персонаж → 4 цвета через тинт в движке.** Базовый спрайт тела —
+чисто белый (`#FFFFFF`) с чёрным контуром (`#000000`) и светло-серыми тенями
+(`#D0D0D0`). В Godot: `body_sprite.modulate = player_color` даёт
+красный/синий/зелёный/жёлтый клубок:
+- `WHITE × RED = RED` (тело)
+- `GRAY × RED = dark RED` (естественная тень)
+- `BLACK × RED = BLACK` (контур сохраняется)
+
+Лицо — **отдельный Sprite2D**, не тинтуется (остаётся чёрным на любом цвете).
+
+### Раздел спрайтов
+12 файлов:
+- **6 поз тела** (256×256 в игре, 1024×1024 при генерации): idle, run, jump, fall, hurt, dead
+- **6 эмоций лица** (отдельные оверлеи): happy, focus, pain, angry, scared, dead
+
+### Промты
+- **1 главный промт для `body_idle.png`** — без референса, задаёт характер
+- **5 промтов-вариаций** для остальных поз с `body_idle` как image reference
+- **1 главный промт для `face_happy.png`** — без референса
+- **5 промтов-вариаций** для остальных эмоций с `face_happy` как reference
+
+Все промты содержат:
+- Общий STYLE-блок (flat cartoon, чёрный контур, белое тело, прозрачный фон)
+- Описание субъекта с характером (stubby arms/legs, yarn tuft on top,
+  spiral thread pattern)
+- Точные деформации для каждой позы (stretch/squash, mid-stride, scrunched eyes и т.п.)
+
+### Пост-обработка (описано в PROMPTS.md §7)
+- Проверить прозрачность фона, при необходимости убрать фон в Photopea/GIMP
+- Выровнять все 6 поз тела по единому центру на канвасе 1024×1024
+- Даунскейл до 256×256 для игры
+
+### Интеграция (описано в PROMPTS.md §9, будет отдельной feature-веткой)
+- `feature/character-sprites` ветка
+- `_draw_ball` → `Sprite2D` (body) + `Sprite2D` (face)
+- State machine для body_texture (idle/run/jump/fall/hurt/dead)
+- Emotion machine для face_texture (happy/focus/pain/angry/scared/dead)
+- Эмблемы способностей остаются процедурными поверх спрайта
+- Squash/stretch анимация через scale tween
+
+### Минимальный тест
+В §8 описан MVP-путь: генерация всего 3 спрайтов (`body_idle`, `face_happy`,
+`face_pain`) для быстрой проверки подхода — остальные поддержатся
+fallback-ом к idle.
+
+### Что делать дальше
+1. Прогнать промты из `docs/characters/PROMPTS.md` через nanobanana 2
+2. Положить PNG в `my_assets/nanobanana/` или сразу в
+   `assets/characters/body/` и `assets/characters/face/`
+3. Claude сделает feature-ветку `character-sprites` и интегрирует
+
+---
+
+## 2026-04-18 — fix: платформы — убран чёрный фон, stretch-to-fit текстура
+
+### Проблемы
+1. **Остаточный чёрный фон** на платформах — исходные PNG из `landscape_strips/`
+   содержали "небо" тёмного цвета сверху (были landscape-изображениями с
+   силуэтом ландшафта, не плоскими текстурами)
+2. **Странный рендер на больших платформах** — UV-тайлинг (`u = (x-left)/tex_w`)
+   создавал видимые швы каждые ~900 px ширины
+
+### Решения
+
+#### 1. Кроп чёрных областей из PNG
+Python-скрипт нашёл первую строку где ≥80% пикселей не-чёрные (avg яркость > 30)
+и обрезал всё выше. Для каждой текстуры:
+
+| Текстура | Было | Стало | Обрезано | Чёрных пикс после |
+|----------|------|-------|----------|-------------------|
+| grass    | 93   | 75    | 13 + 5   | 0.8%              |
+| stone    | 91   | 70    | 15 + 6   | 1.3%              |
+| wood     | 98   | 75    | 19 + 4   | 0.0%              |
+| ice      | 102  | 79    | 17 + 6   | 1.4%              |
+| magma    | 88   | 70    | 10 + 8   | 0.5%              |
+
+Остатки <1.5% — это тёмные тени внутри содержимого, не фон.
+
+#### 2. UV-маппинг: stretch-to-fit вместо tile
+В `scripts/maps/map_base.gd::_draw_themed_platform`:
+```gdscript
+// Было (тайлинг каждые ~904 px):
+var u: float = (p.x - (cx - hw)) / tex_w * tile_scale
+
+// Стало (растяжение на всю ширину, без швов):
+var u: float = (p.x - (cx - hw)) / w
+```
+
+Теперь вся текстура натягивается на ширину платформы целиком:
+- Узкая платформа (200 px): текстура сжата горизонтально ×4.5
+- Средняя (900 px): текстура pixel-perfect
+- Широкая (2000 px): текстура растянута ×2.2
+
+**Нет видимых повторяющихся швов** на любой ширине.
+
+### Файлы
+- `assets/textures/platforms/grass.png` и 4 других — обрезаны
+- `scripts/maps/map_base.gd` — UV-маппинг изменён
+
+### Тест
+- `game.tscn` запустился без ошибок (только warnings не связанные с фиксом)
+- Godot re-import прошёл успешно
+
+### Что делать дальше
+- Проверить визуально в игре, что платформы выглядят корректно на всех размерах
+- Возможно в будущем — добавить 9-slice рендер для очень больших платформ
+  если stretch даёт слишком большое искажение
+
+---
+
+## 2026-04-18 — feat: Lo-fi плейлист с плавным crossfade (новая система музыки)
+
+### Что сделано
+Полностью переработана система музыки. Теперь играет непрерывный плейлист
+из 5 lo-fi треков с плавным crossfade между ними. Музыка **не зависит от карты** —
+один и тот же плейлист идёт в меню и во всех боях.
+
+### Файлы
+- `assets/music/` (новая папка):
+  - `adventure_chill.mp3` (4.4 MB) — aventure-lofi-vlog-chill-beat-508265
+  - `empty_mind.mp3` (5.4 MB) — lofi_hour-empty-mind-118973
+  - `sentimental_jazz.mp3` (3.1 MB) — sonican-lo-fi-music-loop-sentimental-jazzy-love-473154
+  - `easter.mp3` (2.6 MB) — prettyjohn1-easter-490466
+  - `goodnight_cozy.mp3` (4.5 MB) — fassounds-good-night-lofi-cozy-chill-music-160166
+- `scripts/managers/music_manager.gd` — полностью переписан
+
+### Новая архитектура MusicManager
+- **Два AudioStreamPlayer** (`music_a`, `music_b`) для overlap при crossfade
+- **`tracks: Array[AudioStream]`** — 5 mp3 загружаются в `_ready()`, перемешиваются
+- **MP3 loop отключён программно** (`stream.loop = false`) — переключение треков
+  управляется crossfade, а не engine loop
+- **End-of-track watch** в `_process`: когда позиция активного плеера >= длина-CROSSFADE_DUR,
+  автоматически запускается следующий трек на втором плеере; tween на 4 секунды
+  поднимает громкость нового и снижает старого до тишины
+- **`set_intensity(alive, total)`** теперь модулирует только громкость в диапазоне
+  [-16dB .. -8dB], не переключает треки
+- **`play_map_theme(map_name)`** — параметр игнорируется; просто продолжает плейлист
+- **`play_menu_music()`** — то же поведение; меню → игра не прерывает музыку
+- **`stop_music()`** — fade-out за 1с с автоматической остановкой обоих плееров
+
+### Удалено
+- `_generate_menu_music`, `_generate_map_music`, `_generate_ambient` — процедурные
+  sine-wave мелодии больше не нужны
+- `_noise_at` — был для ambient
+- `ambient_player` — амбиент звуки (lava rumble, water bubble и т.п.) удалены,
+  потому что они тоже зависели от карты, что противоречит требованию
+
+### UI звуки сохранены
+`play_ui_click`, `play_ui_switch`, `play_ui_error`, `play_ui_confirm` — оставлены
+как есть (короткие процедурные тоны, не относятся к "музыке")
+
+### Тест
+- Godot 4.6.1: title_menu запускается без ошибок и предупреждений
+- Все 5 mp3 импортированы (`adventure_chill.mp3.import` и т.д.)
+- API совместим со всеми существующими call sites:
+  `play_menu_music`, `play_map_theme`, `play_ui_confirm`, `set_intensity`, `stop_music`
+
+### Константы (легко настроить)
+- `CROSSFADE_DUR = 4.0` — длительность crossfade между треками
+- `FADE_IN_DUR = 2.0` — fade-in первого трека или после stop
+- `FADE_OUT_DUR = 1.0` — fade-out при stop_music
+- `QUIET_DB = -16.0`, `LOUD_DB = -8.0` — диапазон громкости от intensity
+
+---
+
+## 2026-04-18 — chore: Get-LastReleaseTag ищет глобально по version sort
+
+### Что сделано
+- `git describe --tags HEAD` возвращал `v0.1` из ветки develop, потому что
+  тег `v0.2` стоит на main-only мердж-коммите (вне ancestry develop).
+- Заменено на `git tag -l "v*" --sort=-version:refname | head -1` —
+  возвращает highest-version тег независимо от ветки.
+
+### Файлы
+- `scripts/release/config.ps1` (Get-LastReleaseTag)
+
+### Тест
+- `check_release.ps1` теперь корректно показывает `Last release tag: v0.2`,
+  `Next minor version: 0.3`
+
+---
+
+## 2026-04-18 — fix: CRLF guard в make_release.ps1
+
+### Что сделано
+- Первый релиз v0.2 упал на `git checkout main` из-за того, что Godot `--import`
+  в build.ps1 перегенерировал `.import` файлы с изменёнными line endings (LF→CRLF).
+- Добавлен safeguard в `make_release.ps1`: перед `git checkout main` проверяется
+  `git status --porcelain` и при наличии изменений делается `git checkout -- .`
+  для отмены транзитных изменений после билда.
+
+### Файлы
+- `scripts/release/make_release.ps1` (+6 строк)
+
+### Тест
+- Следующий релиз v0.3 автоматически пройдёт без ручного вмешательства
+
+---
+
+## 2026-04-18 — RELEASE v0.2
+
+Первый релиз через новый автоматизированный процесс.
+
+- **Тег**: `v0.2` на `main`
+- **Билд**: `builds/TangleBattle-v0.2.exe` (~102 MB)
+- **GitHub Release**: ожидает ручной публикации (требуется `gh auth login`)
+- **CHANGELOG**: обновлён
+- **v0.1 baseline**: тег на commit с накопленным контентом до введения релизного процесса
+
+### Ручные шаги для завершения
+1. `gh auth login` (один раз)
+2. `gh release create v0.2 builds/TangleBattle-v0.2.exe --title "TangleBattle v0.2" --notes-file release_notes_v0.2.md`
+
+---
+
 ## 2026-04-18 — Релизный процесс (новая система разработки)
 
 ### Что сделано

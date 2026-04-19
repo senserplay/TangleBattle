@@ -5,6 +5,9 @@ func _init() -> void:
 	map_name = "Ice Cave"
 	platform_palette = "ice"
 	bg_color = Color(0.08, 0.12, 0.2)
+	bg_theme = "clouds_blue"
+	bg_tint = Color(0.65, 0.75, 0.90)
+	death_zone_style = "mist"
 	platform_color = Color(0.35, 0.5, 0.6)
 	platform_edge_color = Color(0.6, 0.8, 0.95)
 	floor_color = Color(0.3, 0.4, 0.5)

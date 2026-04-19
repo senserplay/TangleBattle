@@ -5,6 +5,8 @@ func _init() -> void:
 	map_name = "Space"
 	platform_palette = "ice"
 	bg_color = Color(0.02, 0.02, 0.06)
+	bg_theme = "space"
+	death_zone_style = "stars"
 	platform_color = Color(0.3, 0.35, 0.45)
 	platform_edge_color = Color(0.5, 0.6, 0.8)
 	floor_color = Color(0.25, 0.3, 0.4)

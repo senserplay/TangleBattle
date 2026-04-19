@@ -60,6 +60,8 @@ func handle_abilities() -> void:
 		player.parry_cooldown = player.PARRY_CD * player.parry_cd_multiplier
 		player.parry_visual = 0.3
 		SoundManager.play_shield()
+		# Angry/determined face during parry
+		player.trigger_face_event("angry", 0.4)
 		# Set custom spawn point — only if player has extra lives
 		if player.extra_lives > 0 and not player.spawn_point_used_this_life:
 			player.custom_spawn_point = player.global_position
@@ -205,6 +207,10 @@ func _use_ability(slot: int) -> void:
 	if success:
 		player.ability_cds[slot] = maxf(
 			data["cooldown"] * player.cd_multiplier - player.cd_flat, 0.1)
+		# Focus face flash on ability cast (skipped for needle dash which
+		# already triggers focus for the dash duration).
+		if ab_id != AbilityRegistry.NEEDLE_DASH:
+			player.trigger_face_event("focus", 0.4)
 		# Chaos mode — replace used ability with a random one
 		if GameManager.game_mode == GameManager.GameMode.CHAOS:
 			player.ability_ids[slot] = randi_range(
@@ -275,6 +281,8 @@ func _ab_needle_dash() -> void:
 	player.velocity = player.dash_dir * dash_spd + player.velocity * 0.5
 	player.vibrate(0.3, 0.5, 0.15)
 	player._spawn_dust(4)
+	# Focus face during dash
+	player.trigger_face_event("focus", cfg["dash_duration"] + 0.1)
 
 
 func _ab_yarn_bomb() -> void:
