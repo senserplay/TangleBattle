@@ -1,5 +1,63 @@
 # TangleBattle — Рабочий лог
 
+## 2026-04-19 — fix(maps): strip-текстуры были RGB без alpha (чёрный фон)
+
+### Проблема (по новому скриншоту)
+Поверх платформы виден ЧЁРНЫЙ band с декорациями (стонами/травинками)
+на ровно прямоугольной чёрной подложке. Не вписывается, острые границы.
+
+### Корневая причина
+Проверил формат strip-PNG через Python/PIL:
+```
+alien_teal: mode=RGB size=(904, 91)
+grass_dirt: mode=RGB size=(904, 93)
+ice_frozen: mode=RGB size=(904, 102)
+...
+```
+
+**Источник** (craftpix landscape strips) сохранён в **RGB без alpha**.
+"Прозрачные" участки между декорациями (между травинками, вокруг камней)
+— на самом деле литеральный `(0,0,0)` чёрный. Godot рендерит как opaque
+black, что даёт визуальный black-bar над платформой.
+
+Также я ранее ошибочно полагал что текстура 960×400 (с substrate ниже
+ground line) — на самом деле 904×~93, целиком декорация без substrate.
+Поэтому SRC_DECO_RATIO=0.40 был лишним.
+
+### Решение
+
+#### 1. Конвертация PNG: RGB → RGBA (чёрный → transparent)
+Python script прошёл по всем 6 strip-текстурам, заменил pure-black
+пиксели (R,G,B все < 8) на alpha=0:
+```
+alien_teal:      13119 px transparent (of 82264)
+amethyst_purple: 14429 px transparent (of 84072)
+grass_dirt:       9304 px transparent (of 84072)
+ice_frozen:      14313 px transparent (of 92208)
+lava_crystal:     9325 px transparent (of 79552)
+sand_grass:      18275 px transparent (of 93112)
+```
+
+Очищен `.godot/imported/` cache → Godot реимпортит с новыми alpha.
+
+#### 2. Переписан `_draw_floor_strip_overlay`
+- Использует ВЕСЬ source rect (не SRC_DECO_RATIO crop) — текстура и так
+  только декоративная, без substrate
+- disp_h = 75 (было 70 после crop)
+- Position: strip's bottom = platform_top + 10px overlap (для бесшовного
+  сопряжения с платформой)
+- aspect tile_w основан на real source ratio (~10:1)
+
+### Файлы
+- 6 PNG в `assets/textures/platforms/strips/` — RGB→RGBA
+- `scripts/maps/map_base.gd::_draw_floor_strip_overlay` переписан
+
+### Тест
+Godot 4.6.1: после очистки import cache — реимпортит strips с alpha.
+Запускается без ошибок.
+
+---
+
 ## 2026-04-19 — fix(maps): strip-overlay substrate + ancient_ruins блоки + космос лаги
 
 ### Проблемы по скриншотам
