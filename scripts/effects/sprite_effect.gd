@@ -35,25 +35,20 @@ static func get_frames(effect: String) -> Array:
 	if _cache.has(effect):
 		return _cache[effect]
 	var arr: Array = []
-	var path := "res://assets/effects/%s/" % effect
-	var dir := DirAccess.open(path)
-	if dir == null:
-		_cache[effect] = arr
-		return arr
-	dir.list_dir_begin()
-	var files: Array[String] = []
-	while true:
-		var f := dir.get_next()
-		if f == "":
+	# Sequential frame_XX.png loading via ResourceLoader.exists() — works in
+	# both editor and exported PCK (DirAccess.list_dir doesn't reliably
+	# enumerate imported textures inside an exported build).
+	var path := "res://assets/effects/%s/frame_%02d.png"
+	var i := 0
+	while i < 100:
+		var p := path % [effect, i]
+		if not ResourceLoader.exists(p):
 			break
-		if f.ends_with(".png") and not f.ends_with(".import"):
-			files.append(f)
-	dir.list_dir_end()
-	files.sort()
-	for f in files:
-		var tex: Texture2D = load(path + f)
-		if tex != null:
-			arr.append(tex)
+		var tex: Texture2D = load(p)
+		if tex == null:
+			break
+		arr.append(tex)
+		i += 1
 	_cache[effect] = arr
 	return arr
 

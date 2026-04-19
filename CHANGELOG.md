@@ -11,6 +11,13 @@ _будущие изменения здесь_
 
 ---
 
+## [0.4] � 2026-04-19
+
+### Changed
+- Merge fix/vfx-export into develop - fix(effects): ability VFX missing in exported build (DirAccess���ResourceLoader) - Merge release/0.3 into develop
+
+---
+
 ## [0.3] � 2026-04-19
 
 ### Changed
@@ -97,3 +104,5 @@ _будущие изменения здесь_
 [0.2]: https://github.com/senserplay/TangleBattle/releases/tag/v0.2
 
 [0.3]: https://github.com/senserplay/TangleBattle/releases/tag/v0.3
+
+[0.4]: https://github.com/senserplay/TangleBattle/releases/tag/v0.4
