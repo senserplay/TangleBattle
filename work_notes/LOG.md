@@ -1,5 +1,93 @@
 # TangleBattle — Рабочий лог
 
+## 2026-04-19 — fix+feat: 3 баг-фикса + zero-G space + slippery ice
+
+### Запрос пользователя
+Баги:
+1. При телепорте/swap/grab если игрок на нитке — перемещение не происходит.
+   Нитка должна обрываться при teleport/swap, а во время grab вообще нельзя
+   пускать нитку.
+2. После смерти остаётся фантомный коллайдер (нельзя пройти, можно стоять,
+   можно зацепиться). Также после round transition остаются объекты с
+   прошлого раунда (black hole, выстрелы, дым).
+3. Dash резко тормозит игрока в конце — должен сохранять импульс.
+
+Фичи:
+1. На карте Deep Space — нет гравитации (игроки + снаряды летают).
+2. Ice платформы скользкие — низкое трение.
+
+### Реализация
+
+#### Bug 1 — grapple integration
+- `map_base.gd::_teleport_body`: вызывает `_release_grapple()` перед
+  телепортом если у тела есть метод
+- `player_abilities.gd::_ab_swap`: cuts grapple на обоих swapped игроков
+  ДО смены позиций (раньше rope anchor возвращал игрока обратно)
+- `player_abilities.gd::_try_grab_nearby`: cuts grapple на жертве (чтобы
+  pull сработал)
+- `player_grapple.gd::start_grapple`: блокирует init если `is_grabbed`
+
+#### Bug 2a — corpse collision
+В `player.gd::die()`:
+- `collision_layer = 0`, `collision_mask = 0` (immediate, не deferred)
+- `CollisionShape2D.disabled = true` напрямую
+- `global_position = Vector2(-99999, -99999)` — корпус физически уезжает
+  за карту, не может быть hit'нут или зацеплен
+- `velocity = Vector2.ZERO`
+
+В `respawn()` — восстанавливает `collision_layer = 3, mask = 3`.
+
+#### Bug 2b — round cleanup
+`game.gd::_load_random_map` теперь iterрует группы и queue_free всё:
+- `ability_entities` (rocket, grenade, boomerang, yarn, black_hole,
+  stink_cloud, tripwire, heaven's_wrath)
+- `pickups` (dropped abilities)
+- `soul_essences` (death souls)
+
+Группа `players` сохраняется (они респавнятся через `_respawn_all`).
+Группы привязанные к map_container (hazards, walls, teleports,
+destructibles, items) очищаются автоматически с `child.queue_free()`.
+
+#### Bug 3 — dash momentum
+`player.gd::_handle_movement` ground-friction case: если |velocity.x| >
+max walk speed AND (no input OR same direction) → friction × 0.30.
+То есть после dash игрок плавно теряет скорость вместо abrupt brake.
+
+#### Feature 1 — zero-G in space
+Новые поля в `map_base.gd`:
+- `gravity_multiplier: float = 1.0`
+- `floor_friction_mult: float = 1.0`
+
+`deep_space.gd`: `gravity_multiplier = 0.0`.
+
+Player + grapple + grenade читают через helper `_map_gravity_mult()`.
+Прочие projectiles (rocket, boomerang, yarn) — propelled, не имеют
+gravity. Pickups оставлены с обычной gravity (иначе уплывали бы).
+
+#### Feature 2 — slippery ice
+`frozen_lake.gd`: `floor_friction_mult = 0.15`.
+
+`player.gd` ground-friction умножается на map's `floor_friction_mult`.
+Игроки скользят дальше, труднее остановиться.
+
+### Файлы
+- `scripts/maps/map_base.gd` — `_teleport_body`, новые physics поля
+- `scripts/maps/deep_space.gd` — `gravity_multiplier = 0.0`
+- `scripts/maps/frozen_lake.gd` — `floor_friction_mult = 0.15`
+- `scripts/characters/player.gd` — die/respawn collision, dash momentum,
+  gravity/friction map-aware, 2 helpers
+- `scripts/characters/player_abilities.gd` — swap/grab grapple cuts
+- `scripts/characters/player_grapple.gd` — block while grabbed +
+  grapple gravity scaled
+- `scripts/characters/grenade.gd` — gravity scaled by map
+- `scripts/main/game.gd::_load_random_map` — group-based cleanup
+
+### Тест
+Godot 4.6.1: компилируется чисто, все warning'и pre-existing. Полный
+playtest требуется для проверки в split-screen + всех способностей.
+
+---
+
 ## 2026-04-19 — fix(maps): floor_strip удалён — palette-текстуры сами являются strip'ами
 
 ### Проблема (по новым скриншотам)

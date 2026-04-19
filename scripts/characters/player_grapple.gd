@@ -12,6 +12,9 @@ func setup(p: CharacterBody2D) -> void:
 func start_grapple() -> void:
 	if player.grapple_shooting or player.grapple_retracting:
 		return
+	# Block grapple while grabbed by an enemy — rope would interfere with carry
+	if player.is_grabbed:
+		return
 	player.grapple_shooting = true
 	player.grapple_retracting = false
 	# Always use aim_direction (crosshair) for grapple direction
@@ -112,7 +115,7 @@ func handle_grapple(delta: float) -> void:
 		player.grapple_point = player.grapple_target_body.to_global(
 			player.grapple_local_point)
 
-	player.velocity.y += player.GRAVITY * delta
+	player.velocity.y += player.GRAVITY * delta * player._map_gravity_mult()
 	var direction := 0.0
 	if Input.is_action_pressed(prefix + "left"):
 		direction -= 1.0

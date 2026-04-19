@@ -93,8 +93,13 @@ func _physics_process(delta: float) -> void:
 			cur_dir = cur_dir.lerp(desired, homing * delta * 0.5).normalized()
 			velocity = cur_dir * spd
 
-	# Gravity
-	velocity.y += GRAVITY * delta
+	# Gravity (scaled by current map's gravity_multiplier — e.g. 0 in space)
+	var grav_mul: float = 1.0
+	var game := get_tree().current_scene
+	if game != null and "current_map" in game and game.current_map != null:
+		if "gravity_multiplier" in game.current_map:
+			grav_mul = game.current_map.gravity_multiplier
+	velocity.y += GRAVITY * delta * grav_mul
 
 	# Save pre-slide velocity for bounce calculation
 	var vel_before := velocity

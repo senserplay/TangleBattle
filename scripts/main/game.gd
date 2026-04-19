@@ -397,6 +397,14 @@ func _spawn_pickup() -> void:
 func _load_random_map() -> void:
 	for child in map_container.get_children():
 		child.queue_free()
+	# Wipe all transient round-state objects that live outside map_container:
+	# in-flight projectiles (rockets, grenades, boomerangs, yarn shots,
+	# black holes, stink clouds, tripwires, heaven's wrath), dropped pickups
+	# from death, and lingering soul essences.
+	for grp in ["ability_entities", "pickups", "soul_essences"]:
+		for node in get_tree().get_nodes_in_group(grp):
+			if is_instance_valid(node):
+				node.queue_free()
 	var idx: int = randi_range(0, MAP_SCENES.size() - 1)
 	var scene: PackedScene = load(MAP_SCENES[idx])
 	current_map = scene.instantiate()

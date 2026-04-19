@@ -79,6 +79,12 @@ var fire_walls: bool = false      # walls deal fire damage on touch
 var bouncy_walls: bool = false    # walls bounce players off
 var wall_thickness: float = 40.0  # thickness of wall collision
 
+# Per-map physics tweaks read by player.gd / projectile scripts.
+# 0.0 = zero-G (e.g. Deep Space); 1.0 = normal Earth gravity.
+var gravity_multiplier: float = 1.0
+# 1.0 = normal ground friction; 0.15 = ice (slides far before stopping).
+var floor_friction_mult: float = 1.0
+
 # Global zone shrink — starts after SHRINK_GLOBAL_DELAY seconds
 const SHRINK_GLOBAL_DELAY := 120.0
 const SHRINK_GLOBAL_SPEED := 20.0
@@ -1383,6 +1389,10 @@ func _teleport_body(body: Node2D, portal: Area2D) -> void:
 	var cd: float = portal.get_meta("cooldown")
 	if cd > 0.0:
 		return
+	# Cut active grapple so teleport actually moves the player rather than
+	# being yanked back by the rope anchor.
+	if body.has_method("_release_grapple"):
+		body._release_grapple()
 	var target: Vector2 = portal.get_meta("target")
 	body.global_position = target
 	portal.set_meta("cooldown", 1.0)

@@ -449,6 +449,13 @@ func _ab_swap() -> bool:
 
 	SoundManager.play_blink()
 
+	# Cut both players' grapples so the swap actually relocates them
+	# (otherwise the rope anchor would yank them back).
+	if player.is_grappling or player.grapple_shooting:
+		player._release_grapple()
+	if best.is_grappling or best.grapple_shooting:
+		best._release_grapple()
+
 	# Capture positions and velocities RIGHT NOW
 	var my_pos: Vector2 = player.global_position
 	var their_pos: Vector2 = best.global_position
@@ -692,6 +699,9 @@ func _try_grab_nearby() -> void:
 	best.grab_stun_timer = player.GRAB_MAX_HOLD + 0.5
 	best.is_grabbed = true
 	best.velocity = Vector2.ZERO
+	# Cut victim's grapple so they actually get pulled to the grabber
+	if best.is_grappling or best.grapple_shooting:
+		best._release_grapple()
 	# Disable collision so grabbed player doesn't block grabber
 	var col: CollisionShape2D = best.get_node_or_null("CollisionShape2D")
 	if col != null:
