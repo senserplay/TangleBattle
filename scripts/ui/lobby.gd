@@ -423,21 +423,9 @@ func _draw_joined_slot(slot: int, rect: Rect2) -> void:
 		Vector2(cx, top + 28), "PLAYER %d" % (slot + 1), 24.0, pc
 	)
 
-	# Yarn ball
+	# Yarn ball icon (texture asset, tinted to player color)
 	var ball_y := top + 120.0
-	draw_circle(Vector2(cx, ball_y), 40.0, pc)
-	draw_circle(Vector2(cx - 8, ball_y - 10), 7.0, Color.WHITE)
-	draw_circle(Vector2(cx + 8, ball_y - 10), 7.0, Color.WHITE)
-	draw_circle(Vector2(cx - 5, ball_y - 10), 3.5, Color.BLACK)
-	draw_circle(Vector2(cx + 11, ball_y - 10), 3.5, Color.BLACK)
-	var dark := pc.darkened(0.3)
-	for j in range(5):
-		var angle := j * TAU / 5.0 + 0.3
-		var from := Vector2(cx + cos(angle) * 15.0, ball_y + sin(angle) * 15.0)
-		var to := Vector2(
-			cx + cos(angle + 1.2) * 35.0, ball_y + sin(angle + 1.2) * 35.0
-		)
-		draw_line(from, to, dark, 2.0)
+	YarnBallIcon.draw_at(self, Vector2(cx, ball_y), 40.0, pc)
 
 	# Device name — inside header bar to avoid overlap with selectors
 	var dev_name := InputManager.get_device_name(slot_device[slot])

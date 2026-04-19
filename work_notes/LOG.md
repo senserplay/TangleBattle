@@ -1,5 +1,49 @@
 # TangleBattle — Рабочий лог
 
+## 2026-04-19 — feat: текстура yarn ball вместо процедурных кругов на всех UI экранах
+
+### Запрос пользователя
+"Сделай теперь иконку персонажа на всех экранах именно с ассета, а не отрисованный.
+Экран подключения, выбор карт"
+
+### Что сделано
+
+#### Новый helper `scripts/ui/yarn_ball_icon.gd` (`class_name YarnBallIcon`)
+Статический helper для отрисовки yarn-ball icon с лицом на любом CanvasItem:
+```gdscript
+static func draw_at(canvas, center, radius, color, with_face = true):
+    # Tinted body + optional happy face overlay
+```
+- Кеширует body/face текстуры (загружает 1 раз)
+- При отсутствии текстуры fallback на `draw_circle`
+- `with_face = false` для декоративных не-character иконок
+
+#### Заменены 5 мест процедурной отрисовки
+
+| Файл | Где | Что было | Стало |
+|------|-----|----------|-------|
+| `lobby.gd` :426-440 | Слот игрока | 6 draw_circle (тело + 4 глаза + 5 yarn lines) | 1 строка `YarnBallIcon.draw_at(...)` |
+| `game_overlay.gd` :80-105 | Победный экран (winner ball) | 4 draw_circle + 7 yarn lines + 4 eye circles | `YarnBallIcon.draw_at(...)` (glow halos сохранены) |
+| `game_overlay.gd` :183-190 | TAB-stats panel | 5 draw_circle (тело + 4 глаза) | `YarnBallIcon.draw_at(...)` |
+| `game_overlay.gd` :384-396 | Заголовок выбора пассивки | 5 draw_circle + 5 yarn lines | `YarnBallIcon.draw_at(...)` |
+| `title_menu.gd` :292-300 | Декоративные орбитальные шарики | 4 draw_circle | 4 × `YarnBallIcon.draw_at(..., with_face=false)` |
+
+Не тронуты:
+- `lobby.gd` :489 — мелкий color-preview circle в селекторе цвета (не персонаж)
+- `hud_draw.gd` :70 — мини-точки счёта (не персонаж)
+
+### Файлы
+- `scripts/ui/yarn_ball_icon.gd` (новый, 47 строк)
+- `scripts/ui/lobby.gd` (-14 строк процедурной отрисовки)
+- `scripts/main/game_overlay.gd` (-30 строк, 3 места заменены)
+- `scripts/ui/title_menu.gd` (заменены 4 декор. круга)
+
+### Тест
+Godot 4.6.1: после `--import` для refresh class cache — компилируется без
+ошибок. Никаких runtime issues.
+
+---
+
 ## 2026-04-19 — feat: новый clean ball, большее лицо, эмоции по событиям, без squash на беге
 
 ### Запросы пользователя

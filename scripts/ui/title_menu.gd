@@ -289,15 +289,16 @@ func _draw_title_screen(vp: Vector2) -> void:
 		18.0, Color(0.5, 0.45, 0.6)
 	)
 
-	# Decorative yarn ball in title
+	# Decorative orbiting yarn balls in title — texture asset, semi-transparent
 	var title_ball_y := 280.0
 	for pi in range(4):
 		var angle := yarn_anim * 0.5 + pi * TAU / 4.0
 		var ox := cos(angle) * 200.0
 		var oy := sin(angle) * 30.0
 		var pc := PLAYER_COLORS[pi]
-		pc.a = 0.3
-		draw_circle(Vector2(cx + ox, title_ball_y + oy), 18.0, pc)
+		pc.a = 0.5
+		YarnBallIcon.draw_at(self,
+			Vector2(cx + ox, title_ball_y + oy), 22.0, pc, false)
 
 	# Menu items
 	for i in range(TITLE_ITEMS.size()):
