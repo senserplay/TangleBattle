@@ -59,6 +59,11 @@ var death_zone_style: String = "default"
 
 # Platform material: "" (default capsule) or "grass"/"stone"/"wood"/"ice"/"magma"
 var platform_palette: String = ""
+# Decorative strip texture overlaid on top edge of "floor"-tagged platforms.
+# Names available: "grass_dirt", "lava_crystal", "alien_teal", "sand_grass",
+#                  "amethyst_purple", "ice_frozen". Empty = no overlay.
+var floor_strip: String = ""
+static var _strip_tex_cache: Dictionary = {}
 
 var spawn_points: Array[Vector2] = [
 	Vector2(800, 2600), Vector2(4000, 2600),
@@ -764,6 +769,7 @@ func _draw_platforms() -> void:
 		var w: float = data[2]
 		var h: float = data[3]
 		var platform_type = data[4] if data.size() > 4 else false
+		var is_floor: bool = (platform_type is bool and not platform_type)
 		if platform_type is String and platform_type == "sticky":
 			# Purple/web-textured sticky platforms
 			var sticky_fill := Color(0.45, 0.15, 0.55, 0.9)
@@ -783,6 +789,46 @@ func _draw_platforms() -> void:
 			_draw_capsule(x, y, w, h, platform_color, platform_edge_color)
 		else:
 			_draw_capsule(x, y, w, h, floor_color, floor_edge_color)
+		# Optional decorative strip overlay on wide floor platforms
+		if floor_strip != "" and is_floor and w >= 500.0:
+			_draw_floor_strip_overlay(x, y, w, h)
+
+
+static func _get_strip_texture(name: String) -> Texture2D:
+	if _strip_tex_cache.has(name):
+		return _strip_tex_cache[name]
+	var path := "res://assets/textures/platforms/strips/%s.png" % name
+	var tex: Texture2D = null
+	if ResourceLoader.exists(path):
+		tex = load(path)
+	_strip_tex_cache[name] = tex
+	return tex
+
+
+func _draw_floor_strip_overlay(cx: float, cy: float, w: float, h: float) -> void:
+	# Lay decorative grass/ice/lava strip on top of a wide floor platform.
+	# Source strip is ~960x400 with a visible "ground line" near 30% from top;
+	# we anchor that line to the platform's top edge so the deco rises up
+	# above the platform surface.
+	var tex: Texture2D = _get_strip_texture(floor_strip)
+	if tex == null:
+		return
+	var disp_h := 110.0
+	var src_size: Vector2 = tex.get_size()
+	var tile_w: float = disp_h * (src_size.x / src_size.y)
+	var rect_w: float = w + 80.0
+	var ground_offset: float = disp_h * 0.30  # where deco "soil" begins
+	var x_start: float = cx - rect_w / 2.0
+	var y_top: float = cy - h / 2.0 - (disp_h - ground_offset)
+	# Tile horizontally so wide platforms get repeating deco
+	var n_tiles: int = int(ceil(rect_w / tile_w))
+	for i in range(n_tiles):
+		var tx: float = x_start + i * tile_w
+		var tw: float = minf(tile_w, x_start + rect_w - tx)
+		var dst := Rect2(Vector2(tx, y_top), Vector2(tw, disp_h))
+		var src := Rect2(Vector2.ZERO,
+			Vector2(src_size.x * (tw / tile_w), src_size.y))
+		draw_texture_rect_region(tex, dst, src)
 
 
 # ══════════════════ TEXTURED THEMED PLATFORMS ══════════════════
