@@ -25,12 +25,15 @@ func _init() -> void:
 	platforms = [
 		# Wide ruined floor — strip-decorated
 		[2200, 2550, 3600, 70, false],
+		# Two raised stone-block plinths flanking center (false = solid stone)
+		[1400, 2350, 280, 130, false],
+		[3000, 2350, 280, 130, false],
 		# Outer pillar tops (one-way)
 		[600, 2150, 320, 30, true],
 		[3800, 2150, 320, 30, true],
-		# Mid ruin tier — bridges between pillars
-		[1300, 2150, 380, 28, true],
-		[3100, 2150, 380, 28, true],
+		# Mid ruin tier — bridges between plinths and outer pillars
+		[1000, 2050, 320, 26, true],
+		[3400, 2050, 320, 26, true],
 		# Inner sanctuary platforms
 		[1700, 1850, 460, 30, true],
 		[2700, 1850, 460, 30, true],
@@ -44,16 +47,11 @@ func _init() -> void:
 	]
 
 	objects = [
-		# Broken column orbs
-		["ball", 1300, 2050, 50],
-		["ball", 3100, 2050, 50],
-	]
-
-	# Destructible inner pillars — break under attacks
-	destructibles = [
-		[2200, 2300, 100, 200, 5],   # central column
-		[1500, 2050, 90, 180, 4],
-		[2900, 2050, 90, 180, 4],
+		# Carved temple orbs on plinths
+		["ball", 1400, 2240, 55],
+		["ball", 3000, 2240, 55],
+		# Sky orb above the altar
+		["ball", 2200, 700, 45],
 	]
 
 	item_spawns = [
