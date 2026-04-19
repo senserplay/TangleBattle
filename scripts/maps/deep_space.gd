@@ -10,6 +10,8 @@ func _init() -> void:
 	bg_theme = "space"
 	bg_tint = Color(1.0, 1.0, 1.0)
 	death_zone_style = "stars"
+	# Zero gravity in space — players + projectiles drift on impulses
+	gravity_multiplier = 0.0
 	platform_color = Color(0.30, 0.34, 0.45)
 	platform_edge_color = Color(0.55, 0.65, 0.85)
 	floor_color = Color(0.25, 0.28, 0.40)

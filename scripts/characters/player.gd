@@ -860,11 +860,12 @@ func _handle_movement(delta: float) -> void:
 				is_wall_sliding = true
 				velocity.y = minf(velocity.y, WALL_SLIDE_SPEED)
 
+		var grav_mul: float = _map_gravity_mult()
 		if not is_wall_sliding:
-			velocity.y += GRAVITY * delta
+			velocity.y += GRAVITY * delta * grav_mul
 			velocity.y = minf(velocity.y, MAX_FALL_SPEED)
 		else:
-			velocity.y += GRAVITY * delta * 0.3
+			velocity.y += GRAVITY * delta * 0.3 * grav_mul
 			velocity.y = minf(velocity.y, WALL_SLIDE_SPEED)
 
 	# Stunned
@@ -883,9 +884,25 @@ func _handle_movement(delta: float) -> void:
 
 	if is_on_floor():
 		var target_vx := direction * SPEED * speed_multiplier * base_speed_mult
-		velocity.x = move_toward(
-			velocity.x, target_vx, GROUND_FRICTION * SPEED * delta
-		)
+		var fric_mul: float = _map_floor_friction_mult()
+		# Preserve momentum from dash/knockback when player has more speed
+		# than walking would give. Active input still steers, but gives a
+		# soft pull toward target instead of an abrupt brake.
+		var max_walk: float = SPEED * speed_multiplier * base_speed_mult
+		if absf(velocity.x) > max_walk and (
+			direction == 0.0
+			or signf(velocity.x) == signf(direction)
+		):
+			# Decelerate gently to retain dash carry-over
+			velocity.x = move_toward(
+				velocity.x, target_vx,
+				GROUND_FRICTION * SPEED * delta * 0.30 * fric_mul
+			)
+		else:
+			velocity.x = move_toward(
+				velocity.x, target_vx,
+				GROUND_FRICTION * SPEED * delta * fric_mul
+			)
 	else:
 		# Air: additive steering, preserves momentum from knockback/rope
 		if absf(direction) > 0.1:
@@ -1119,6 +1136,27 @@ func apply_slow(duration: float) -> void:
 	slow_timer = duration
 
 
+# Read per-map physics tweaks. Falls back to defaults if no map is loaded.
+func _map_gravity_mult() -> float:
+	var game := get_tree().current_scene
+	if game == null or not "current_map" in game or game.current_map == null:
+		return 1.0
+	var m: Node2D = game.current_map
+	if "gravity_multiplier" in m:
+		return m.gravity_multiplier
+	return 1.0
+
+
+func _map_floor_friction_mult() -> float:
+	var game := get_tree().current_scene
+	if game == null or not "current_map" in game or game.current_map == null:
+		return 1.0
+	var m: Node2D = game.current_map
+	if "floor_friction_mult" in m:
+		return m.floor_friction_mult
+	return 1.0
+
+
 func apply_stun(duration: float) -> void:
 	if is_invincible:
 		return
@@ -1235,7 +1273,17 @@ func die() -> void:
 	grapple_retracting = false
 	grapple_target_player = null
 	visible = false
-	$CollisionShape2D.set_deferred("disabled", true)
+	# Hard-disable all collision so corpse can't be stood on, blocked
+	# against, or grappled to. Set both layer/mask AND the shape disabled
+	# directly (not deferred) so neighbours stop seeing this body now.
+	collision_layer = 0
+	collision_mask = 0
+	var col_shape: CollisionShape2D = $CollisionShape2D
+	col_shape.disabled = true
+	# Move the corpse far off-map so nothing can interact with it visually
+	# during round end (bullets, raycasts).
+	global_position = Vector2(-99999, -99999)
+	velocity = Vector2.ZERO
 	set_physics_process(false)
 	SoundManager.play_death()
 	vibrate(0.8, 1.0, 0.4)  # strong vibration on death
@@ -1264,7 +1312,10 @@ func respawn(pos: Vector2) -> void:
 	is_alive = true
 	visible = false  # hidden during spawn animation
 	is_invincible = true
-	$CollisionShape2D.set_deferred("disabled", false)
+	# Restore collision (cleared in die())
+	collision_layer = 3
+	collision_mask = 3
+	$CollisionShape2D.disabled = false
 
 	# Reset ALL state
 	is_grappling = false

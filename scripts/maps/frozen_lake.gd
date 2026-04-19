@@ -8,6 +8,8 @@ func _init() -> void:
 	bg_color = Color(0.20, 0.45, 0.70)
 	bg_theme = "clouds_blue"
 	bg_tint = Color(0.65, 0.78, 0.95)
+	# Slippery ice — low ground friction so players slide far
+	floor_friction_mult = 0.15
 	platform_color = Color(0.45, 0.65, 0.80)
 	platform_edge_color = Color(0.75, 0.88, 1.0)
 	floor_color = Color(0.35, 0.55, 0.70)
