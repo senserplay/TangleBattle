@@ -1,5 +1,98 @@
 # TangleBattle — Рабочий лог
 
+## 2026-04-19 — feat: новый clean ball, большее лицо, эмоции по событиям, без squash на беге
+
+### Запросы пользователя
+1. Заменить ассет персонажа на новый (более чистый cartoon-стиль)
+2. Сделать лицо больше
+3. При ходьбе НЕ сплющивать клубок — только катится; squash оставить только
+   на прыжке и приземлении
+4. Привязать эмоции лица к событиям (использование способности, урон и т.д.)
+
+### Что сделано
+
+#### 1. Новый ассет клубка (`assets/characters/body/yarn_ball.png`)
+Загружен новый Gemini PNG — чистый cartoon с жирным чёрным контуром.
+Обработка: flood-fill белого фона от углов через `scipy.ndimage.label`,
+crop по bbox + 12px padding, square center, ресайз 512×512.
+
+#### 2. Большее лицо (`player.gd::_update_visual_sprites`)
+- Face scale 0.55 → **0.85** (на 55% больше)
+- Face Y offset: -radius × 0.18 → -radius × 0.10 (чуть выше центра, не так
+  сильно)
+- `SPRITE_FILL_FACTOR` 1.4 → 1.25 (новый ассет занимает ~80% от текстуры,
+  не нужно так сильно скейлить)
+
+#### 3. Без squash на беге
+Раньше в `_handle_movement` при беге применялся `run_stretch`:
+```gdscript
+squash_x = maxf(squash_x, 1.0 + run_stretch)  # ←удалено
+squash_y = minf(squash_y, 1.0 - run_stretch * 0.5)
+```
+Теперь squash зарезервирован для:
+- **Приземление** (impact-based в `_handle_movement`)
+- **Прыжок** (squash_x=0.8, squash_y=1.25)
+- **Wall slide** (squash_x=0.85, squash_y=1.1)
+- **Урон** (take_damage: squash_x=1.3, squash_y=0.7)
+- **Swap способность** (мгновенный squash при свапе)
+
+В `_update_visual_sprites` добавлен override: если on_floor + horizontal
+movement + no vertical motion → sprite scale = (1, 1) (только rotation).
+
+Бег теперь = чистое перекатывание клубка без деформации, как просили.
+
+#### 4. Face Event System — эмоции по событиям
+
+Новая система `trigger_face_event(emotion, duration)` накладывает эмоцию
+поверх state-based с приоритетом:
+
+```gdscript
+# В _compute_emotion:
+if not is_alive: return "dead"
+if face_event_timer > 0: return face_event_emotion  # ← override
+if hit_flash_timer > 0: return "pain"
+if hp < MAX_HP * 0.3: return "scared"
+...
+```
+
+#### Привязка эмоций к событиям
+
+| Событие | Эмоция | Длительность | Где |
+|---------|--------|--------------|-----|
+| Использование способности | focus | 0.4s | `player_abilities.gd::_use_ability` |
+| Needle Dash (вместо общего focus) | focus | dash_duration + 0.1s | `_ab_needle_dash` |
+| Активация parry | angry | 0.4s | `handle_abilities` (parry block) |
+| Получение урона | pain | 0.5s | `player.gd::take_damage` |
+| Убийство врага | angry | 1.5s | `take_damage` (при hp ≤ 0, источнику) |
+
+State-based fallback (когда нет события):
+- not is_alive → dead
+- hp < 30% → scared
+- charge/guided/grab активны → focus
+- иначе → happy
+
+### Файлы
+- `assets/characters/body/yarn_ball.png` (новый ассет)
+- `scripts/characters/player.gd`:
+  - `face_event_timer`, `face_event_emotion` vars
+  - `face_event_timer` decrement в `_update_timers`
+  - `trigger_face_event()` функция
+  - `_compute_emotion()` с event override
+  - SPRITE_FILL_FACTOR 1.4 → 1.25
+  - face_scale 0.55 → 0.85, Y -0.18 → -0.10
+  - run_stretch удалён из `_handle_movement`
+  - В `_update_visual_sprites` — override sx/sy = 1 при беге
+  - `take_damage`: trigger pain 0.5s; при killing trigger angry 1.5s на источника
+- `scripts/characters/player_abilities.gd`:
+  - `_use_ability`: trigger focus 0.4s (кроме needle_dash)
+  - `_ab_needle_dash`: trigger focus на dash_duration+0.1s
+  - parry block в handle_abilities: trigger angry 0.4s
+
+### Тест
+Godot 4.6.1: компилируется без ошибок. Только pre-existing warnings.
+
+---
+
 ## 2026-04-19 — fix: персонаж не виден за платформой + белые внутренности лиц
 
 ### Проблемы по скриншоту пользователя
