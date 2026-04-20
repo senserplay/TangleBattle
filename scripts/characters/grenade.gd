@@ -1,4 +1,6 @@
 extends CharacterBody2D
+
+const ProjectileSprites := preload("res://scripts/characters/projectile_sprites.gd")
 ## Grenade with proper independent velocity and bounce physics.
 
 var owner_id: int = -1
@@ -190,6 +192,7 @@ func _explode() -> void:
 
 func _draw() -> void:
 	if exploded:
+		# Stylised fireball layers (no art asset for explosion yet).
 		draw_circle(
 			Vector2.ZERO, explosion_radius * 0.5, Color(1, 0.7, 0.1, 0.4)
 		)
@@ -201,13 +204,10 @@ func _draw() -> void:
 		)
 		return
 
+	# Flicker white each fuse pulse to telegraph imminent boom.
 	var flash_rate := 0.3 * (timer / fuse_time) + 0.05
 	var flash := fmod(timer, flash_rate) < flash_rate * 0.5
-	var body_col := color if not flash else Color.WHITE
-
-	draw_circle(Vector2.ZERO, 14.0, body_col)
-	draw_circle(Vector2.ZERO, 14.0, Color(0, 0, 0, 0.15))
-	draw_line(Vector2(0, -14), Vector2(5, -22), Color(0.5, 0.35, 0.2), 2.5)
-	if flash:
-		draw_circle(Vector2(5, -22), 4.0, Color(1, 0.9, 0.3))
-		draw_circle(Vector2(5, -22), 6.0, Color(1, 0.8, 0.2, 0.3))
+	var mod: Color = Color.WHITE if not flash else Color(1.4, 1.4, 1.2, 1.0)
+	# Slight spin based on lifetime.
+	var spin: float = timer * 4.0
+	ProjectileSprites.draw_single(self, "grenade.png", 40.0, spin, mod)

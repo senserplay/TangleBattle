@@ -1,4 +1,6 @@
 extends Node2D
+
+const ProjectileSprites := preload("res://scripts/characters/projectile_sprites.gd")
 ## Boomerang — flies out, then returns to owner. Passes through platforms.
 
 var owner_id: int = -1
@@ -155,18 +157,12 @@ func _physics_process(delta: float) -> void:
 
 
 func _draw() -> void:
-	# Trail
+	# Trail orbs that fade with distance, tinted to the owner's color.
 	for i in range(trail.size()):
 		var local: Vector2 = trail[i] - global_position
 		var t := 1.0 - float(i) / TRAIL_MAX
-		draw_circle(local, 8.0 * t, Color(color.r, color.g, color.b, 0.25 * t))
+		draw_circle(local, 10.0 * t,
+			Color(color.r, color.g, color.b, 0.3 * t))
 
-	# Rotating cross shape
-	var s := 27.0
-	for i in range(4):
-		var a := spin + i * PI / 2.0
-		var arm := Vector2(cos(a), sin(a)) * s
-		draw_line(Vector2.ZERO, arm, color, 4.0)
-		draw_circle(arm, 5.0, color.lightened(0.2))
-	draw_circle(Vector2.ZERO, 8.0, color)
-	draw_circle(Vector2.ZERO, 5.0, color.lightened(0.15))
+	# Textured boomerang, spins with `spin`, tinted to owner color.
+	ProjectileSprites.draw_single(self, "boomerang.png", 72.0, spin, color)

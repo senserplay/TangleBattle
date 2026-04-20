@@ -1,5 +1,7 @@
 extends CharacterBody2D
 
+const ProjectileSprites := preload("res://scripts/characters/projectile_sprites.gd")
+
 signal died(player_id: int)
 
 const SPEED := 300.0
@@ -1873,27 +1875,25 @@ func _draw() -> void:
 		draw_arc(grab_to, gr_r, 0.0, TAU, 16,
 			Color(gc.r, gc.g, gc.b, pulse), 2.0)
 
-	# Portal Gate marker (drawn in world space)
+	# Portal Gate marker — animated 5-frame portal sprite, breathing
+	# slowly between the two "open" frames.
 	if has_portal_gate:
 		var pg: Vector2 = portal_gate_pos - global_position
-		var pg_time := float(Engine.get_physics_frames()) * 0.03
-		var pg_pulse := 0.5 + 0.2 * sin(pg_time * 4.0)
-		var pg_col := Color(0.5, 0.2, 0.9, pg_pulse)
-		# Outer ring
-		draw_arc(pg, 100.0, 0.0, TAU, 20, pg_col, 2.5)
-		# Inner rotating arcs
-		for pi in range(3):
-			var arc_s := pg_time * 2.0 + pi * TAU / 3.0
-			draw_arc(pg, 60.0, arc_s, arc_s + 1.0, 8,
-				Color(0.6, 0.3, 1.0, pg_pulse * 0.6), 2.0)
-		# Center dot
-		draw_circle(pg, 8.0, Color(0.5, 0.2, 0.9, pg_pulse * 0.4))
-		# Sparkles
+		var pg_time := float(Engine.get_physics_frames()) * 0.02
+		# Loop over frames 2..4 (the formed-portal frames) for a breathing
+		# idle cycle.
+		var phase: float = fmod(pg_time, 2.4) / 2.4
+		var frame_idx: int = 2 + int(phase * 3.0) % 3
+		draw_set_transform(pg, 0.0, Vector2.ONE)
+		ProjectileSprites.draw_frame(self, "portal_gate.png", 5, frame_idx,
+			180.0, 0.0, Color(1, 1, 1, 0.95))
+		draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
+		# Sparkles around the portal for extra shine.
 		for pi in range(6):
-			var sa := pg_time * 1.5 + pi * TAU / 6.0
-			var sd := 70.0 + sin(pg_time + pi) * 20.0
+			var sa := pg_time * 2.0 + pi * TAU / 6.0
+			var sd := 85.0 + sin(pg_time * 2.5 + pi) * 15.0
 			draw_circle(pg + Vector2(cos(sa) * sd, sin(sa) * sd),
-				2.5, Color(0.7, 0.4, 1.0, pg_pulse * 0.5))
+				3.0, Color(0.95, 0.6, 1.0, 0.6))
 
 	# Custom spawn point marker (drawn in world space)
 	if has_custom_spawn:
@@ -2327,8 +2327,8 @@ func _vfx_stink_puff(_fx: Dictionary, t: float) -> void:
 
 func _vfx_swap_line(fx: Dictionary, t: float) -> void:
 	var target_pos: Vector2 = fx["target"] - global_position
-	var col := Color(0.9, 0.3, 0.9, t)
-	# Zigzag lightning between positions
+	var col := Color(1.0, 0.5, 1.0, t)
+	# Zigzag lightning between positions for the line trail.
 	var segs := 10
 	var prev := Vector2.ZERO
 	for s in range(segs + 1):
@@ -2336,13 +2336,22 @@ func _vfx_swap_line(fx: Dictionary, t: float) -> void:
 		var pt: Vector2 = Vector2.ZERO.lerp(target_pos, st)
 		if s > 0 and s < segs:
 			var perp := (target_pos.normalized()).rotated(PI / 2.0)
-			pt += perp * sin(st * PI * 4.0 + (1.0 - t) * 15.0) * 12.0 * t
+			pt += perp * sin(st * PI * 4.0 + (1.0 - t) * 15.0) * 14.0 * t
 		if s > 0:
-			draw_line(prev, pt, col, 2.5 * t)
+			draw_line(prev, pt, col, 3.0 * t)
 		prev = pt
-	# Flash circles at both ends
-	draw_circle(Vector2.ZERO, 15.0 * t, Color(0.9, 0.3, 0.9, t * 0.4))
-	draw_circle(target_pos, 15.0 * t, Color(0.9, 0.3, 0.9, t * 0.4))
+	# Animated swap-burst sprite at BOTH ends — 5-frame sheet, frame picks
+	# by effect progress (t=1.0 fresh → frame 0 bright star; t→0 → frame 4
+	# fading open ring).
+	var frame: int = clampi(int((1.0 - t) * 5.0), 0, 4)
+	var sz: float = 140.0
+	draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
+	ProjectileSprites.draw_frame(self, "swap.png", 5, frame, sz, 0.0,
+		Color(1, 1, 1, t))
+	draw_set_transform(target_pos, 0.0, Vector2.ONE)
+	ProjectileSprites.draw_frame(self, "swap.png", 5, frame, sz, 0.0,
+		Color(1, 1, 1, t))
+	draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
 
 
 func _vfx_spin_lines(fx: Dictionary, t: float) -> void:

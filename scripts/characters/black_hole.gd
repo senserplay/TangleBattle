@@ -1,4 +1,6 @@
 extends Node2D
+
+const ProjectileSprites := preload("res://scripts/characters/projectile_sprites.gd")
 ## Black Hole — expands over 2.5s while pulling, then drains for 8s.
 ## Drains HP from enemies and heals the owner (lifesteal).
 
@@ -105,52 +107,30 @@ func _draw() -> void:
 
 	var time_val := time_alive * 2.0
 
-	# Black core
-	var core_r := current_radius * 0.3
-	draw_circle(Vector2.ZERO, core_r,
-		Color(0.02, 0.0, 0.05, 0.9 * fade))
+	# Animated vortex sprite: 6 frames of growing spiral, frame picked
+	# by the current radius / max_radius progression.
+	var growth: float = clampf(current_radius / max_radius, 0.0, 1.0)
+	var frame: int = clampi(int(growth * 6.0), 0, 5)
+	# Continuous rotation in addition to the sprite's internal swirl.
+	var rot: float = time_alive * 0.9
+	ProjectileSprites.draw_frame(self, "black_hole.png", 6, frame,
+		current_radius * 2.4, rot, Color(1, 1, 1, fade))
 
-	# Dark fill
-	draw_circle(Vector2.ZERO, current_radius * 0.6,
-		Color(0.05, 0.0, 0.1, 0.4 * fade))
-
-	# Accretion disk — rotating arcs
-	var disk_count := 3
-	for i in range(disk_count):
-		var arc_start := time_val * (1.5 + i * 0.3) + i * TAU / disk_count
-		var arc_span := PI * 0.6
-		var arc_r := current_radius * (0.5 + i * 0.15)
-		var arc_col := Color(0.6, 0.2, 0.8, 0.3 * fade) if i % 2 == 0 \
-			else Color(0.9, 0.4, 0.1, 0.25 * fade)
-		draw_arc(Vector2.ZERO, arc_r, arc_start, arc_start + arc_span,
-			12, arc_col, 3.0 - i * 0.5)
-
-	# Outer ring — pulsing
-	var pulse := 0.7 + sin(time_val * 3.0) * 0.15
-	draw_arc(Vector2.ZERO, current_radius * pulse, 0.0, TAU, 24,
-		Color(0.4, 0.1, 0.6, 0.25 * fade), 2.0)
-	draw_arc(Vector2.ZERO, current_radius, 0.0, TAU, 24,
-		Color(0.3, 0.05, 0.5, 0.15 * fade), 1.5)
-
-	# Particles being sucked in
-	for i in range(16):
+	# Extra particle pulls for motion juice (on top of the sprite).
+	for i in range(14):
 		var angle := time_val * (0.8 + fmod(i * 0.13, 0.6)) \
-			+ i * TAU / 16.0
+			+ i * TAU / 14.0
 		var t := fmod(time_alive * 0.5 + i * 0.12, 1.0)
 		var dist := current_radius * (1.0 - t)
 		var px := cos(angle) * dist
 		var py := sin(angle) * dist
-		var ps := 2.0 + t * 2.0
-		var alpha := (1.0 - t) * 0.4 * fade
+		var ps := 2.0 + t * 2.2
+		var alpha := (1.0 - t) * 0.45 * fade
 		draw_circle(Vector2(px, py), ps,
-			Color(0.5, 0.2, 0.8, alpha))
+			Color(0.65, 0.3, 0.95, alpha))
 
-	# Warning ring during expand phase
+	# Warning ring during expand phase.
 	if time_alive < expand_time:
 		var warn_pulse := sin(time_val * 5.0) * 0.3 + 0.5
-		draw_arc(Vector2.ZERO, max_radius, 0.0, TAU, 24,
-			Color(0.8, 0.2, 0.2, warn_pulse * 0.3 * fade), 2.0)
-
-	# Center glow
-	draw_circle(Vector2.ZERO, core_r * 0.5,
-		Color(0.4, 0.1, 0.6, 0.3 * fade))
+		draw_arc(Vector2.ZERO, max_radius, 0.0, TAU, 32,
+			Color(0.85, 0.25, 0.25, warn_pulse * 0.35 * fade), 2.0)
