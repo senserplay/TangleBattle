@@ -403,10 +403,19 @@ func _load_random_map() -> void:
 		for node in get_tree().get_nodes_in_group(grp):
 			if is_instance_valid(node):
 				node.queue_free()
-	var idx: int = randi_range(0, MAP_SCENES.size() - 1)
-	var scene: PackedScene = load(MAP_SCENES[idx])
-	current_map = scene.instantiate()
-	map_container.add_child(current_map)
+	# Custom map path: editor pushed a Dictionary into GameManager.
+	# Reuse the same custom map for every round in this match, but don't
+	# leak it into a subsequent normal match (cleared on exit in game.gd).
+	if not GameManager.pending_custom_map.is_empty():
+		var custom_scn: PackedScene = load("res://scenes/maps/custom_map.tscn")
+		current_map = custom_scn.instantiate()
+		map_container.add_child(current_map)
+		current_map.load_from_dict(GameManager.pending_custom_map)
+	else:
+		var idx: int = randi_range(0, MAP_SCENES.size() - 1)
+		var scene: PackedScene = load(MAP_SCENES[idx])
+		current_map = scene.instantiate()
+		map_container.add_child(current_map)
 	if current_map != null and "spawn_points" in current_map:
 		GameManager.spawn_points = current_map.spawn_points
 	game_camera.map_ref = current_map

@@ -25,6 +25,12 @@ const SPAWN_INVINCIBILITY := 1.0
 const MODE_NAMES: Array[String] = ["Classic", "Endless", "Chaos", "Debug"]
 
 # Configurable from lobby
+# Map editor integration — when non-empty, game.gd loads this custom map
+# instead of the random rotation. `returning_to_editor` = go back to the
+# editor after the match ends (or the player exits).
+var pending_custom_map: Dictionary = {}
+var returning_to_editor: bool = false
+
 var game_mode: GameMode = GameMode.CLASSIC
 var base_luck: float = 0.0  # extra luck for all players
 var passive_card_count: int = 5  # cards shown per passive selection

@@ -1,5 +1,94 @@
 # TangleBattle — Рабочий лог
 
+## 2026-04-20 — feat(editor): редактор карт + Test Play + custom_map loader
+
+### Запрос пользователя
+Добавить редактор карт в главное меню: создание, редактирование, удаление,
+выбор существующих. Размещение платформ/порталов/шипов с изменением размера,
+смена фона, гравитации, событий, запуск для проверки.
+
+### Компоненты
+
+#### 1. `scripts/maps/bg_presets.gd` — preset bg_layers по имени темы
+Статический helper: `get_layers(theme)` → Array конфигов слоёв. Константы:
+- `THEMES`: `forest_blue`, `desert`, `iceberg`, `ocean`, `winter_night`, `halloween`
+- `PALETTES`: `stone`, `wood`, `sand`, `water`, `lava_ice`
+
+Переиспользуется и редактором (dropdown + preview), и custom_map.gd
+(runtime build).
+
+#### 2. `scripts/maps/custom_map.gd` + `scenes/maps/custom_map.tscn`
+Extends `map_base.gd`. Методы:
+- `load_from_dict(d: Dictionary)` — заполняет `bg_layers` через BgPresets,
+  parse `platforms/hazards/teleports/spawn_points/item_spawns`, гравитация,
+  friction, события, map_rect, danger zones.
+- `to_dict()` — обратный сериализатор для save.
+
+#### 3. `scripts/main/map_editor.gd` + `scenes/main/map_editor.tscn`
+Большой UI редактора (~800 строк). Layout:
+- **Toolbar** сверху: `New` `Load...▼` `Save` `Save As...` `Delete` `▶ Test Play` `Back`
+- **Tool palette** слева: `Select/Move`, `Platform`, `Spike`, `Teleport Pair`, `Spawn Point`
+- **Canvas** по центру: world-space preview с zoomable камерой, grid, drag-rect ghost
+- **Properties panel** справа: Name, BG theme, Platform palette, Map Size,
+  Danger zones (L/R/B), Gravity ×, Floor Friction ×, Map Events checkbox
+- **Selected panel** (появляется при выборе): X/Y/W/H, One-Way (для платформ), Delete
+
+**Tools**:
+- Select/Move: клик по объекту выбирает, drag двигает, Del удаляет
+- Platform: drag rectangle → `{x, y, w, h, one_way}` (one_way=true если h<50)
+- Spike: drag rectangle → hazard "spikes"
+- Teleport Pair: два клика — A и B точки
+- Spawn Point: клик ставит (max 4, пятый заменяет ближайший)
+
+**Canvas controls**: MMB drag = pan, wheel = zoom, снаппинг к 40-pixel grid.
+
+**Save/Load**: JSON в `user://custom_maps/<name>.json`. `AcceptDialog` для
+ввода имени, `ConfirmationDialog` для удаления. Load-dropdown обновляется
+при save/delete.
+
+**Test Play**: `GameManager.pending_custom_map = map_data.duplicate(true)` →
+`change_scene_to_file("lobby.tscn")`. `game.gd::_load_random_map` читает
+`pending_custom_map` — если не пустой, инстанцирует `custom_map.tscn` и
+вызывает `load_from_dict`.
+
+#### 4. `scripts/managers/game_manager.gd`
+Добавлены поля:
+- `var pending_custom_map: Dictionary = {}` — карта для Test Play
+- `var returning_to_editor: bool = false` — флаг возврата в редактор
+
+#### 5. `scripts/main/game.gd`
+Развилка в `_load_random_map`: если `pending_custom_map` не пуст, грузим
+custom_map.tscn + `load_from_dict`. Иначе — обычная ротация из MAP_SCENES.
+
+#### 6. `scripts/ui/title_menu.gd`
+`TITLE_ITEMS`: добавлен пункт `"MAP EDITOR"` между `PLAY` и `SETTINGS`.
+`_select_title()::case 1` → `change_scene_to_file("map_editor.tscn")`.
+`case 2` → Settings, `case 3` → Quit.
+В PLAY-случае сбрасывается `pending_custom_map = {}` — чтобы старый
+test-play не попал в обычную игру.
+
+### Файлы
+- `scripts/maps/bg_presets.gd` (новый, 115 строк)
+- `scripts/maps/custom_map.gd` (новый, ~150 строк)
+- `scenes/maps/custom_map.tscn` (новый)
+- `scripts/main/map_editor.gd` (новый, ~780 строк)
+- `scenes/main/map_editor.tscn` (новый)
+- `scripts/managers/game_manager.gd` (+4 строки)
+- `scripts/main/game.gd` (+10 строк в _load_random_map)
+- `scripts/ui/title_menu.gd` (+2 строки)
+
+### Тест
+- `mcp__godot__run_project` с main scene — без ошибок.
+- `mcp__godot__run_project` прямо на `map_editor.tscn` — UI инициализируется
+  без runtime errors или warnings.
+
+### Что дальше (nice-to-have)
+- Drag-corner resize вместо только числовых инпутов.
+- Import existing built-in maps в формат custom_map (через `scripts/maps/*.gd`).
+- Возврат из Test Play обратно в редактор через `returning_to_editor`.
+
+---
+
 ## 2026-04-20 — fix(maps): найдена реальная причина зазоров — 56px alpha=0 padding в PNG'ах
 
 ### Разбор
