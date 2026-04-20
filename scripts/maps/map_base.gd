@@ -86,6 +86,10 @@ var global_shrink_timer: float = 0.0
 
 
 func _ready() -> void:
+	# Enable UV-based texture repeat for this canvas — lets polygon platforms
+	# tile their seamless strip textures across the platform width via
+	# UVs > 1.0 without any inter-tile gaps or pixel filter bleed.
+	texture_repeat = CanvasItem.TEXTURE_REPEAT_ENABLED
 	for data in platforms:
 		if data.size() > 4 and data[4] is String and data[4] == "sticky":
 			_create_platform(data[0], data[1], data[2], data[3], false)
@@ -330,34 +334,29 @@ func _draw_parallax_background() -> void:
 				)
 				draw_texture_rect(tex, dst, false, tint)
 			"bottom_tile":
-				# Auto-scale layer so its height covers the full map (+ buffer
-				# for parallax overshoot), preserving aspect ratio. If the user
-				# set `scale` bigger than the auto-fit, honor it.
+				# One stretched copy spanning the full map width + parallax
+				# buffer, anchored to the bottom. Height stretches to cover
+				# the full map height (+ buffer). Previously tiled
+				# horizontally — made repetitions visible; now stretches.
 				var cover_h: float = map_rect.size.y + 1200.0
-				var auto_scale: float = cover_h / tex.get_size().y
-				var eff_scale: float = maxf(tex_scale, auto_scale)
-				var eff_size: Vector2 = tex.get_size() * eff_scale
-				var y_top := map_rect.end.y + y_off - eff_size.y \
-					+ parallax.y * 0.35
-				var band_w := map_rect.size.x + 8000.0
-				var x_start := map_rect.position.x - 4000.0 \
-					+ fmod(parallax.x, eff_size.x) - eff_size.x
+				var cover_w: float = map_rect.size.x + 4000.0
+				var y_top := map_rect.end.y + y_off - cover_h \
+					+ parallax.y * 0.25
+				var x_start := map_rect.position.x - 2000.0 \
+					+ parallax.x * 0.25
 				var dst := Rect2(Vector2(x_start, y_top),
-					Vector2(band_w + eff_size.x * 2.0, eff_size.y))
-				draw_texture_rect(tex, dst, true, tint)
+					Vector2(cover_w, cover_h))
+				draw_texture_rect(tex, dst, false, tint)
 			"top_tile":
 				var cover_h: float = map_rect.size.y + 1200.0
-				var auto_scale: float = cover_h / tex.get_size().y
-				var eff_scale: float = maxf(tex_scale, auto_scale)
-				var eff_size: Vector2 = tex.get_size() * eff_scale
+				var cover_w: float = map_rect.size.x + 4000.0
 				var y_top := map_rect.position.y + y_off \
-					+ parallax.y * 0.35
-				var band_w := map_rect.size.x + 8000.0
-				var x_start := map_rect.position.x - 4000.0 \
-					+ fmod(parallax.x, eff_size.x) - eff_size.x
+					+ parallax.y * 0.25
+				var x_start := map_rect.position.x - 2000.0 \
+					+ parallax.x * 0.25
 				var dst := Rect2(Vector2(x_start, y_top),
-					Vector2(band_w + eff_size.x * 2.0, eff_size.y))
-				draw_texture_rect(tex, dst, true, tint)
+					Vector2(cover_w, cover_h))
+				draw_texture_rect(tex, dst, false, tint)
 
 
 # ══════════════════ MAP BORDERS — water floor + side vignette ══════════════════
@@ -376,56 +375,46 @@ static func _get_water_tex() -> Texture2D:
 
 
 func _draw_water_floor() -> void:
+	# Simple dark-water fill below the danger line — no wavy/icy strip
+	# texture (that previously leaked into every map as an "ice" band).
+	# The only visual is a deep water gradient from a mid-blue surface
+	# line to a near-black bottom, plus a thin animated highlight on the
+	# surface so the waterline reads clearly.
 	if danger_bottom <= 0.0:
 		return
-	var tex: Texture2D = _get_water_tex()
 	var r := map_rect
 	var top_y := r.end.y - danger_bottom
-	# Animated gentle bob — water surface drifts up/down slightly.
-	var t := float(Engine.get_physics_frames()) * 0.02
-	var bob := sin(t) * 2.0
+	var x0 := r.position.x - 4000.0
+	var band_w := r.size.x + 8000.0
+	var total_h := danger_bottom + 2200.0
 
-	if tex != null:
-		var tile_h: float = 140.0
-		# Cover large horizontal span + deep band below map
-		var band_w := r.size.x + 8000.0
-		var total_h := danger_bottom + 2200.0
-		var x0 := r.position.x - 4000.0
-		# Tile the whole floor band — slight vertical drift by bob
-		draw_texture_rect(
-			tex,
-			Rect2(Vector2(x0, top_y + bob),
-				Vector2(band_w, tile_h)),
-			true,
-			Color.WHITE
-		)
-		# Dark deep-water fill below the surface strip
-		draw_rect(
-			Rect2(Vector2(x0, top_y + tile_h), Vector2(band_w, total_h)),
-			Color(0.08, 0.18, 0.30, 1.0)
-		)
-		# Soft fade at the top of the water so it blends with the scene
-		var fade_h := 22.0
-		var fade_steps := 8
-		for i in range(fade_steps):
-			var frac := float(i) / fade_steps
-			var col := Color(0.25, 0.55, 0.75, 0.35 * (1.0 - frac))
-			draw_rect(
-				Rect2(
-					Vector2(x0, top_y + bob - fade_h * (1.0 - frac)),
-					Vector2(band_w, fade_h / fade_steps + 1.0)
-				),
-				col
-			)
-	else:
-		# Fallback solid water
+	# Deep water fill (solid dark blue covering the full floor band)
+	draw_rect(
+		Rect2(Vector2(x0, top_y), Vector2(band_w, total_h)),
+		Color(0.06, 0.14, 0.24, 1.0)
+	)
+	# Subtle vertical depth gradient — lighter near the surface, darker deeper.
+	var grad_steps := 10
+	var grad_h: float = minf(260.0, danger_bottom * 0.6)
+	for i in range(grad_steps):
+		var frac := float(i) / grad_steps
+		var col := Color(0.16, 0.38, 0.58, 0.18 * (1.0 - frac))
 		draw_rect(
 			Rect2(
-				Vector2(r.position.x - 4000, top_y),
-				Vector2(r.size.x + 8000, danger_bottom + 2200)
+				Vector2(x0, top_y + grad_h * frac),
+				Vector2(band_w, grad_h / grad_steps + 1.0)
 			),
-			Color(0.18, 0.48, 0.70, 1.0)
+			col
 		)
+	# Animated thin surface highlight line
+	var t := float(Engine.get_physics_frames()) * 0.02
+	var bob := sin(t) * 1.5
+	draw_line(
+		Vector2(x0, top_y + bob),
+		Vector2(x0 + band_w, top_y + bob),
+		Color(0.45, 0.72, 0.90, 0.55),
+		2.0
+	)
 
 
 func _draw_side_vignette() -> void:
@@ -581,9 +570,9 @@ func _draw_themed_platform(
 	var r := minf(hh * 0.95, h * 0.45)
 	r = clampf(r, 6.0, 26.0)
 
-	# 1. Build the rounded capsule polygon.
+	# Build the rounded capsule polygon.
 	var pts: PackedVector2Array = []
-	var segs := 8
+	var segs := 10
 	for i in range(segs + 1):
 		var a := PI + float(i) / segs * (PI / 2.0)
 		pts.append(Vector2(cx - hw + r + cos(a) * r, cy - hh + r + sin(a) * r))
@@ -597,46 +586,25 @@ func _draw_themed_platform(
 		var a := PI / 2.0 + float(i) / segs * (PI / 2.0)
 		pts.append(Vector2(cx - hw + r + cos(a) * r, cy + hh - r + sin(a) * r))
 
-	# 2. Solid rounded base. Fills rounded corners where the tiled strip
-	#    can't reach; shows through as the platform's "frame".
-	draw_colored_polygon(pts, platform_color)
-
-	# 3. Tile the seamless strip horizontally at a scale that fits platform
-	#    height, preserving aspect ratio. Width wraps = copies of the
-	#    same texture side by side (no stretching).
+	# Aspect-preserve UV tiling. Tile scale = platform_h / tex_native_h
+	# so each tile's rendered height equals the platform height (no vertical
+	# squish). Tile width = tex_native_w * scale; U wraps across the
+	# platform width (UV > 1 wraps thanks to texture_repeat=ENABLED set in
+	# _ready()), which puts identical copies of the tex side-by-side
+	# seamlessly and extends ALL the way into the rounded corners.
 	var tex_native: Vector2 = tex.get_size()
-	# Scale so texture height = platform height (+ tiny overshoot)
-	var scl: float = (h + 4.0) / tex_native.y
-	var tile_w: float = tex_native.x * scl
-	var tile_h: float = tex_native.y * scl
-	# Keep solid color visible at the rounded ends by insetting the tile band
-	var inset_x: float = r * 0.65
-	var inset_y: float = 0.0
-	var inner_x: float = cx - hw + inset_x
-	var inner_y: float = cy - hh + inset_y - 2.0
-	var inner_w: float = w - inset_x * 2.0
-	if inner_w <= 1.0:
-		# Extremely narrow platform — skip tiling, solid color only.
-		pass
-	else:
-		var n_tiles: int = int(ceil(inner_w / tile_w))
-		for i in range(n_tiles):
-			var tx: float = inner_x + i * tile_w
-			var remain: float = (inner_x + inner_w) - tx
-			var draw_w: float = minf(tile_w, remain)
-			# Region in texture space = draw_w / scl, full height
-			var region := Rect2(
-				Vector2(0.0, 0.0),
-				Vector2(draw_w / scl, tex_native.y)
-			)
-			draw_texture_rect_region(
-				tex,
-				Rect2(Vector2(tx, inner_y), Vector2(draw_w, tile_h)),
-				region,
-				Color.WHITE
-			)
+	var scl: float = h / tex_native.y
+	var tile_world_w: float = tex_native.x * scl
+	var u_max: float = w / tile_world_w
+	var uvs: PackedVector2Array = []
+	for p in pts:
+		var u: float = ((p.x - (cx - hw)) / w) * u_max
+		var v: float = (p.y - (cy - hh)) / h
+		uvs.append(Vector2(u, v))
+	var colors := PackedColorArray([Color.WHITE])
+	draw_polygon(pts, colors, uvs, tex)
 
-	# 4. Edge outline + top highlight + bottom shadow.
+	# Edge outline + top highlight + bottom shadow.
 	var edge: Color = _get_palette_edge(palette)
 	for i in range(pts.size()):
 		var i2 := (i + 1) % pts.size()
