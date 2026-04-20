@@ -1,5 +1,57 @@
 # TangleBattle — Рабочий лог
 
+## 2026-04-20 — fix(editor): коллизии custom_map, import встроенных карт, events clarify
+
+### Жалобы пользователя
+1. Не могу выбрать и отредактировать существующие карты (мои 6 built-in).
+2. Платформы/шипы/порталы в Test Play **без коллизий** — можно пролететь насквозь.
+3. "Map Events" — это старое: медленное сужение зоны + ветер каждые 20с.
+
+### Фиксы
+
+#### 1. Коллизии custom_map — порядок вызовов
+`game.gd::_load_random_map`: раньше было
+```
+current_map = custom_scn.instantiate()
+map_container.add_child(current_map)       # ← _ready() здесь
+current_map.load_from_dict(...)            # ← data заполняется ПОСЛЕ
+```
+`map_base._ready()` итерирует `platforms/hazards/teleports`, которые ещё
+пусты, и создаёт **ноль** StaticBody2D/Area2D. Теперь:
+```
+current_map.load_from_dict(...)  # сначала заполняем data
+map_container.add_child(current_map)  # потом _ready создаёт физ-тела
+```
+
+#### 2. Import built-in maps
+Новая dropdown `Import built-in...` в toolbar с 6 пунктами (Forest Glade,
+Desert Dunes, Iceberg Bay, Ocean Shore, Winter Night, Haunted Castle).
+`_on_import_selected` инстанцирует сцену (БЕЗ добавления в tree, чтобы
+`_init()` прогнал конфиг но `_ready()` не создавал физику), читает поля
+ноды через `_builtin_to_dict()`, конвертит в editor-формат:
+- определяет theme по пути первого bg-слоя (содержит `/theme_name/`)
+- сериализует `platforms[]`/`hazards[]`/`teleports[]`/`spawn_points[]`/`item_spawns[]`
+- имя = `map_name + " (copy)"`, `current_file = ""` — "Save As" чтобы сохранить
+  как отдельный custom-файл (не перезаписать оригинал)
+
+#### 3. Map Events — уточнение
+- Чекбокс переименован: `"Map Events (wind/meteor every 20s)"`.
+- Под ним label: `"Note: danger zone starts shrinking after 120s (always on)."`
+- Default `events_enabled = true` в `_default_map()` — новые карты сразу
+  получают wind/meteor/lightning.
+- Zone shrink код в `map_base._process()` уже работает для custom_map через
+  наследование (SHRINK_GLOBAL_DELAY=120s, SHRINK_GLOBAL_SPEED=20).
+
+### Файлы
+- `scripts/main/game.gd` (+4 строки комментарий, перестановка 2 строк)
+- `scripts/main/map_editor.gd` (+~80 строк — import, _builtin_to_dict)
+- `scenes/main/map_editor.tscn` (+ImportMenu, +ShrinkNote label)
+
+### Тест
+- `mcp__godot__run_project` на `map_editor.tscn` — без ошибок и warnings.
+
+---
+
 ## 2026-04-20 — feat(editor): редактор карт + Test Play + custom_map loader
 
 ### Запрос пользователя

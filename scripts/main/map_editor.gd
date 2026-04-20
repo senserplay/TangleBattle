@@ -17,9 +17,21 @@ const MAPS_DIR := "user://custom_maps/"
 const GRID_SIZE := 40.0
 const MIN_RECT := 20.0
 
+# Built-in maps — selectable via the Import dropdown so the player can
+# start from an existing map and edit it as a custom one.
+const BUILTIN_MAPS: Array[Dictionary] = [
+	{"name": "Forest Glade",   "scene": "res://scenes/maps/forest_glade.tscn"},
+	{"name": "Desert Dunes",   "scene": "res://scenes/maps/desert_dunes.tscn"},
+	{"name": "Iceberg Bay",    "scene": "res://scenes/maps/iceberg_bay.tscn"},
+	{"name": "Ocean Shore",    "scene": "res://scenes/maps/ocean_shore.tscn"},
+	{"name": "Winter Night",   "scene": "res://scenes/maps/winter_night.tscn"},
+	{"name": "Haunted Castle", "scene": "res://scenes/maps/haunted_castle.tscn"},
+]
+
 # UI refs
 @onready var tb_new: Button         = %NewBtn
 @onready var tb_load: OptionButton  = %LoadMenu
+@onready var tb_import: OptionButton = %ImportMenu
 @onready var tb_save: Button        = %SaveBtn
 @onready var tb_save_as: Button     = %SaveAsBtn
 @onready var tb_delete: Button      = %DeleteBtn
@@ -91,11 +103,19 @@ func _ready() -> void:
 	_ensure_dir()
 	_populate_bg_dropdown()
 	_populate_palette_dropdown()
+	_populate_import_menu()
 	_refresh_load_menu()
 	_connect_signals()
 	_load_props_from_data()
 	_set_tool("select")
 	_center_view()
+
+
+func _populate_import_menu() -> void:
+	tb_import.clear()
+	tb_import.add_item("Import built-in...", 0)
+	for i in range(BUILTIN_MAPS.size()):
+		tb_import.add_item(BUILTIN_MAPS[i]["name"], i + 1)
 
 
 func _ensure_dir() -> void:
@@ -135,6 +155,7 @@ func _refresh_load_menu() -> void:
 func _connect_signals() -> void:
 	tb_new.pressed.connect(_on_new)
 	tb_load.item_selected.connect(_on_load_selected)
+	tb_import.item_selected.connect(_on_import_selected)
 	tb_save.pressed.connect(_on_save)
 	tb_save_as.pressed.connect(_on_save_as)
 	tb_delete.pressed.connect(_on_delete)
@@ -213,7 +234,7 @@ func _default_map() -> Dictionary:
 		"danger_top": 0,
 		"gravity_multiplier": 1.0,
 		"floor_friction_mult": 1.0,
-		"events_enabled": false,
+		"events_enabled": true,
 		"platforms": [
 			{"x": 2250, "y": 2300, "w": 2800, "h": 60, "one_way": false},
 			{"x": 900, "y": 1900, "w": 520, "h": 32, "one_way": true},
@@ -370,6 +391,88 @@ func _on_load_selected(idx: int) -> void:
 	var fname: String = tb_load.get_item_text(idx) + ".json"
 	_load_from_file(fname)
 	tb_load.selected = 0
+
+
+func _on_import_selected(idx: int) -> void:
+	if idx == 0:
+		return
+	var info: Dictionary = BUILTIN_MAPS[idx - 1]
+	var scn_path: String = info["scene"]
+	var packed: PackedScene = load(scn_path)
+	if packed == null:
+		_set_status("Can't load: " + scn_path)
+		return
+	# Instantiate WITHOUT adding to the tree — we want to read field
+	# values set by the map script's _init(), not spawn physics bodies.
+	var node: Node2D = packed.instantiate()
+	map_data = _builtin_to_dict(node)
+	node.queue_free()
+	current_file = ""  # imported → becomes a new map; "Save As" to persist
+	selected = {}
+	_load_props_from_data()
+	_set_status("Imported: " + info["name"] + " — Save As to keep it.")
+	tb_import.selected = 0
+
+
+# Serialize an in-memory map_base node into the editor Dictionary format.
+func _builtin_to_dict(m: Node2D) -> Dictionary:
+	var bg_theme: String = "forest_blue"
+	if m.bg_layers.size() > 0:
+		var p: String = m.bg_layers[0].get("path", "")
+		for t in BgPresets.THEMES:
+			if p.contains("/" + t + "/"):
+				bg_theme = t
+				break
+	var plats: Array = []
+	for p in m.platforms:
+		var one_way: bool = (p.size() > 4 and p[4] is bool and p[4])
+		plats.append({
+			"x": float(p[0]), "y": float(p[1]),
+			"w": float(p[2]), "h": float(p[3]),
+			"one_way": one_way,
+		})
+	var hazs: Array = []
+	for h in m.hazards:
+		if h[0] == "spikes":
+			hazs.append({
+				"type": "spikes",
+				"x": float(h[1]), "y": float(h[2]),
+				"w": float(h[3]), "h": float(h[4]),
+			})
+	var tps: Array = []
+	for t in m.teleports:
+		# v2 format: [x1, y1, h1, a1, x2, y2, h2, a2] — flatten to simple pair
+		if t.size() >= 8:
+			tps.append({"x1": float(t[0]), "y1": float(t[1]),
+				"x2": float(t[4]), "y2": float(t[5])})
+		else:
+			tps.append({"x1": float(t[0]), "y1": float(t[1]),
+				"x2": float(t[2]), "y2": float(t[3])})
+	var sps: Array = []
+	for sp in m.spawn_points:
+		sps.append([sp.x, sp.y])
+	var isps: Array = []
+	for sp in m.item_spawns:
+		isps.append([float(sp[0]), float(sp[1])])
+	return {
+		"name": m.map_name + " (copy)",
+		"bg_theme": bg_theme,
+		"platform_palette": m.platform_palette if m.platform_palette != "" else "stone",
+		"map_rect": [m.map_rect.position.x, m.map_rect.position.y,
+			m.map_rect.size.x, m.map_rect.size.y],
+		"danger_left": m.danger_left,
+		"danger_right": m.danger_right,
+		"danger_bottom": m.danger_bottom,
+		"danger_top": m.danger_top,
+		"gravity_multiplier": m.gravity_multiplier,
+		"floor_friction_mult": m.floor_friction_mult,
+		"events_enabled": m.events_enabled,
+		"platforms": plats,
+		"hazards": hazs,
+		"teleports": tps,
+		"spawn_points": sps,
+		"item_spawns": isps,
+	}
 
 
 func _load_from_file(fname: String) -> void:

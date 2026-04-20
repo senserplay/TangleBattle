@@ -1,53 +1,13 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <project version="4">
+  <component name="AutoImportSettings">
+    <option name="autoReloadType" value="SELECTIVE" />
+  </component>
   <component name="ChangeListManager">
     <list default="true" id="fc28cf1c-3cd1-4f3d-8bdd-a23b4fbfa1ca" name="Changes" comment="">
-      <change beforePath="$PROJECT_DIR$/../../assets/characters/body/yarn_ball.png.import" beforeDir="false" afterPath="$PROJECT_DIR$/../../assets/characters/body/yarn_ball.png.import" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/../../assets/characters/face/face_angry.png.import" beforeDir="false" afterPath="$PROJECT_DIR$/../../assets/characters/face/face_angry.png.import" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/../../assets/characters/face/face_dead.png.import" beforeDir="false" afterPath="$PROJECT_DIR$/../../assets/characters/face/face_dead.png.import" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/../../assets/characters/face/face_focus.png.import" beforeDir="false" afterPath="$PROJECT_DIR$/../../assets/characters/face/face_focus.png.import" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/../../assets/characters/face/face_happy.png.import" beforeDir="false" afterPath="$PROJECT_DIR$/../../assets/characters/face/face_happy.png.import" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/../../assets/characters/face/face_pain.png.import" beforeDir="false" afterPath="$PROJECT_DIR$/../../assets/characters/face/face_pain.png.import" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/../../assets/characters/face/face_scared.png.import" beforeDir="false" afterPath="$PROJECT_DIR$/../../assets/characters/face/face_scared.png.import" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/../../assets/textures/backgrounds/clouds_blue/00_sky.png.import" beforeDir="false" afterPath="$PROJECT_DIR$/../../assets/textures/backgrounds/clouds_blue/00_sky.png.import" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/../../assets/textures/backgrounds/clouds_blue/01_far.png.import" beforeDir="false" afterPath="$PROJECT_DIR$/../../assets/textures/backgrounds/clouds_blue/01_far.png.import" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/../../assets/textures/backgrounds/clouds_blue/02_mid.png.import" beforeDir="false" afterPath="$PROJECT_DIR$/../../assets/textures/backgrounds/clouds_blue/02_mid.png.import" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/../../assets/textures/backgrounds/clouds_blue/03_close.png.import" beforeDir="false" afterPath="$PROJECT_DIR$/../../assets/textures/backgrounds/clouds_blue/03_close.png.import" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/../../assets/textures/backgrounds/clouds_sunset/00_sky.png.import" beforeDir="false" afterPath="$PROJECT_DIR$/../../assets/textures/backgrounds/clouds_sunset/00_sky.png.import" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/../../assets/textures/backgrounds/clouds_sunset/01_far.png.import" beforeDir="false" afterPath="$PROJECT_DIR$/../../assets/textures/backgrounds/clouds_sunset/01_far.png.import" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/../../assets/textures/backgrounds/clouds_sunset/02_mid.png.import" beforeDir="false" afterPath="$PROJECT_DIR$/../../assets/textures/backgrounds/clouds_sunset/02_mid.png.import" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/../../assets/textures/backgrounds/clouds_sunset/03_close.png.import" beforeDir="false" afterPath="$PROJECT_DIR$/../../assets/textures/backgrounds/clouds_sunset/03_close.png.import" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/../../assets/textures/backgrounds/dawn/01.png.import" beforeDir="false" afterPath="$PROJECT_DIR$/../../assets/textures/backgrounds/dawn/01.png.import" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/../../assets/textures/backgrounds/dawn/02.png.import" beforeDir="false" afterPath="$PROJECT_DIR$/../../assets/textures/backgrounds/dawn/02.png.import" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/../../assets/textures/backgrounds/dawn/03.png.import" beforeDir="false" afterPath="$PROJECT_DIR$/../../assets/textures/backgrounds/dawn/03.png.import" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/../../assets/textures/backgrounds/dawn/04.png.import" beforeDir="false" afterPath="$PROJECT_DIR$/../../assets/textures/backgrounds/dawn/04.png.import" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/../../assets/textures/backgrounds/dawn/05.png.import" beforeDir="false" afterPath="$PROJECT_DIR$/../../assets/textures/backgrounds/dawn/05.png.import" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/../../assets/textures/backgrounds/dawn/06.png.import" beforeDir="false" afterPath="$PROJECT_DIR$/../../assets/textures/backgrounds/dawn/06.png.import" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/../../assets/textures/backgrounds/dawn/07.png.import" beforeDir="false" afterPath="$PROJECT_DIR$/../../assets/textures/backgrounds/dawn/07.png.import" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/../../assets/textures/backgrounds/dawn/08.png.import" beforeDir="false" afterPath="$PROJECT_DIR$/../../assets/textures/backgrounds/dawn/08.png.import" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/../../assets/textures/backgrounds/forest/00_sky.png.import" beforeDir="false" afterPath="$PROJECT_DIR$/../../assets/textures/backgrounds/forest/00_sky.png.import" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/../../assets/textures/backgrounds/forest/01_lights.png.import" beforeDir="false" afterPath="$PROJECT_DIR$/../../assets/textures/backgrounds/forest/01_lights.png.import" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/../../assets/textures/backgrounds/forest/02_far.png.import" beforeDir="false" afterPath="$PROJECT_DIR$/../../assets/textures/backgrounds/forest/02_far.png.import" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/../../assets/textures/backgrounds/forest/03_mid_far.png.import" beforeDir="false" afterPath="$PROJECT_DIR$/../../assets/textures/backgrounds/forest/03_mid_far.png.import" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/../../assets/textures/backgrounds/forest/04_mid.png.import" beforeDir="false" afterPath="$PROJECT_DIR$/../../assets/textures/backgrounds/forest/04_mid.png.import" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/../../assets/textures/backgrounds/forest/05_close.png.import" beforeDir="false" afterPath="$PROJECT_DIR$/../../assets/textures/backgrounds/forest/05_close.png.import" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/../../assets/textures/backgrounds/forest/06_closer.png.import" beforeDir="false" afterPath="$PROJECT_DIR$/../../assets/textures/backgrounds/forest/06_closer.png.import" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/../../assets/textures/backgrounds/forest/07_close_trees.png.import" beforeDir="false" afterPath="$PROJECT_DIR$/../../assets/textures/backgrounds/forest/07_close_trees.png.import" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/../../assets/textures/backgrounds/forest/08_front_trees.png.import" beforeDir="false" afterPath="$PROJECT_DIR$/../../assets/textures/backgrounds/forest/08_front_trees.png.import" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/../../assets/textures/backgrounds/forest/09_grass.png.import" beforeDir="false" afterPath="$PROJECT_DIR$/../../assets/textures/backgrounds/forest/09_grass.png.import" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/../../assets/textures/backgrounds/nature/n1_full.png.import" beforeDir="false" afterPath="$PROJECT_DIR$/../../assets/textures/backgrounds/nature/n1_full.png.import" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/../../assets/textures/backgrounds/nature/n2_full.png.import" beforeDir="false" afterPath="$PROJECT_DIR$/../../assets/textures/backgrounds/nature/n2_full.png.import" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/../../assets/textures/backgrounds/nature/n3_full.png.import" beforeDir="false" afterPath="$PROJECT_DIR$/../../assets/textures/backgrounds/nature/n3_full.png.import" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/../../assets/textures/backgrounds/nature/n4_full.png.import" beforeDir="false" afterPath="$PROJECT_DIR$/../../assets/textures/backgrounds/nature/n4_full.png.import" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/../../assets/textures/backgrounds/nature/n5_full.png.import" beforeDir="false" afterPath="$PROJECT_DIR$/../../assets/textures/backgrounds/nature/n5_full.png.import" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/../../assets/textures/backgrounds/nature/n6_full.png.import" beforeDir="false" afterPath="$PROJECT_DIR$/../../assets/textures/backgrounds/nature/n6_full.png.import" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/../../assets/textures/backgrounds/nature/n7_full.png.import" beforeDir="false" afterPath="$PROJECT_DIR$/../../assets/textures/backgrounds/nature/n7_full.png.import" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/../../assets/textures/backgrounds/nature/n8_full.png.import" beforeDir="false" afterPath="$PROJECT_DIR$/../../assets/textures/backgrounds/nature/n8_full.png.import" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/../../assets/textures/backgrounds/space/stars.png.import" beforeDir="false" afterPath="$PROJECT_DIR$/../../assets/textures/backgrounds/space/stars.png.import" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/../../assets/textures/backgrounds/space/stars_special.png.import" beforeDir="false" afterPath="$PROJECT_DIR$/../../assets/textures/backgrounds/space/stars_special.png.import" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/README.md" beforeDir="false" afterPath="$PROJECT_DIR$/README.md" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/../passives/README.md" beforeDir="false" afterPath="$PROJECT_DIR$/../passives/README.md" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/../../work_notes/LOG.md" beforeDir="false" afterPath="$PROJECT_DIR$/../../work_notes/LOG.md" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/../../scenes/main/map_editor.tscn" beforeDir="false" afterPath="$PROJECT_DIR$/../../scenes/main/map_editor.tscn" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/../../scripts/main/game.gd" beforeDir="false" afterPath="$PROJECT_DIR$/../../scripts/main/game.gd" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/../../scripts/main/map_editor.gd" beforeDir="false" afterPath="$PROJECT_DIR$/../../scripts/main/map_editor.gd" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -57,9 +17,9 @@
   <component name="Git.Settings">
     <option name="RECENT_GIT_ROOT_PATH" value="$PROJECT_DIR$/../.." />
   </component>
-  <component name="ProjectColorInfo"><![CDATA[{
-  "associatedIndex": 7
-}]]></component>
+  <component name="ProjectColorInfo">{
+  &quot;associatedIndex&quot;: 7
+}</component>
   <component name="ProjectId" id="3CcnGopgQr2yanpVw583ZNrUnGU" />
   <component name="ProjectViewState">
     <option name="hideEmptyMiddlePackages" value="true" />
@@ -69,7 +29,7 @@
   "keyToString": {
     "RunOnceActivity.ShowReadmeOnStart": "true",
     "RunOnceActivity.git.unshallow": "true",
-    "git-widget-placeholder": "develop",
+    "git-widget-placeholder": "fix/editor-collisions-import",
     "last_opened_file_path": "C:/Users/belya/Documents/Godot/TangleBattle/docs/abilities"
   }
 }]]></component>
