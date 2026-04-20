@@ -11,6 +11,13 @@ _будущие изменения здесь_
 
 ---
 
+## [0.6] � 2026-04-20
+
+### Changed
+- Merge feature/maps-rebuild-parallax into develop - chore: reimport refresh + new map .uid files - fix(characters): death VFX + dropped pickup now spawn at actual death spot - fix(assets): trim 56px alpha=0 padding from platform textures - fix(maps): single UV-wrap polygon + solid base fill, drop split-polygon - fix(maps): split-polygon platform tiles, drop broken shader, bg cap 4x - fix(maps): wrap-aware 4-tap bilinear shader kills the platform tile seam - fix(maps): shader-based fract() UV wrap for truly seamless platform tiling - fix(maps): aspect-preserve bg scale cap, transform+tile platforms, wavy water, drop winter_valley - fix(maps): seamless platform tiling, stretch bg layers, plain water floor - fix(maps): auto-scale bg layers + tile platform textures without stretch - feat(maps): full rebuild ��� parallax backgrounds + unified water/vignette borders - Merge feature/ability-icons-textured into develop - feat(ui): textured ability icons replace procedural emblems + docs actualization - Merge release/0.5 into develop
+
+---
+
 ## [0.5] � 2026-04-19
 
 ### Changed
@@ -115,3 +122,5 @@ _будущие изменения здесь_
 [0.4]: https://github.com/senserplay/TangleBattle/releases/tag/v0.4
 
 [0.5]: https://github.com/senserplay/TangleBattle/releases/tag/v0.5
+
+[0.6]: https://github.com/senserplay/TangleBattle/releases/tag/v0.6

@@ -38,28 +38,21 @@ var floor_color: Color = Color(0.3, 0.2, 0.18)
 var floor_edge_color: Color = Color(0.5, 0.35, 0.25)
 var map_name: String = "Unknown"
 
-## Textured background theme — empty = plain bg_color only.
-## Themes: "forest", "dawn", "clouds_blue", "clouds_sunset", "space",
-##         "nature1".."nature8" (single image stretched).
-## bg_tint multiplies all layer colors so the same theme can be re-used across
-## maps with different moods (sunset/night/dawn/dusk).
-var bg_theme: String = ""
+## Parallax background layers. Each map fills this from its _init().
+## Layer dict keys:
+##   path   : String res://... texture path
+##   scroll : float  0.0 = locked to screen (sky), 1.0 = locked to world (fg)
+##   mode   : String "fill"        — stretch across bg, vertical parallax damped
+##                   "bottom_tile" — tile horizontally, bottom-anchored band
+##                   "top_tile"    — tile horizontally, top-anchored band
+##   y      : float  pixel offset added to anchor position
+##   scale  : float  per-layer scale multiplier (defaults to 1.0)
+##   tint   : Color  color multiplier (defaults to WHITE)
+var bg_layers: Array = []
 var bg_tint: Color = Color.WHITE
 
-## Death-zone visual style. Used only when zones are active (no walls).
-## "default" — red striped (legacy)
-## "lava"     — molten orange/yellow with bubbles & glow
-## "void"     — deep purple-black with twinkling void particles
-## "abyss"    — black ink with falling drips
-## "stars"    — dark space with stars (open-top space maps)
-## "spikes"   — red zone with jagged tooth silhouette
-## "swamp"    — toxic green sludge with bubbles
-## "mist"     — pale blue cold mist
-var death_zone_style: String = "default"
-
-# Platform material: "" (default capsule) or "grass"/"stone"/"wood"/"ice"/"magma"
-# The palette textures are themselves decorative landscape strips, so they
-# already provide grass/ice/lava deco on top of the platform body.
+# Platform material: "" (default capsule) or "stone"/"wood"/"sand"/"lava_ice"/"water"
+# Each palette is a seamless landscape strip texture applied to the capsule.
 var platform_palette: String = ""
 
 var spawn_points: Array[Vector2] = [
@@ -93,6 +86,13 @@ var global_shrink_timer: float = 0.0
 
 
 func _ready() -> void:
+	# Enable GPU-level texture repeat for this CanvasItem. A single
+	# draw_polygon renders the full rounded capsule with UVs 0..N (N =
+	# number of tile copies); the GPU sampler wraps UV > 1.0 natively
+	# via GL_REPEAT. The strip textures are pixel-identical at col 0 vs
+	# col tex_w-1 (verified), so LINEAR filter samples the same pair on
+	# both sides of each tile boundary — zero visible seam.
+	texture_repeat = CanvasItem.TEXTURE_REPEAT_ENABLED
 	for data in platforms:
 		if data.size() > 4 and data[4] is String and data[4] == "sticky":
 			_create_platform(data[0], data[1], data[2], data[3], false)
@@ -223,19 +223,21 @@ func _create_arc_platform(
 func _draw() -> void:
 	draw_rect(
 		Rect2(
-			map_rect.position.x - 500, map_rect.position.y - 500,
-			map_rect.size.x + 1000, map_rect.size.y + 1000
+			map_rect.position.x - 3500, map_rect.position.y - 3500,
+			map_rect.size.x + 7000, map_rect.size.y + 7000
 		),
 		bg_color
 	)
-	_draw_themed_background()
+	_draw_parallax_background()
 	_draw_parallax()
-	_draw_themed_danger_zones()
-	_draw_walls()
 	_draw_decorations()
 	_draw_platforms()
 	_draw_objects()
 	_draw_hazards()
+	# Borders draw LAST so water + side vignette sit over everything else
+	_draw_water_floor()
+	_draw_side_vignette()
+	_draw_walls()
 
 
 func _draw_parallax() -> void:
@@ -277,447 +279,211 @@ func _draw_parallax() -> void:
 					]), col)
 
 
-# ══════════════════ THEMED BACKGROUND (textured parallax) ══════════════════
-# Per-layer fields:
-#   path     : res:// texture path
-#   scroll   : 0.0 = static (locked to map), 1.0 = follows camera (no parallax)
-#   anchor_y : 0.0 = top of map, 1.0 = bottom
-#   offset_y : pixel offset added to anchor_y position
-#   scale    : pixel scale of the texture (4.0 default for pixel art)
-#   tint     : Color modulation
-#   mode     : "tile_x" (horizontal repeat band)
-#              "stretch_full" (one stretched copy spanning the bg rect)
-const BG_THEMES := {
-	"forest": {
-		"base": Color(0.40, 0.62, 0.74),
-		"layers": [
-			# Sky base (928x793) — stretched to fill bg
-			["res://assets/textures/backgrounds/forest/00_sky.png", 0.0, 0.0, 0.0, 1.0, Color.WHITE, "stretch_full"],
-			# Single foreground tree band — scattered across map
-			["res://assets/textures/backgrounds/forest/08_front_trees.png", 0.35, 1.0, 250.0, 8.0, Color(0.92,0.98,0.95,0.92), "scatter_x"],
-		],
-	},
-	"dawn": {
-		"base": Color(0.45, 0.25, 0.30),
-		"layers": [
-			# Sky gradient + sun (1980x1080) — fills bg natively
-			["res://assets/textures/backgrounds/dawn/02.png", 0.0, 0.0, 0.0, 1.5, Color.WHITE, "stretch_full"],
-			# Single horizon: red landscape silhouette (1980x1080) at small scale
-			["res://assets/textures/backgrounds/dawn/07.png", 0.10, 1.0, 200.0, 2.0, Color(1,1,1,0.95), "tile_x"],
-		],
-	},
-	"clouds_blue": {
-		"base": Color(0.20, 0.55, 0.85),
-		"layers": [
-			["res://assets/textures/backgrounds/clouds_blue/00_sky.png", 0.0, 0.0, 0.0, 1.0, Color.WHITE, "stretch_full"],
-			# Single big cumulus cloud band — scattered, sparse
-			["res://assets/textures/backgrounds/clouds_blue/03_close.png", 0.25, 0.75, 0.0, 10.0, Color(1,1,1,0.80), "scatter_x"],
-		],
-	},
-	"clouds_sunset": {
-		"base": Color(0.45, 0.25, 0.45),
-		"layers": [
-			["res://assets/textures/backgrounds/clouds_sunset/00_sky.png", 0.0, 0.0, 0.0, 1.0, Color.WHITE, "stretch_full"],
-			["res://assets/textures/backgrounds/clouds_sunset/03_close.png", 0.25, 0.75, 0.0, 10.0, Color(1,1,1,0.80), "scatter_x"],
-		],
-	},
-	"space": {
-		"base": Color(0.02, 0.02, 0.08),
-		# Procedural stars — texture is a 144x9 strip, unsuitable for tiling.
-		# scroll_factor encodes density (lower = sparser): 0.08 → distant stars
-		"layers": [
-			["", 0.05, 0.0, 0.0, 1.0, Color(1.0, 0.95, 0.85, 0.80), "stars_proc"],
-			["", 0.20, 0.0, 0.0, 1.0, Color(0.85, 0.90, 1.0, 0.50), "stars_proc"],
-		],
-	},
-	"nature1":  { "base": Color(0.30,0.55,0.50), "layers": [ ["res://assets/textures/backgrounds/nature/n1_full.png", 0.10, 0.0, 0.0, 1.0, Color.WHITE, "stretch_full"] ] },
-	"nature2":  { "base": Color(0.20,0.30,0.45), "layers": [ ["res://assets/textures/backgrounds/nature/n2_full.png", 0.10, 0.0, 0.0, 1.0, Color.WHITE, "stretch_full"] ] },
-	"nature3":  { "base": Color(0.55,0.35,0.40), "layers": [ ["res://assets/textures/backgrounds/nature/n3_full.png", 0.10, 0.0, 0.0, 1.0, Color.WHITE, "stretch_full"] ] },
-	"nature4":  { "base": Color(0.40,0.55,0.55), "layers": [ ["res://assets/textures/backgrounds/nature/n4_full.png", 0.10, 0.0, 0.0, 1.0, Color.WHITE, "stretch_full"] ] },
-	"nature5":  { "base": Color(0.30,0.30,0.40), "layers": [ ["res://assets/textures/backgrounds/nature/n5_full.png", 0.10, 0.0, 0.0, 1.0, Color.WHITE, "stretch_full"] ] },
-	"nature6":  { "base": Color(0.55,0.45,0.30), "layers": [ ["res://assets/textures/backgrounds/nature/n6_full.png", 0.10, 0.0, 0.0, 1.0, Color.WHITE, "stretch_full"] ] },
-	"nature7":  { "base": Color(0.20,0.15,0.20), "layers": [ ["res://assets/textures/backgrounds/nature/n7_full.png", 0.10, 0.0, 0.0, 1.0, Color.WHITE, "stretch_full"] ] },
-	"nature8":  { "base": Color(0.50,0.65,0.65), "layers": [ ["res://assets/textures/backgrounds/nature/n8_full.png", 0.10, 0.0, 0.0, 1.0, Color.WHITE, "stretch_full"] ] },
-}
+# ══════════════════ PARALLAX BACKGROUND ══════════════════
+# Per-map `bg_layers` drives multi-layer scrolling backdrop. See layer dict
+# spec at the top of the file.
 
-# theme_name -> Array of [Texture2D, scroll, anchor_y, offset_y, scale, tint, mode]
-static var _bg_layer_cache: Dictionary = {}
+# Texture cache shared across map instances so layers only load once.
+static var _bg_tex_cache: Dictionary = {}
 
 
-static func _get_theme_layers(theme_name: String) -> Array:
-	if _bg_layer_cache.has(theme_name):
-		return _bg_layer_cache[theme_name]
-	if not BG_THEMES.has(theme_name):
-		_bg_layer_cache[theme_name] = []
-		return []
-	var loaded: Array = []
-	for cfg in BG_THEMES[theme_name]["layers"]:
-		var path: String = cfg[0]
-		var tex: Texture2D = null
-		if path != "" and ResourceLoader.exists(path):
-			tex = load(path)
-		# Procedural modes (e.g. stars_proc) accept null tex
-		if tex != null or cfg[6] == "stars_proc":
-			loaded.append([tex, cfg[1], cfg[2], cfg[3], cfg[4], cfg[5], cfg[6]])
-	_bg_layer_cache[theme_name] = loaded
-	return loaded
+static func _load_bg_tex(path: String) -> Texture2D:
+	if _bg_tex_cache.has(path):
+		return _bg_tex_cache[path]
+	var tex: Texture2D = null
+	if path != "" and ResourceLoader.exists(path):
+		tex = load(path)
+	_bg_tex_cache[path] = tex
+	return tex
 
 
-func _draw_themed_background() -> void:
-	if bg_theme == "" or not BG_THEMES.has(bg_theme):
+func _draw_parallax_background() -> void:
+	if bg_layers.is_empty():
 		return
-	var theme: Dictionary = BG_THEMES[bg_theme]
-	var base_col: Color = theme.get("base", Color.BLACK) * bg_tint
-	base_col.a = 1.0
-
-	# Big sky fill rect (extended past map so danger-zone blackout doesn't clip)
-	var bg_rect := Rect2(
-		map_rect.position.x - 3500, map_rect.position.y - 3500,
-		map_rect.size.x + 7000, map_rect.size.y + 7000
-	)
-	draw_rect(bg_rect, base_col)
-
 	var cam := get_viewport().get_camera_2d()
-	var cam_pos: Vector2 = cam.position if cam != null else (map_rect.position + map_rect.size / 2.0)
+	var cam_pos: Vector2 = cam.position if cam != null \
+		else (map_rect.position + map_rect.size / 2.0)
 	var center: Vector2 = map_rect.position + map_rect.size / 2.0
 
-	for layer in _get_theme_layers(bg_theme):
-		var tex: Texture2D = layer[0]
-		var scroll: float = layer[1]
-		var anchor_y: float = layer[2]
-		var offset_y: float = layer[3]
-		var tex_scale: float = layer[4]
-		var tint: Color = layer[5] * bg_tint
-		var mode: String = layer[6]
-		var tex_size: Vector2 = (tex.get_size() * tex_scale) if tex != null else Vector2.ZERO
+	for layer in bg_layers:
+		var path: String = layer.get("path", "")
+		var tex: Texture2D = _load_bg_tex(path)
+		if tex == null:
+			continue
+		var scroll: float = layer.get("scroll", 0.3)
+		var mode: String = layer.get("mode", "bottom_tile")
+		var y_off: float = layer.get("y", 0.0)
+		var tex_scale: float = layer.get("scale", 1.0)
+		var tint: Color = (layer.get("tint", Color.WHITE) as Color) * bg_tint
+		tint.a = (layer.get("tint", Color.WHITE) as Color).a
 		var parallax := (cam_pos - center) * (1.0 - scroll)
 
 		match mode:
-			"stretch_full":
-				# Stretch one copy across the entire extended bg rect
+			"fill":
+				# Aspect-preserved cover: upscale so texture completely
+				# covers map + parallax buffer on both axes (whichever
+				# dimension is tighter wins), centered on the map. Prevents
+				# the grotesque distortion that happens when a compact
+				# texture (e.g. 1440×807) is stretched across the full
+				# off-screen bg rect.
+				var native := tex.get_size()
+				var want_h: float = map_rect.size.y + 1500.0
+				var want_w: float = map_rect.size.x + 3000.0
+				var eff_scale: float = maxf(
+					want_w / native.x, want_h / native.y) * tex_scale
+				var eff_size: Vector2 = native * eff_scale
+				var map_cx := map_rect.position.x + map_rect.size.x / 2.0
+				var map_cy := map_rect.position.y + map_rect.size.y / 2.0
 				var dst := Rect2(
-					bg_rect.position + parallax * 0.3,
-					bg_rect.size
+					Vector2(map_cx - eff_size.x / 2.0,
+						map_cy - eff_size.y / 2.0) + parallax * 0.25,
+					eff_size
 				)
 				draw_texture_rect(tex, dst, false, tint)
-			"tile_x":
-				# Horizontal band, anchored vertically; tiled across full width
-				var y_top := map_rect.position.y + map_rect.size.y * anchor_y \
-					+ offset_y - tex_size.y + parallax.y * 0.3
-				var band_w := map_rect.size.x + 4000.0
-				var x_start := map_rect.position.x - 2000.0 \
-					+ fmod(parallax.x, tex_size.x) - tex_size.x
-				var dst := Rect2(Vector2(x_start, y_top),
-					Vector2(band_w + tex_size.x * 2, tex_size.y))
-				draw_texture_rect(tex, dst, true, tint)
-			"tile_xy":
-				# Stars-like — tile in both directions across whole bg
-				var x0 := bg_rect.position.x + fmod(parallax.x, tex_size.x) - tex_size.x
-				var y0 := bg_rect.position.y + fmod(parallax.y, tex_size.y) - tex_size.y
-				var dst2 := Rect2(Vector2(x0, y0),
-					bg_rect.size + tex_size * 2.0)
-				draw_texture_rect(tex, dst2, true, tint)
-			"stars_proc":
-				# Deterministic procedural starfield, viewport-culled.
-				# Only iterates cells inside the visible camera area + margin
-				# instead of the full extended bg_rect — keeps frame cost
-				# bounded regardless of map size.
-				var vp := get_viewport()
-				var vp_size: Vector2 = vp.get_visible_rect().size if vp else Vector2(1920, 1080)
-				var view_rect := Rect2(cam_pos - vp_size, vp_size * 2.0)
-				var seed_off: int = int(scroll * 1000.0) + 7
-				var spacing_px: float = 320.0 + (1.0 - scroll) * 220.0
-				# Convert visible area into cell-grid range, with
-				# parallax-shifted origin so positions stay deterministic.
-				var origin := bg_rect.position - parallax
-				var col_min: int = int(floor((view_rect.position.x - origin.x) / spacing_px)) - 1
-				var col_max: int = int(ceil((view_rect.end.x - origin.x) / spacing_px)) + 1
-				var row_min: int = int(floor((view_rect.position.y - origin.y) / spacing_px)) - 1
-				var row_max: int = int(ceil((view_rect.end.y - origin.y) / spacing_px)) + 1
-				var twinkle_t: float = float(Engine.get_physics_frames()) * 0.02
-				for cx in range(col_min, col_max):
-					for cy in range(row_min, row_max):
-						var idx: int = cx * 977 + cy * 31 + seed_off
-						var rs_seed: float = sin(float(idx) * 39.347) * 43758.5453
-						var rs: float = rs_seed - floor(rs_seed)
-						# Skip 75% of cells for sparsity
-						if rs > 0.25:
-							continue
-						var rx_seed: float = sin(float(idx) * 12.9898) * 43758.5453
-						var ry_seed: float = sin(float(idx) * 78.233) * 43758.5453
-						var rx: float = rx_seed - floor(rx_seed)
-						var ry: float = ry_seed - floor(ry_seed)
-						var sx: float = origin.x + (float(cx) + rx) * spacing_px + parallax.x
-						var sy: float = origin.y + (float(cy) + ry) * spacing_px + parallax.y
-						var radius: float = 1.8 + rs * 6.0
-						var twink: float = sin(twinkle_t * 1.7 + float(idx) * 0.7) * 0.35 + 0.65
-						var col := Color(tint.r, tint.g, tint.b, tint.a * twink)
-						draw_circle(Vector2(sx, sy), radius, col)
-			"scatter_x":
-				# Big varied silhouettes — instances at deterministic random
-				# positions, scales, and flips. Less repetitive than tile_x.
-				var spacing: float = tex_size.x * 0.65
-				var n_copies: int = int(
-					(map_rect.size.x + 4000.0) / spacing) + 2
-				var base_x: float = map_rect.position.x - 2000.0 + parallax.x
-				for i in range(n_copies):
-					# Deterministic pseudo-random per instance
-					var seed_a: float = sin(float(i) * 78.233 + scroll * 173.0) * 43758.5453
-					var seed_b: float = sin(float(i) * 12.997 + scroll * 91.4) * 22845.3
-					var rand_a: float = seed_a - floor(seed_a)
-					var rand_b: float = seed_b - floor(seed_b)
-					# Size variation 0.85 .. 1.30
-					var s_scale: float = tex_scale * (0.85 + rand_a * 0.45)
-					var s_size: Vector2 = tex.get_size() * s_scale
-					# Horizontal jitter ±35% of spacing
-					var jitter: float = (rand_b - 0.5) * spacing * 0.7
-					var sx: float = base_x + i * spacing + jitter - s_size.x * 0.5
-					var sy: float = map_rect.position.y \
-						+ map_rect.size.y * anchor_y + offset_y \
-						- s_size.y + parallax.y * 0.3
-					var dst3 := Rect2(Vector2(sx, sy), s_size)
-					# Flip half horizontally
-					if int(rand_a * 100.0) % 2 == 1:
-						dst3.position.x += s_size.x
-						dst3.size.x = -s_size.x
-					draw_texture_rect(tex, dst3, false, tint)
+			"bottom_tile":
+				# Single stretched copy anchored to the bottom, aspect
+				# preserved. Height targets map_h + buffer, capped at
+				# `max_scale` (default 2.5x) so small decorative textures
+				# (e.g. 225×340 castle) don't blow up into huge blobs.
+				# Width scales from that scale factor — centered horizontally,
+				# with the sky layer (fill mode) filling any edge gap.
+				var native := tex.get_size()
+				var max_scale: float = layer.get("max_scale", 4.0)
+				var want_h: float = map_rect.size.y + 1200.0
+				var auto_scale: float = want_h / native.y
+				var eff_scale: float = minf(auto_scale, max_scale) * tex_scale
+				var eff_size: Vector2 = native * eff_scale
+				# If the texture is too small, its width at eff_scale may
+				# not cover the whole map. That's intentional — anything
+				# above/beside is filled by the sky layer (`fill` mode).
+				# Don't force-stretch X, which would distort the art.
+				var y_top := map_rect.end.y + y_off - eff_size.y \
+					+ parallax.y * 0.25
+				var map_cx := map_rect.position.x + map_rect.size.x / 2.0
+				var x_start := map_cx - eff_size.x / 2.0 + parallax.x * 0.25
+				var dst := Rect2(Vector2(x_start, y_top), eff_size)
+				draw_texture_rect(tex, dst, false, tint)
+			"top_tile":
+				var native := tex.get_size()
+				var max_scale: float = layer.get("max_scale", 4.0)
+				var want_h: float = map_rect.size.y + 1200.0
+				var auto_scale: float = want_h / native.y
+				var eff_scale: float = minf(auto_scale, max_scale) * tex_scale
+				var eff_size: Vector2 = native * eff_scale
+				if eff_size.x < map_rect.size.x + 3000.0:
+					eff_size.x = map_rect.size.x + 3000.0
+				var y_top := map_rect.position.y + y_off \
+					+ parallax.y * 0.25
+				var map_cx := map_rect.position.x + map_rect.size.x / 2.0
+				var x_start := map_cx - eff_size.x / 2.0 + parallax.x * 0.25
+				var dst := Rect2(Vector2(x_start, y_top), eff_size)
+				draw_texture_rect(tex, dst, false, tint)
 
 
-func _draw_themed_danger_zones() -> void:
-	if use_walls or fire_walls or bouncy_walls:
+# ══════════════════ MAP BORDERS — water floor + side vignette ══════════════════
+
+# Shared water texture (loaded once)
+static var _water_tex: Texture2D = null
+
+
+static func _get_water_tex() -> Texture2D:
+	if _water_tex != null:
+		return _water_tex
+	var path := "res://assets/textures/platforms/water.png"
+	if ResourceLoader.exists(path):
+		_water_tex = load(path)
+	return _water_tex
+
+
+func _draw_water_floor() -> void:
+	# Dark-water kill zone with an animated wavy surface — the border
+	# itself undulates so the waterline reads as actual waves, not a
+	# flat line. The fill below is solid dark blue; no "ice" texture.
+	if danger_bottom <= 0.0:
 		return
 	var r := map_rect
-	var ext := 2000.0
-	var rects: Array[Rect2] = []
-	if danger_left > 0:
-		rects.append(Rect2(r.position.x - ext, r.position.y - ext,
-			danger_left + ext, r.size.y + ext * 2))
-	if danger_right > 0:
-		rects.append(Rect2(r.end.x - danger_right, r.position.y - ext,
-			danger_right + ext, r.size.y + ext * 2))
-	if danger_bottom > 0:
-		rects.append(Rect2(r.position.x - ext, r.end.y - danger_bottom,
-			r.size.x + ext * 2, danger_bottom + ext))
-	if danger_top > 0:
-		rects.append(Rect2(r.position.x - ext, r.position.y - ext,
-			r.size.x + ext * 2, danger_top + ext))
-	for rect in rects:
-		match death_zone_style:
-			"lava":     _draw_dz_lava(rect)
-			"void":     _draw_dz_void(rect)
-			"abyss":    _draw_dz_abyss(rect)
-			"stars":    _draw_dz_stars(rect)
-			"spikes":   _draw_dz_spikes(rect)
-			"swamp":    _draw_dz_swamp(rect)
-			"mist":     _draw_dz_mist(rect)
-			_:          _draw_dz_default(rect)
+	var top_y := r.end.y - danger_bottom
+	var x0 := r.position.x - 4000.0
+	var band_w := r.size.x + 8000.0
+	var total_h := danger_bottom + 2200.0
 
-
-## Soft gradient strip on the map-facing edge of a danger-zone rect.
-## Bleeds the zone color into the playable area so the boundary isn't a hard
-## stripe. Pass the dominant fill color (with full alpha) and fade distance.
-func _dz_soft_edge(rect: Rect2, color: Color, fade_dist: float = 180.0) -> void:
-	var horizontal := rect.size.x > rect.size.y
-	var steps := 16
-	if horizontal:
-		var top_facing := rect.position.y < map_rect.position.y - 100.0
-		var edge_y: float = rect.end.y if top_facing else rect.position.y
-		var dir: float = 1.0 if top_facing else -1.0
-		for i in range(steps):
-			var t0: float = float(i) / steps
-			var t1: float = float(i + 1) / steps
-			var alpha: float = color.a * pow(1.0 - t0, 1.6)
-			var col := Color(color.r, color.g, color.b, alpha)
-			var y_a: float = edge_y + dir * t0 * fade_dist
-			var y_b: float = edge_y + dir * t1 * fade_dist
-			draw_rect(Rect2(
-				Vector2(rect.position.x, minf(y_a, y_b)),
-				Vector2(rect.size.x, absf(y_b - y_a))), col)
-	else:
-		var left_facing := rect.position.x < map_rect.position.x - 100.0
-		var edge_x: float = rect.end.x if left_facing else rect.position.x
-		var dir: float = 1.0 if left_facing else -1.0
-		for i in range(steps):
-			var t0: float = float(i) / steps
-			var t1: float = float(i + 1) / steps
-			var alpha: float = color.a * pow(1.0 - t0, 1.6)
-			var col := Color(color.r, color.g, color.b, alpha)
-			var x_a: float = edge_x + dir * t0 * fade_dist
-			var x_b: float = edge_x + dir * t1 * fade_dist
-			draw_rect(Rect2(
-				Vector2(minf(x_a, x_b), rect.position.y),
-				Vector2(absf(x_b - x_a), rect.size.y)), col)
-
-
-func _draw_dz_default(rect: Rect2) -> void:
-	var dc := Color(0.9, 0.1, 0.05, 0.12)
-	var de := Color(0.9, 0.1, 0.05, 0.3)
-	_draw_danger_rect(rect, dc, de)
-	_dz_soft_edge(rect, Color(0.9, 0.1, 0.05, 0.4), 120.0)
-
-
-func _draw_dz_lava(rect: Rect2) -> void:
-	# Hot orange/yellow gradient with bubbles + glowing edge
-	var t := float(Engine.get_physics_frames()) * 0.02
-	var fill := Color(0.95, 0.30, 0.05, 0.55)
-	var deep := Color(0.55, 0.05, 0.0, 0.85)
-	draw_rect(rect, deep)
-	# Lighter core (top edge)
-	var glow_h := minf(rect.size.y, 80.0)
-	for i in range(12):
-		var ratio := float(i) / 12.0
-		var col := fill.lerp(Color(1.0, 0.85, 0.35, 0.25), ratio)
-		var y := rect.position.y if rect.size.y < 600 else rect.end.y - glow_h
-		# Determine edge based on rect orientation (approx wider-than-tall = top/bottom)
-		if rect.size.x > rect.size.y:
-			# bottom or top zone
-			var top_edge := absf(rect.position.y) > absf(rect.end.y - map_rect.end.y)
-			var ey := (rect.end.y - i * 4.0) if not top_edge else (rect.position.y + i * 4.0)
-			draw_line(Vector2(rect.position.x, ey), Vector2(rect.end.x, ey), col, 3.0)
-		else:
-			var right_edge := rect.position.x > map_rect.end.x - 1000.0
-			var ex := (rect.position.x + i * 4.0) if right_edge else (rect.end.x - i * 4.0)
-			draw_line(Vector2(ex, rect.position.y), Vector2(ex, rect.end.y), col, 3.0)
-	# Animated bubbles
-	for bi in range(20):
-		var phase := float(bi) * 0.7 + t
-		var bx := rect.position.x + fmod(bi * 263.0, rect.size.x)
-		var by := rect.end.y - fmod(phase * 50.0, minf(rect.size.y, 400.0)) - 20.0
-		var br := 4.0 + sin(phase * 3.0) * 2.0
-		draw_circle(Vector2(bx, by), br, Color(1.0, 0.7, 0.2, 0.5))
-	_dz_soft_edge(rect, Color(0.85, 0.25, 0.05, 0.85), 220.0)
-
-
-func _draw_dz_void(rect: Rect2) -> void:
-	# Deep purple-black with subtle twinkles
-	draw_rect(rect, Color(0.04, 0.02, 0.10, 0.92))
+	# Wave parameters — animated.
 	var t := float(Engine.get_physics_frames()) * 0.03
-	for i in range(60):
-		var sx := rect.position.x + fmod(i * 173.0, rect.size.x)
-		var sy := rect.position.y + fmod(i * 271.0, rect.size.y)
-		var twink := (sin(t * 2.0 + i * 1.7) * 0.5 + 0.5) * 0.8
-		draw_circle(Vector2(sx, sy), 1.5, Color(0.7, 0.5, 1.0, twink))
-	_dz_soft_edge(rect, Color(0.04, 0.02, 0.10, 0.9), 200.0)
+	var wave_amp: float = 14.0
+	var wavelen: float = 220.0
+	var step: float = 22.0
+	var n_seg: int = int(band_w / step) + 2
+
+	# Build wavy top edge. Two superimposed sine waves for an organic look.
+	var top_pts: PackedVector2Array = []
+	for i in range(n_seg + 1):
+		var x: float = x0 + i * step
+		var phase := x / wavelen * TAU
+		var w1 := sin(phase + t * 1.3) * wave_amp
+		var w2 := sin(phase * 1.8 + t * 0.9) * wave_amp * 0.35
+		top_pts.append(Vector2(x, top_y + w1 + w2))
+
+	# Dark deep-water body: polygon with wavy top, rectangular sides/bottom.
+	var deep_pts: PackedVector2Array = []
+	deep_pts.append_array(top_pts)
+	deep_pts.append(Vector2(x0 + band_w, top_y + total_h))
+	deep_pts.append(Vector2(x0, top_y + total_h))
+	draw_colored_polygon(deep_pts, Color(0.06, 0.14, 0.24, 1.0))
+
+	# Brighter surface strip (same wavy top, shorter): lets the surface
+	# read as mid-blue above a darker depth.
+	var surf_h: float = 48.0
+	var surf_pts: PackedVector2Array = []
+	surf_pts.append_array(top_pts)
+	# Second edge: wavy line offset down by surf_h (same shape)
+	for i in range(top_pts.size() - 1, -1, -1):
+		surf_pts.append(Vector2(top_pts[i].x, top_pts[i].y + surf_h))
+	draw_colored_polygon(surf_pts, Color(0.14, 0.35, 0.52, 0.85))
+
+	# Bright wavy highlight exactly on the surface line.
+	draw_polyline(top_pts, Color(0.55, 0.82, 0.95, 0.85), 3.0, true)
+
+	# Secondary dimmer wave a few px below — gives the waterline depth.
+	var sec_pts: PackedVector2Array = []
+	for p in top_pts:
+		sec_pts.append(Vector2(p.x, p.y + 7.0))
+	draw_polyline(sec_pts, Color(0.42, 0.70, 0.90, 0.35), 2.0, true)
 
 
-func _draw_dz_abyss(rect: Rect2) -> void:
-	# Black ink with falling drips, hot purple edge
-	draw_rect(rect, Color(0.02, 0.01, 0.04, 0.95))
-	var t := float(Engine.get_physics_frames()) * 0.025
-	# Edge glow on side facing map
-	var edge_col := Color(0.6, 0.1, 0.7, 0.6)
-	if rect.size.x > rect.size.y:
-		var top_edge := rect.position.y < map_rect.position.y - 100.0
-		var ey := rect.end.y if top_edge else rect.position.y
-		draw_line(Vector2(rect.position.x, ey), Vector2(rect.end.x, ey), edge_col, 2.0)
-		# Falling drips
-		for i in range(15):
-			var dx := rect.position.x + fmod(i * 311.0, rect.size.x)
-			var dy_from := ey
-			var drip := fmod(t * 80.0 + i * 23.0, 120.0)
-			var dy := dy_from + (drip if not top_edge else -drip)
-			draw_line(Vector2(dx, dy_from), Vector2(dx, dy),
-				Color(0.5, 0.1, 0.6, 0.4), 1.5)
-	else:
-		var right_edge := rect.position.x > map_rect.end.x - 100.0
-		var ex := rect.end.x if not right_edge else rect.position.x
-		draw_line(Vector2(ex, rect.position.y), Vector2(ex, rect.end.y), edge_col, 2.0)
-	_dz_soft_edge(rect, Color(0.02, 0.01, 0.04, 0.95), 220.0)
+func _draw_side_vignette() -> void:
+	var r := map_rect
+	var fade_left: float = maxf(danger_left, 120.0)
+	var fade_right: float = maxf(danger_right, 120.0)
+	var steps := 24
 
-
-func _draw_dz_stars(rect: Rect2) -> void:
-	# Open space — translucent dark veil so the proc-starfield bg shows
-	# through. We skip extra star particles here because the bg already
-	# provides them; just darken slightly + soft fade.
-	draw_rect(rect, Color(0.02, 0.02, 0.06, 0.40))
-	_dz_soft_edge(rect, Color(0.02, 0.02, 0.06, 0.55), 240.0)
-
-
-func _draw_dz_spikes(rect: Rect2) -> void:
-	# Red zone with jagged tooth silhouette on map-facing edge
-	draw_rect(rect, Color(0.6, 0.05, 0.02, 0.55))
-	var spike_w := 36.0
-	var spike_h := 28.0
-	var horizontal := rect.size.x > rect.size.y
-	if horizontal:
-		var top_edge := rect.position.y < map_rect.position.y - 100.0
-		var ey := rect.end.y if top_edge else rect.position.y
-		var ey_tip := ey + (spike_h if top_edge else -spike_h)
-		var x := rect.position.x
-		while x < rect.end.x:
-			var pts := PackedVector2Array([
-				Vector2(x, ey),
-				Vector2(x + spike_w * 0.5, ey_tip),
-				Vector2(x + spike_w, ey),
-			])
-			draw_colored_polygon(pts, Color(0.85, 0.15, 0.05, 0.85))
-			x += spike_w
-	else:
-		var right_edge := rect.position.x > map_rect.end.x - 100.0
-		var ex := rect.position.x if right_edge else rect.end.x
-		var ex_tip := ex + (spike_h if right_edge else -spike_h)
-		var y := rect.position.y
-		while y < rect.end.y:
-			var pts := PackedVector2Array([
-				Vector2(ex, y),
-				Vector2(ex_tip, y + spike_w * 0.5),
-				Vector2(ex, y + spike_w),
-			])
-			draw_colored_polygon(pts, Color(0.85, 0.15, 0.05, 0.85))
-			y += spike_w
-	_dz_soft_edge(rect, Color(0.6, 0.05, 0.02, 0.6), 140.0)
-
-
-func _draw_dz_swamp(rect: Rect2) -> void:
-	# Toxic green sludge with slow bubbles
-	draw_rect(rect, Color(0.10, 0.22, 0.05, 0.85))
-	var t := float(Engine.get_physics_frames()) * 0.018
-	# Surface line
-	if rect.size.x > rect.size.y:
-		var top_edge := rect.position.y < map_rect.position.y - 100.0
-		var ey := rect.end.y if top_edge else rect.position.y
-		var wave := 6.0
-		var step := 24.0
-		var x := rect.position.x
-		while x < rect.end.x:
-			var dy := sin(t * 2.0 + x * 0.02) * wave
-			draw_line(Vector2(x, ey + dy), Vector2(x + step, ey + dy),
-				Color(0.4, 0.8, 0.2, 0.7), 3.0)
-			x += step
-	for bi in range(15):
-		var phase := float(bi) * 0.6 + t
-		var bx := rect.position.x + fmod(bi * 251.0, rect.size.x)
-		var by := rect.position.y + fmod(phase * 45.0, rect.size.y)
-		draw_circle(Vector2(bx, by), 3.5, Color(0.4, 0.85, 0.3, 0.6))
-	_dz_soft_edge(rect, Color(0.10, 0.22, 0.05, 0.85), 200.0)
-
-
-func _draw_dz_mist(rect: Rect2) -> void:
-	# Cold blue mist
-	draw_rect(rect, Color(0.55, 0.75, 0.95, 0.35))
-	var t := float(Engine.get_physics_frames()) * 0.015
-	for i in range(25):
-		var phase := float(i) * 0.4 + t
-		var px := rect.position.x + fmod(i * 173.0 + phase * 30.0,
-			rect.size.x + 200.0) - 100.0
-		var py := rect.position.y + fmod(i * 211.0, rect.size.y)
-		var pr := 28.0 + sin(phase) * 8.0
-		draw_circle(Vector2(px, py), pr, Color(0.95, 0.98, 1.0, 0.18))
-	_dz_soft_edge(rect, Color(0.55, 0.75, 0.95, 0.35), 260.0)
-
-
-func _draw_danger_rect(rect: Rect2, fill: Color, edge: Color) -> void:
-	draw_rect(rect, fill)
-	var stripe_gap := 60.0
-	var x := rect.position.x
-	while x < rect.end.x + rect.size.y:
-		draw_line(
-			Vector2(x, rect.position.y),
-			Vector2(x - rect.size.y, rect.end.y),
-			Color(0.9, 0.1, 0.05, 0.08), 2.0
+	# Left vignette — dark on outside, transparent toward map center.
+	for i in range(steps):
+		var t0 := float(i) / steps
+		var t1 := float(i + 1) / steps
+		var alpha := 0.85 * pow(1.0 - t0, 1.6)
+		var col := Color(0.0, 0.0, 0.0, alpha)
+		var x_a := r.position.x + t0 * fade_left
+		var x_b := r.position.x + t1 * fade_left
+		draw_rect(
+			Rect2(Vector2(x_a - 4000.0, r.position.y - 3000.0),
+				Vector2((x_b - x_a) + 4000.0, r.size.y + 6000.0)),
+			col
 		)
-		x += stripe_gap
-	draw_rect(rect, edge, false, 2.0)
+
+	# Right vignette
+	for i in range(steps):
+		var t0 := float(i) / steps
+		var t1 := float(i + 1) / steps
+		var alpha := 0.85 * pow(1.0 - t0, 1.6)
+		var col := Color(0.0, 0.0, 0.0, alpha)
+		var x_a := r.end.x - t0 * fade_right
+		var x_b := r.end.x - t1 * fade_right
+		draw_rect(
+			Rect2(Vector2(x_b, r.position.y - 3000.0),
+				Vector2((x_a - x_b) + 4000.0, r.size.y + 6000.0)),
+			col
+		)
+
 
 
 func _draw_walls() -> void:
@@ -833,12 +599,12 @@ func _draw_themed_platform(
 
 	var hw := w / 2.0
 	var hh := h / 2.0
-	var r := minf(hh, hw * 0.15)
-	r = clampf(r, 4.0, 20.0)
+	var r := minf(hh * 0.95, h * 0.45)
+	r = clampf(r, 6.0, 26.0)
+	var segs := 12
 
-	# Build rounded-rect polygon (capsule)
+	# Build the full rounded capsule polygon.
 	var pts: PackedVector2Array = []
-	var segs := 6
 	for i in range(segs + 1):
 		var a := PI + float(i) / segs * (PI / 2.0)
 		pts.append(Vector2(cx - hw + r + cos(a) * r, cy - hh + r + sin(a) * r))
@@ -852,31 +618,37 @@ func _draw_themed_platform(
 		var a := PI / 2.0 + float(i) / segs * (PI / 2.0)
 		pts.append(Vector2(cx - hw + r + cos(a) * r, cy + hh - r + sin(a) * r))
 
-	# UVs: stretch-to-fit the entire texture across the platform.
-	# This avoids visible repeat-seams that appeared when wide platforms
-	# tiled the texture multiple times.
+	# Solid base fill underneath the polygon — guards against any 1-px
+	# anti-alias falloff on the rounded arc edges; the color is chosen
+	# to blend with the texture's dominant mid-tone so hairline joints
+	# disappear under it.
+	draw_colored_polygon(pts, platform_color)
+
+	# One textured polygon spanning the WHOLE capsule (including the
+	# rounded corners). UV.x goes 0..u_max where u_max = w / tile_w;
+	# GPU sampler wraps UV>1 via GL_REPEAT (texture_repeat=ENABLED in
+	# _ready). UV.y goes 0..1 across platform height.
+	var tex_size: Vector2 = tex.get_size()
+	var scl: float = h / tex_size.y
+	var tile_w: float = tex_size.x * scl
+	var u_max: float = w / tile_w
 	var uvs: PackedVector2Array = []
 	for p in pts:
-		var u: float = (p.x - (cx - hw)) / w
+		var u: float = ((p.x - (cx - hw)) / w) * u_max
 		var v: float = (p.y - (cy - hh)) / h
 		uvs.append(Vector2(u, v))
+	draw_polygon(pts, PackedColorArray([Color.WHITE]), uvs, tex)
 
-	var colors := PackedColorArray([Color.WHITE])
-	draw_polygon(pts, colors, uvs, tex)
-
-	# Edge outline + top highlight + bottom shadow for crisp readability
+	# Edge outline + top highlight + bottom shadow.
 	var edge: Color = _get_palette_edge(palette)
-	# Outline
 	for i in range(pts.size()):
 		var i2 := (i + 1) % pts.size()
-		draw_line(pts[i], pts[i2], edge, 1.5)
-	# Top highlight
+		draw_line(pts[i], pts[i2], edge, 2.0)
 	draw_line(
 		Vector2(cx - hw + r, cy - hh),
 		Vector2(cx + hw - r, cy - hh),
 		edge.lightened(0.35), 2.0
 	)
-	# Bottom shadow
 	draw_line(
 		Vector2(cx - hw + r, cy + hh),
 		Vector2(cx + hw - r, cy + hh),
@@ -1197,13 +969,9 @@ func _process(delta: float) -> void:
 	if item_spawns.size() > 0 and Engine.get_physics_frames() % 900 == 0:
 		_spawn_random_item()
 
-	# Only redraw if dynamic elements exist (moving platforms, items,
-	# teleports, walls, themed bg parallax, or animated danger zones)
-	if not hazards.is_empty() or not teleports.is_empty() \
-		or not item_spawns.is_empty() or events_enabled \
-		or fire_walls or bouncy_walls \
-		or bg_theme != "" or death_zone_style != "default":
-		queue_redraw()
+	# Always redraw — parallax background + animated water border need
+	# per-frame updates for smooth camera follow and wave bob.
+	queue_redraw()
 
 
 func _draw_hazards() -> void:

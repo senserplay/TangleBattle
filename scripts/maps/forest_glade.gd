@@ -1,54 +1,56 @@
 extends "res://scripts/maps/map_base.gd"
-## Forest Glade — daytime forest meadow with grass-topped platforms.
-## Open sky overhead, swamp pit below. Symmetric layout, beginner-friendly.
+## Forest Glade — misty blue forest with layered tree parallax.
+## 10-layer parallax, stone platforms, water bottom, side vignette.
+
+const BG := "res://assets/textures/backgrounds/forest_blue/"
+
 
 func _init() -> void:
 	map_name = "Forest Glade"
-	platform_palette = "grass"
-	bg_color = Color(0.40, 0.62, 0.74)
-	bg_theme = "forest"
+	platform_palette = "stone"
+	bg_color = Color(0.15, 0.22, 0.30)
 	bg_tint = Color(1.0, 1.0, 1.0)
-	death_zone_style = "swamp"
-	platform_color = Color(0.35, 0.55, 0.30)
-	platform_edge_color = Color(0.5, 0.75, 0.40)
-	floor_color = Color(0.30, 0.45, 0.25)
-	floor_edge_color = Color(0.45, 0.65, 0.35)
+	platform_color = Color(0.38, 0.38, 0.40)
+	platform_edge_color = Color(0.60, 0.62, 0.65)
+	floor_color = Color(0.32, 0.32, 0.34)
+	floor_edge_color = Color(0.52, 0.54, 0.56)
 
-	map_rect = Rect2(0, 0, 4400, 2900)
-	danger_left = 250.0
-	danger_right = 250.0
-	danger_bottom = 380.0
+	bg_layers = [
+		{"path": BG + "00_sky.png",         "mode": "fill",        "scroll": 0.00},
+		{"path": BG + "01_forest_far.png",  "mode": "bottom_tile", "scroll": 0.08, "y": 180.0},
+		{"path": BG + "02_forest_mid_far.png", "mode": "bottom_tile", "scroll": 0.18, "y": 150.0},
+		{"path": BG + "03_forest_mid.png",  "mode": "bottom_tile", "scroll": 0.28, "y": 120.0},
+		{"path": BG + "04_forest_close.png","mode": "bottom_tile", "scroll": 0.40, "y": 80.0},
+		{"path": BG + "05_particles_back.png","mode": "bottom_tile","scroll": 0.45, "y": 0.0, "tint": Color(1,1,1,0.7)},
+		{"path": BG + "06_forest_front.png","mode": "bottom_tile", "scroll": 0.55, "y": 40.0},
+		{"path": BG + "07_particles_front.png","mode":"bottom_tile","scroll": 0.68, "y": 0.0, "tint": Color(1,1,1,0.6)},
+		{"path": BG + "09_mist.png",        "mode": "bottom_tile", "scroll": 0.35, "y": 120.0, "tint": Color(1,1,1,0.55)},
+		{"path": BG + "08_bushes.png",      "mode": "bottom_tile", "scroll": 0.85, "y": 40.0},
+	]
+
+	map_rect = Rect2(0, 0, 4500, 2800)
+	danger_left = 280.0
+	danger_right = 280.0
+	danger_bottom = 420.0
 	danger_top = 0.0
 
 	platforms = [
-		# Big main meadow floor
-		[2200, 2500, 2800, 70, false],
-		# Symmetric mid grass islands
-		[900, 2050, 520, 28, true],
-		[3500, 2050, 520, 28, true],
-		# Upper canopy ledges
-		[1900, 1700, 380, 28, true],
-		[2900, 1700, 380, 28, true],
-		# Tall flanking pillars
-		[600, 1500, 280, 28, true],
-		[3800, 1500, 280, 28, true],
-		# Crown shelf
-		[2200, 1250, 480, 28, true],
-		# Top-most lookout
-		[2200, 850, 280, 24, true],
-	]
-
-	objects = [
-		# Decorative log balls
-		["ball", 1400, 2200, 45],
-		["ball", 3000, 2200, 45],
+		[2250, 2300, 2800, 60, false],
+		[900,  1900, 520, 32, true],
+		[3600, 1900, 520, 32, true],
+		[1900, 1580, 380, 32, true],
+		[2600, 1580, 380, 32, true],
+		[620,  1380, 300, 32, true],
+		[3880, 1380, 300, 32, true],
+		[2250, 1120, 480, 32, true],
+		[2250,  780, 300, 28, true],
 	]
 
 	item_spawns = [
-		[2200, 1200], [900, 2000], [3500, 2000], [2200, 800],
+		[2250, 1080], [900, 1870], [3600, 1870], [2250, 750],
 	]
 
 	spawn_points = [
-		Vector2(1200, 2430), Vector2(3200, 2430),
-		Vector2(900, 1980), Vector2(3500, 1980),
+		Vector2(1250, 2235), Vector2(3250, 2235),
+		Vector2(900, 1835),  Vector2(3600, 1835),
 	]
