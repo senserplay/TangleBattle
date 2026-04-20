@@ -1,5 +1,62 @@
 # TangleBattle — Рабочий лог
 
+## 2026-04-20 — feat(events): visible meteor/lightning/wind VFX + canvas clip
+
+### Жалобы
+1. Сами ивенты запускаются (баннер показывается), но **ничего не происходит
+   визуально** — только плашка. Метеор попадал в узкий столб (±80px) и часто
+   промахивался мимо игрока, молния и ветер не имели визуала вообще.
+2. В map_editor при **увеличении карты** её рисование **перекрывает**
+   properties-панель и toolbar (Canvas не клипуется к своему rect).
+
+### Фиксы
+
+#### 1. Canvas.clip_contents = true
+В `scenes/main/map_editor.tscn` добавлено `clip_contents = true` на ноду
+Canvas. Теперь все `_draw` команды редактора обрезаются ровно по его
+границам и не вылезают на properties-панель даже при zoom > 1.
+
+#### 2. Meteor VFX — падающий болид + взрыв
+Добавлено state `_meteor_start_t/_x/_y_spawn/_y_impact` +
+`METEOR_FALL_DUR=1.0`, `METEOR_EXPLODE_DUR=0.5`. В `_event_meteor()` теперь:
+- точка падения фиксируется (столб чуть шире: ±140px вместо ±80)
+- камера shake 8.0 (было 6.0)
+
+В `_draw_event_vfx()`:
+- **Фаза падения** (0..1s): ease-in трейл из 10 огненных шаров
+  постепенно уменьшается, в head — тёмный камень с оранжевым ореолом
+- **Фаза взрыва** (1..1.5s): расширяющийся fireball, shockwave ring,
+  14 осколков разлетаются вовне с притяжением вверх
+
+#### 3. Lightning VFX — зигзаг-молния + вспышка
+State `_lightning_start_t/_target/_origin`, `LIGHTNING_DUR=0.8s`.
+
+В `_draw_event_vfx()`: 14 сегментов зигзага от top-of-map до игрока,
+X-wobble детерминистичный (sin-based seed с `_lightning_start_t`),
+outer glow 14px + inner core 5px белого, расширяющийся ring у точки
+попадания, fade over 0.8s.
+
+#### 4. Wind VFX — streak-линии
+State `_wind_start_t/_dir`, `WIND_DUR=1.0s`.
+
+20 горизонтальных streak-линий двигаются в `wind_dir` со скоростью
+900-1300 px/s, длина 150-270px, распределены по высоте экрана
+детерминистичным sin-seed. Fade over 1s. Рисуются относительно
+`camera.position` + размер viewport'а.
+
+#### 5. Helper `_event_time()`
+Возвращает `Time.get_ticks_msec() / 1000.0` — единый source of truth
+для VFX-таймингов (не зависит от `delta` + независим от pause).
+
+### Файлы
+- `scripts/maps/map_base.gd` (+130 строк: state, `_draw_event_vfx`, хэлперы)
+- `scenes/main/map_editor.tscn` (+1 строка `clip_contents`)
+
+### Тест
+- `mcp__godot__run_project` — runtime чисто.
+
+---
+
 ## 2026-04-20 — feat(editor): events dropdown + banners + water slippery + default one-way
 
 ### Жалобы пользователя

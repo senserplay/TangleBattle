@@ -134,6 +134,7 @@ size_flags_horizontal = 3
 size_flags_vertical = 3
 mouse_filter = 1
 focus_mode = 2
+clip_contents = true
 
 [node name="Properties" type="VBoxContainer" parent="Root/Main"]
 custom_minimum_size = Vector2(260, 0)
