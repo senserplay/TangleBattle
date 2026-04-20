@@ -1,5 +1,55 @@
 # TangleBattle — Рабочий лог
 
+## 2026-04-20 — fix(maps): найдена реальная причина зазоров — 56px alpha=0 padding в PNG'ах
+
+### Разбор
+Пользователь прислал скриншот с чёткими тёмными вертикальными полосами
+между тайлами на wood-платформе. Проверил PIL'ом **все 5** платформенных
+текстур:
+```
+stone     (2000x278): transparent cols: left=56 right=56
+wood      (2000x273): transparent cols: left=56 right=56
+sand      (2000x277): transparent cols: left=56 right=56
+water     (2000x276): transparent cols: left=56 right=56
+lava_ice  (2000x276): transparent cols: left=56 right=56
+```
+**Каждая текстура имеет 56px полностью прозрачных колонок с обеих
+сторон** (alpha=0). В точке UV-wrap сэмплер читал `pixel[1999]` (α=0)
+и `pixel[0]` (α=0) — прозрачный тексель, сквозь него просвечивал
+`platform_color` подложка = видимая тёмная полоса шириной ~112px
+вблизи каждой границы тайла.
+
+### Фикс — обрезал PNG в 2000→1888 px
+Python'ом через PIL вырезал эти прозрачные поля:
+```python
+cropped = im.crop((56, 0, w - 56, h))
+cropped.save(path)
+```
+Результат:
+- `stone.png`:    2000x278 → 1888x278
+- `wood.png`:     2000x273 → 1888x273
+- `sand.png`:     2000x277 → 1888x277
+- `water.png`:    2000x276 → 1888x276
+- `lava_ice.png`: 2000x276 → 1888x276
+
+После обрезки `edge_dist` между колонками 0 и 1887 ≈ 20-30 (по 4
+каналам), т.е. разница ~7 единиц на канал на одну колонку — почти
+незаметно под LINEAR-фильтром (~3% от полного диапазона).
+
+Переимпорт через `godot --headless --import`. Сам код `map_base.gd`
+не изменился — GL_REPEAT + single polygon + UV 0..u_max продолжает
+работать.
+
+### Файлы
+- `assets/textures/platforms/{stone,wood,sand,water,lava_ice}.png` —
+  обрезаны
+- `.import` файлы переимпортированы автоматически
+
+### Тест
+- `mcp__godot__run_project` — без ошибок.
+
+---
+
 ## 2026-04-20 — fix(maps): откат split-polygon → single UV-wrap polygon + base fill
 
 ### Жалоба пользователя (скриншот)
