@@ -1,5 +1,68 @@
 # TangleBattle — Рабочий лог
 
+## 2026-04-20 — fix(maps): scale-cap фонов, transform+tile платформ, волнистая вода, -winter_valley
+
+### Запрос пользователя (скриншоты)
+1. Haunted Castle: фон **слишком сильно расширен** (тёмные силуэты стали
+   гигантскими блобами) — ограничить масштаб.
+2. Удалить карту **winter_valley**.
+3. Платформы **всё ещё с тонкими зазорами** между тайлами — переделать.
+4. Вода-убийца должна иметь **волны на границе**, а не плоскую линию.
+
+### Фиксы в `scripts/maps/map_base.gd`
+
+#### 1. BG — aspect-preserve + max_scale cap
+`fill` и `bottom_tile`/`top_tile` теперь сохраняют пропорции текстуры:
+- `fill`: `eff_scale = max(want_w/tex_w, want_h/tex_h)` — однородный scale
+  покрывает map+буфер по обеим осям, без растяжения с разным X/Y.
+- `bottom_tile`/`top_tile`: `eff_scale = min(want_h/tex_h, max_scale) * tex_scale`
+  (дефолт `max_scale=2.5`). Маленькие текстуры (225×340) больше не
+  раздуваются в огромные блобы. Позиционирование — по центру карты;
+  небо (`fill` мод) закрывает щели, где слой не дотягивается.
+- Каждый слой может переопределить cap через `"max_scale": 3.0` в конфиге.
+
+#### 2. Платформы — transform + `draw_texture_rect(tile=true)` + corner masks
+Отказался от UV-полигонного тайлинга (в Compatibility рендере давал
+sub-pixel filter bleed на границах tile — пользователь видел тонкие
+линии даже при пиксельно-seamless текстуре, проверено через
+`python/PIL: avg_dist=0.00` между краями). Новая реализация:
+1. `draw_colored_polygon(pts, platform_color)` — сплошная скруглённая
+   подложка (её цвет будет показываться в 4 «срезах» углов).
+2. `draw_set_transform(origin, 0, Vector2(scl, scl))` — канвас
+   масштабируется так, чтобы native tex-высота = h платформы.
+3. `draw_texture_rect(tex, local_rect, tile=true, WHITE)` — Godot сам
+   тайлит текстуру через GPU texture repeat, **без subpixel-шва**.
+4. `draw_set_transform(Vector2.ZERO, 0, Vector2.ONE)` — сброс.
+5. 4 corner-masks: полигоны «углов прямоугольника минус четверть диска»
+   перекрашиваются в `platform_color` → прямоугольный тайл-rect
+   обрезается до скруглённой капсулы без швов.
+6. Outline + top highlight + bottom shadow — поверх масок.
+
+#### 3. Вода — анимированная волнистая граница
+`_draw_water_floor` переделан: вместо `draw_rect + draw_line(flat)`
+теперь строит `top_pts: PackedVector2Array` с двумя суперпозированными
+синусами (амплитуда 14, длина 220, фаза по времени). Поверх:
+- Deep-water `draw_colored_polygon(top_pts + bottom-right + bottom-left,
+  Color(0.06,0.14,0.24))` — тёмная заливка с волнистым верхом.
+- Surface strip `draw_colored_polygon(top_pts + top_pts+48px_down)` —
+  средне-синий слой высотой 48px для глубины waterline.
+- `draw_polyline(top_pts, 0.55/0.82/0.95, 3.0)` — яркий блик по гребню.
+- Secondary `draw_polyline(top+7px, dim, 2.0)` — приглушённый echo.
+
+#### 4. Удаление winter_valley
+- `scripts/maps/winter_valley.gd` + `scenes/maps/winter_valley.tscn` → `git rm`.
+- `MAP_SCENES` в `scripts/main/game.gd` — 6 карт вместо 7.
+
+### Файлы
+- -2 (winter_valley .gd + .tscn)
+- `scripts/maps/map_base.gd` (+78 / -42)
+- `scripts/main/game.gd` (-1 line)
+
+### Тест
+- `mcp__godot__run_project` — без runtime ошибок.
+
+---
+
 ## 2026-04-20 — fix(maps): seamless tiling платформ, stretch фонов, чистая вода
 
 ### Жалобы пользователя (скриншоты)

@@ -8,7 +8,6 @@ const MAP_SCENES: Array[String] = [
 	"res://scenes/maps/desert_dunes.tscn",
 	"res://scenes/maps/iceberg_bay.tscn",
 	"res://scenes/maps/ocean_shore.tscn",
-	"res://scenes/maps/winter_valley.tscn",
 	"res://scenes/maps/winter_night.tscn",
 	"res://scenes/maps/haunted_castle.tscn",
 ]

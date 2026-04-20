@@ -325,37 +325,63 @@ func _draw_parallax_background() -> void:
 
 		match mode:
 			"fill":
-				# One stretched copy spanning the entire bg rect, with a
-				# dampened parallax so the image "floats" a little as the
-				# camera moves without exposing edges.
+				# Aspect-preserved cover: upscale so texture completely
+				# covers map + parallax buffer on both axes (whichever
+				# dimension is tighter wins), centered on the map. Prevents
+				# the grotesque distortion that happens when a compact
+				# texture (e.g. 1440×807) is stretched across the full
+				# off-screen bg rect.
+				var native := tex.get_size()
+				var want_h: float = map_rect.size.y + 1500.0
+				var want_w: float = map_rect.size.x + 3000.0
+				var eff_scale: float = maxf(
+					want_w / native.x, want_h / native.y) * tex_scale
+				var eff_size: Vector2 = native * eff_scale
+				var map_cx := map_rect.position.x + map_rect.size.x / 2.0
+				var map_cy := map_rect.position.y + map_rect.size.y / 2.0
 				var dst := Rect2(
-					bg_rect.position + parallax * 0.25,
-					bg_rect.size
+					Vector2(map_cx - eff_size.x / 2.0,
+						map_cy - eff_size.y / 2.0) + parallax * 0.25,
+					eff_size
 				)
 				draw_texture_rect(tex, dst, false, tint)
 			"bottom_tile":
-				# One stretched copy spanning the full map width + parallax
-				# buffer, anchored to the bottom. Height stretches to cover
-				# the full map height (+ buffer). Previously tiled
-				# horizontally — made repetitions visible; now stretches.
-				var cover_h: float = map_rect.size.y + 1200.0
-				var cover_w: float = map_rect.size.x + 4000.0
-				var y_top := map_rect.end.y + y_off - cover_h \
+				# Single stretched copy anchored to the bottom, aspect
+				# preserved. Height targets map_h + buffer, capped at
+				# `max_scale` (default 2.5x) so small decorative textures
+				# (e.g. 225×340 castle) don't blow up into huge blobs.
+				# Width scales from that scale factor — centered horizontally,
+				# with the sky layer (fill mode) filling any edge gap.
+				var native := tex.get_size()
+				var max_scale: float = layer.get("max_scale", 2.5)
+				var want_h: float = map_rect.size.y + 1200.0
+				var auto_scale: float = want_h / native.y
+				var eff_scale: float = minf(auto_scale, max_scale) * tex_scale
+				var eff_size: Vector2 = native * eff_scale
+				# If the texture is too small, its width at eff_scale may
+				# not cover the whole map. That's intentional — anything
+				# above/beside is filled by the sky layer (`fill` mode).
+				# Don't force-stretch X, which would distort the art.
+				var y_top := map_rect.end.y + y_off - eff_size.y \
 					+ parallax.y * 0.25
-				var x_start := map_rect.position.x - 2000.0 \
-					+ parallax.x * 0.25
-				var dst := Rect2(Vector2(x_start, y_top),
-					Vector2(cover_w, cover_h))
+				var map_cx := map_rect.position.x + map_rect.size.x / 2.0
+				var x_start := map_cx - eff_size.x / 2.0 + parallax.x * 0.25
+				var dst := Rect2(Vector2(x_start, y_top), eff_size)
 				draw_texture_rect(tex, dst, false, tint)
 			"top_tile":
-				var cover_h: float = map_rect.size.y + 1200.0
-				var cover_w: float = map_rect.size.x + 4000.0
+				var native := tex.get_size()
+				var max_scale: float = layer.get("max_scale", 2.5)
+				var want_h: float = map_rect.size.y + 1200.0
+				var auto_scale: float = want_h / native.y
+				var eff_scale: float = minf(auto_scale, max_scale) * tex_scale
+				var eff_size: Vector2 = native * eff_scale
+				if eff_size.x < map_rect.size.x + 3000.0:
+					eff_size.x = map_rect.size.x + 3000.0
 				var y_top := map_rect.position.y + y_off \
 					+ parallax.y * 0.25
-				var x_start := map_rect.position.x - 2000.0 \
-					+ parallax.x * 0.25
-				var dst := Rect2(Vector2(x_start, y_top),
-					Vector2(cover_w, cover_h))
+				var map_cx := map_rect.position.x + map_rect.size.x / 2.0
+				var x_start := map_cx - eff_size.x / 2.0 + parallax.x * 0.25
+				var dst := Rect2(Vector2(x_start, y_top), eff_size)
 				draw_texture_rect(tex, dst, false, tint)
 
 
@@ -375,11 +401,9 @@ static func _get_water_tex() -> Texture2D:
 
 
 func _draw_water_floor() -> void:
-	# Simple dark-water fill below the danger line — no wavy/icy strip
-	# texture (that previously leaked into every map as an "ice" band).
-	# The only visual is a deep water gradient from a mid-blue surface
-	# line to a near-black bottom, plus a thin animated highlight on the
-	# surface so the waterline reads clearly.
+	# Dark-water kill zone with an animated wavy surface — the border
+	# itself undulates so the waterline reads as actual waves, not a
+	# flat line. The fill below is solid dark blue; no "ice" texture.
 	if danger_bottom <= 0.0:
 		return
 	var r := map_rect
@@ -388,33 +412,47 @@ func _draw_water_floor() -> void:
 	var band_w := r.size.x + 8000.0
 	var total_h := danger_bottom + 2200.0
 
-	# Deep water fill (solid dark blue covering the full floor band)
-	draw_rect(
-		Rect2(Vector2(x0, top_y), Vector2(band_w, total_h)),
-		Color(0.06, 0.14, 0.24, 1.0)
-	)
-	# Subtle vertical depth gradient — lighter near the surface, darker deeper.
-	var grad_steps := 10
-	var grad_h: float = minf(260.0, danger_bottom * 0.6)
-	for i in range(grad_steps):
-		var frac := float(i) / grad_steps
-		var col := Color(0.16, 0.38, 0.58, 0.18 * (1.0 - frac))
-		draw_rect(
-			Rect2(
-				Vector2(x0, top_y + grad_h * frac),
-				Vector2(band_w, grad_h / grad_steps + 1.0)
-			),
-			col
-		)
-	# Animated thin surface highlight line
-	var t := float(Engine.get_physics_frames()) * 0.02
-	var bob := sin(t) * 1.5
-	draw_line(
-		Vector2(x0, top_y + bob),
-		Vector2(x0 + band_w, top_y + bob),
-		Color(0.45, 0.72, 0.90, 0.55),
-		2.0
-	)
+	# Wave parameters — animated.
+	var t := float(Engine.get_physics_frames()) * 0.03
+	var wave_amp: float = 14.0
+	var wavelen: float = 220.0
+	var step: float = 22.0
+	var n_seg: int = int(band_w / step) + 2
+
+	# Build wavy top edge. Two superimposed sine waves for an organic look.
+	var top_pts: PackedVector2Array = []
+	for i in range(n_seg + 1):
+		var x: float = x0 + i * step
+		var phase := x / wavelen * TAU
+		var w1 := sin(phase + t * 1.3) * wave_amp
+		var w2 := sin(phase * 1.8 + t * 0.9) * wave_amp * 0.35
+		top_pts.append(Vector2(x, top_y + w1 + w2))
+
+	# Dark deep-water body: polygon with wavy top, rectangular sides/bottom.
+	var deep_pts: PackedVector2Array = []
+	deep_pts.append_array(top_pts)
+	deep_pts.append(Vector2(x0 + band_w, top_y + total_h))
+	deep_pts.append(Vector2(x0, top_y + total_h))
+	draw_colored_polygon(deep_pts, Color(0.06, 0.14, 0.24, 1.0))
+
+	# Brighter surface strip (same wavy top, shorter): lets the surface
+	# read as mid-blue above a darker depth.
+	var surf_h: float = 48.0
+	var surf_pts: PackedVector2Array = []
+	surf_pts.append_array(top_pts)
+	# Second edge: wavy line offset down by surf_h (same shape)
+	for i in range(top_pts.size() - 1, -1, -1):
+		surf_pts.append(Vector2(top_pts[i].x, top_pts[i].y + surf_h))
+	draw_colored_polygon(surf_pts, Color(0.14, 0.35, 0.52, 0.85))
+
+	# Bright wavy highlight exactly on the surface line.
+	draw_polyline(top_pts, Color(0.55, 0.82, 0.95, 0.85), 3.0, true)
+
+	# Secondary dimmer wave a few px below — gives the waterline depth.
+	var sec_pts: PackedVector2Array = []
+	for p in top_pts:
+		sec_pts.append(Vector2(p.x, p.y + 7.0))
+	draw_polyline(sec_pts, Color(0.42, 0.70, 0.90, 0.35), 2.0, true)
 
 
 func _draw_side_vignette() -> void:
@@ -566,13 +604,12 @@ func _draw_themed_platform(
 
 	var hw := w / 2.0
 	var hh := h / 2.0
-	# Use a larger corner radius so rounding reads clearly on short platforms.
 	var r := minf(hh * 0.95, h * 0.45)
 	r = clampf(r, 6.0, 26.0)
-
-	# Build the rounded capsule polygon.
-	var pts: PackedVector2Array = []
 	var segs := 10
+
+	# Full rounded capsule polygon (used for base fill + outline).
+	var pts: PackedVector2Array = []
 	for i in range(segs + 1):
 		var a := PI + float(i) / segs * (PI / 2.0)
 		pts.append(Vector2(cx - hw + r + cos(a) * r, cy - hh + r + sin(a) * r))
@@ -586,25 +623,49 @@ func _draw_themed_platform(
 		var a := PI / 2.0 + float(i) / segs * (PI / 2.0)
 		pts.append(Vector2(cx - hw + r + cos(a) * r, cy + hh - r + sin(a) * r))
 
-	# Aspect-preserve UV tiling. Tile scale = platform_h / tex_native_h
-	# so each tile's rendered height equals the platform height (no vertical
-	# squish). Tile width = tex_native_w * scale; U wraps across the
-	# platform width (UV > 1 wraps thanks to texture_repeat=ENABLED set in
-	# _ready()), which puts identical copies of the tex side-by-side
-	# seamlessly and extends ALL the way into the rounded corners.
-	var tex_native: Vector2 = tex.get_size()
-	var scl: float = h / tex_native.y
-	var tile_world_w: float = tex_native.x * scl
-	var u_max: float = w / tile_world_w
-	var uvs: PackedVector2Array = []
-	for p in pts:
-		var u: float = ((p.x - (cx - hw)) / w) * u_max
-		var v: float = (p.y - (cy - hh)) / h
-		uvs.append(Vector2(u, v))
-	var colors := PackedColorArray([Color.WHITE])
-	draw_polygon(pts, colors, uvs, tex)
+	# 1. Solid rounded base — same color used to mask rectangle corners later.
+	draw_colored_polygon(pts, platform_color)
 
-	# Edge outline + top highlight + bottom shadow.
+	# 2. Draw the seamless tiled strip via scaled transform + tile=true.
+	#    `draw_texture_rect(tile=true)` tiles the texture at its native
+	#    pixel size via GPU repeat, which avoids the sub-pixel filter
+	#    bleed gaps a manual per-tile loop produced. We scale the canvas
+	#    so one native-height tile == platform height; width repeats to
+	#    fill the whole platform.
+	var tex_size: Vector2 = tex.get_size()
+	var scl: float = h / tex_size.y
+	var local_w: float = w / scl
+	draw_set_transform(
+		Vector2(cx - hw, cy - hh), 0.0, Vector2(scl, scl)
+	)
+	draw_texture_rect(
+		tex, Rect2(Vector2.ZERO, Vector2(local_w, tex_size.y)),
+		true, Color.WHITE
+	)
+	draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
+
+	# 3. Hide the rectangle's sharp corners (that the tile strip drew over
+	#    the rounded polygon's curved corners) by overdrawing the four
+	#    outside-of-arc regions in platform_color.
+	var corners: Array = [
+		# [rect_corner, arc_center, start_angle]
+		[Vector2(cx - hw, cy - hh), Vector2(cx - hw + r, cy - hh + r), PI],
+		[Vector2(cx + hw, cy - hh), Vector2(cx + hw - r, cy - hh + r), -PI / 2.0],
+		[Vector2(cx + hw, cy + hh), Vector2(cx + hw - r, cy + hh - r), 0.0],
+		[Vector2(cx - hw, cy + hh), Vector2(cx - hw + r, cy + hh - r), PI / 2.0],
+	]
+	for corner in corners:
+		var origin: Vector2 = corner[0]
+		var arc_c: Vector2 = corner[1]
+		var start_ang: float = corner[2]
+		var mask_pts: PackedVector2Array = []
+		mask_pts.append(origin)
+		for i in range(segs + 1):
+			var a: float = start_ang + float(i) / segs * (PI / 2.0)
+			mask_pts.append(Vector2(arc_c.x + cos(a) * r, arc_c.y + sin(a) * r))
+		draw_colored_polygon(mask_pts, platform_color)
+
+	# 4. Outline + top highlight + bottom shadow for crisp readability.
 	var edge: Color = _get_palette_edge(palette)
 	for i in range(pts.size()):
 		var i2 := (i + 1) % pts.size()
