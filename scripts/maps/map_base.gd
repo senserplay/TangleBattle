@@ -86,39 +86,12 @@ var global_shrink_timer: float = 0.0
 
 
 func _ready() -> void:
-	# Apply a wrap-aware bilinear-filter shader. A naive `fract(UV)` +
-	# `texture()` combo still left a visible seam at UV=1.0 because the
-	# GPU's LINEAR filter samples a 2-texel neighbourhood: on the "just
-	# below 1.0" side the neighbourhood was (tex_w-2, tex_w-1); on the
-	# "just after 1.0" side, fract made it (0, 1) — different pairs, so
-	# the two fragments either side of the wrap saw *different* blended
-	# colours even though the edge columns are pixel-identical.
-	#
-	# This shader manually does a 2x2 bilinear tap with `mod()` on the X
-	# integer pixel index, so both sides of the wrap see the SAME pair
-	# (tex_w-1 and 0), producing zero visible seam. Y is clamped (no
-	# vertical wrap) — platform textures are not seamless top-to-bottom
-	# (grass top, deep fill bottom), so vertical wrap would bleed.
-	var shader := Shader.new()
-	shader.code = "shader_type canvas_item;\n" \
-		+ "void fragment(){\n" \
-		+ "  vec2 tex_size = vec2(textureSize(TEXTURE, 0));\n" \
-		+ "  vec2 px = UV * tex_size - 0.5;\n" \
-		+ "  vec2 pi = floor(px);\n" \
-		+ "  vec2 pf = fract(px);\n" \
-		+ "  float x0 = mod(pi.x, tex_size.x);\n" \
-		+ "  float x1 = mod(pi.x + 1.0, tex_size.x);\n" \
-		+ "  float y0 = clamp(pi.y, 0.0, tex_size.y - 1.0);\n" \
-		+ "  float y1 = clamp(pi.y + 1.0, 0.0, tex_size.y - 1.0);\n" \
-		+ "  vec4 c00 = texture(TEXTURE, (vec2(x0, y0) + 0.5) / tex_size);\n" \
-		+ "  vec4 c10 = texture(TEXTURE, (vec2(x1, y0) + 0.5) / tex_size);\n" \
-		+ "  vec4 c01 = texture(TEXTURE, (vec2(x0, y1) + 0.5) / tex_size);\n" \
-		+ "  vec4 c11 = texture(TEXTURE, (vec2(x1, y1) + 0.5) / tex_size);\n" \
-		+ "  COLOR = mix(mix(c00, c10, pf.x), mix(c01, c11, pf.x), pf.y) * COLOR;\n" \
-		+ "}\n"
-	var mat := ShaderMaterial.new()
-	mat.shader = shader
-	material = mat
+	# The custom-shader approach caused washed-out bgs (shader-level
+	# sampling broke draw_texture_rect for bg layers). Platforms now
+	# render as a chain of rounded polygons, each one tile wide, with
+	# UVs in [0..1] — no UV wrap needed at all, and joints between
+	# sections are invisible because the source strip textures are
+	# pixel-seamless at their left/right columns.
 	for data in platforms:
 		if data.size() > 4 and data[4] is String and data[4] == "sticky":
 			_create_platform(data[0], data[1], data[2], data[3], false)
@@ -374,7 +347,7 @@ func _draw_parallax_background() -> void:
 				# Width scales from that scale factor — centered horizontally,
 				# with the sky layer (fill mode) filling any edge gap.
 				var native := tex.get_size()
-				var max_scale: float = layer.get("max_scale", 2.5)
+				var max_scale: float = layer.get("max_scale", 4.0)
 				var want_h: float = map_rect.size.y + 1200.0
 				var auto_scale: float = want_h / native.y
 				var eff_scale: float = minf(auto_scale, max_scale) * tex_scale
@@ -391,7 +364,7 @@ func _draw_parallax_background() -> void:
 				draw_texture_rect(tex, dst, false, tint)
 			"top_tile":
 				var native := tex.get_size()
-				var max_scale: float = layer.get("max_scale", 2.5)
+				var max_scale: float = layer.get("max_scale", 4.0)
 				var want_h: float = map_rect.size.y + 1200.0
 				var auto_scale: float = want_h / native.y
 				var eff_scale: float = minf(auto_scale, max_scale) * tex_scale
@@ -629,42 +602,47 @@ func _draw_themed_platform(
 	r = clampf(r, 6.0, 26.0)
 	var segs := 12
 
-	# Rounded capsule polygon. The texture is applied directly to this
-	# polygon — it extends into the rounded corners (no solid-color
-	# mask). Horizontal tiling is achieved with UV > 1.0 ranges; the
-	# node's fract() shader wraps UV in the fragment stage, producing
-	# seamless tile joints regardless of platform width.
-	var pts: PackedVector2Array = []
-	for i in range(segs + 1):
-		var a := PI + float(i) / segs * (PI / 2.0)
-		pts.append(Vector2(cx - hw + r + cos(a) * r, cy - hh + r + sin(a) * r))
-	for i in range(segs + 1):
-		var a := -PI / 2.0 + float(i) / segs * (PI / 2.0)
-		pts.append(Vector2(cx + hw - r + cos(a) * r, cy - hh + r + sin(a) * r))
-	for i in range(segs + 1):
-		var a := 0.0 + float(i) / segs * (PI / 2.0)
-		pts.append(Vector2(cx + hw - r + cos(a) * r, cy + hh - r + sin(a) * r))
-	for i in range(segs + 1):
-		var a := PI / 2.0 + float(i) / segs * (PI / 2.0)
-		pts.append(Vector2(cx - hw + r + cos(a) * r, cy + hh - r + sin(a) * r))
-
-	# Aspect-preserve tile width: 1 tile fills platform height exactly.
+	# Aspect-preserve tile width: 1 tile at platform height.
 	var tex_size: Vector2 = tex.get_size()
 	var scl: float = h / tex_size.y
-	var tile_world_w: float = tex_size.x * scl
-	var u_max: float = w / tile_world_w
+	var tile_w: float = tex_size.x * scl  # world px per full texture copy
+	# Integer tile count: fit as many FULL copies as possible, plus one
+	# partial tile on the right for the remainder.
+	var n_full: int = int(floor(w / tile_w))
+	var leftover: float = w - n_full * tile_w
 
-	# UVs: u spans 0..u_max (wraps in shader), v spans 0..1 stretched
-	# to platform height.
-	var uvs: PackedVector2Array = []
-	for p in pts:
-		var u: float = ((p.x - (cx - hw)) / w) * u_max
-		var v: float = (p.y - (cy - hh)) / h
-		uvs.append(Vector2(u, v))
+	# Render the platform as a chain of sections drawn left→right. Each
+	# section is a rounded-polygon panel with UVs fixed in [0..1] — no UV
+	# wrap needed, and joints between sections are invisible because the
+	# source strip texture is pixel-seamless (pixel[0]==pixel[tex_w-1]).
+	var left_x: float = cx - hw
 	var colors := PackedColorArray([Color.WHITE])
-	draw_polygon(pts, colors, uvs, tex)
 
-	# Edge outline + top highlight + bottom shadow.
+	# Section X ranges:
+	#   [left_x, left_x + tile_w] × n_full times
+	#   [..., left_x + w] — leftover partial tile (may be 0)
+	for i in range(n_full):
+		var sx: float = left_x + i * tile_w
+		var sx_end: float = sx + tile_w
+		_draw_platform_section(
+			tex, sx, sx_end, cy - hh, cy + hh, r, segs,
+			i == 0, i == n_full - 1 and leftover < 1.0,
+			0.0, 1.0, colors
+		)
+	if leftover >= 1.0:
+		var sx_left: float = left_x + n_full * tile_w
+		var sx_right: float = cx + hw
+		var u_right: float = leftover / tile_w  # partial U in [0..1]
+		_draw_platform_section(
+			tex, sx_left, sx_right, cy - hh, cy + hh, r, segs,
+			n_full == 0, true,
+			0.0, u_right, colors
+		)
+
+	# Rebuild the full outline polygon for the border stroke + highlights.
+	var pts: PackedVector2Array = _build_rounded_rect_pts(
+		cx - hw, cy - hh, cx + hw, cy + hh, r, segs
+	)
 	var edge: Color = _get_palette_edge(palette)
 	for i in range(pts.size()):
 		var i2 := (i + 1) % pts.size()
@@ -679,6 +657,83 @@ func _draw_themed_platform(
 		Vector2(cx + hw - r, cy + hh),
 		edge.darkened(0.3), 2.0
 	)
+
+
+# Build a rounded-rect polygon from two opposite corners + radius.
+func _build_rounded_rect_pts(
+	x0: float, y0: float, x1: float, y1: float, r: float, segs: int
+) -> PackedVector2Array:
+	var pts: PackedVector2Array = []
+	# TL
+	for i in range(segs + 1):
+		var a := PI + float(i) / segs * (PI / 2.0)
+		pts.append(Vector2(x0 + r + cos(a) * r, y0 + r + sin(a) * r))
+	# TR
+	for i in range(segs + 1):
+		var a := -PI / 2.0 + float(i) / segs * (PI / 2.0)
+		pts.append(Vector2(x1 - r + cos(a) * r, y0 + r + sin(a) * r))
+	# BR
+	for i in range(segs + 1):
+		var a := 0.0 + float(i) / segs * (PI / 2.0)
+		pts.append(Vector2(x1 - r + cos(a) * r, y1 - r + sin(a) * r))
+	# BL
+	for i in range(segs + 1):
+		var a := PI / 2.0 + float(i) / segs * (PI / 2.0)
+		pts.append(Vector2(x0 + r + cos(a) * r, y1 - r + sin(a) * r))
+	return pts
+
+
+# Draw one section of the platform. Rounded on the left iff `round_left`,
+# rounded on the right iff `round_right`, square on the other side (so it
+# butts flush against the next section). UVs span [u0..u1] × [0..1].
+func _draw_platform_section(
+	tex: Texture2D,
+	x0: float, x1: float, y0: float, y1: float,
+	r: float, segs: int,
+	round_left: bool, round_right: bool,
+	u0: float, u1: float,
+	colors: PackedColorArray
+) -> void:
+	var pts: PackedVector2Array = []
+	# Left edge
+	if round_left:
+		for i in range(segs + 1):
+			var a := PI + float(i) / segs * (PI / 2.0)
+			pts.append(Vector2(x0 + r + cos(a) * r, y0 + r + sin(a) * r))
+	else:
+		pts.append(Vector2(x0, y0))
+	# Right edge top
+	if round_right:
+		for i in range(segs + 1):
+			var a := -PI / 2.0 + float(i) / segs * (PI / 2.0)
+			pts.append(Vector2(x1 - r + cos(a) * r, y0 + r + sin(a) * r))
+	else:
+		pts.append(Vector2(x1, y0))
+	# Right edge bottom
+	if round_right:
+		for i in range(segs + 1):
+			var a := 0.0 + float(i) / segs * (PI / 2.0)
+			pts.append(Vector2(x1 - r + cos(a) * r, y1 - r + sin(a) * r))
+	else:
+		pts.append(Vector2(x1, y1))
+	# Left edge bottom
+	if round_left:
+		for i in range(segs + 1):
+			var a := PI / 2.0 + float(i) / segs * (PI / 2.0)
+			pts.append(Vector2(x0 + r + cos(a) * r, y1 - r + sin(a) * r))
+	else:
+		pts.append(Vector2(x0, y1))
+
+	# UVs: u maps x linearly across [x0..x1] → [u0..u1]; v maps y across
+	# [y0..y1] → [0..1].
+	var width: float = x1 - x0
+	var height: float = y1 - y0
+	var uvs: PackedVector2Array = []
+	for p in pts:
+		var u: float = u0 + ((p.x - x0) / width) * (u1 - u0)
+		var v: float = (p.y - y0) / height
+		uvs.append(Vector2(u, v))
+	draw_polygon(pts, colors, uvs, tex)
 
 
 func _draw_objects() -> void:
