@@ -46,8 +46,8 @@ const CROSSHAIR_SIZE := 12.0
 
 # Ability icon layout
 const ICON_Y := -60.0
-const ICON_RADIUS := 18.0
-const ICON_SPACING := 42.0
+const ICON_RADIUS := 26.0
+const ICON_SPACING := 62.0
 
 # Player-to-player collision
 const PLAYER_BOUNCE := 200.0
@@ -2035,7 +2035,7 @@ func _draw_hp_bar() -> void:
 
 
 func _draw_ability_icons() -> void:
-	var icon_y := -(get_player_radius() + 40.0) * squash_y
+	var icon_y := -(get_player_radius() + 54.0) * squash_y
 	for i in range(2):
 		var x: float = (i * 2 - 1) * (ICON_SPACING / 2.0)
 		var center := Vector2(x, icon_y)
@@ -2051,7 +2051,7 @@ func _draw_ability_icons() -> void:
 		if cd_ratio > 0.0:
 			_draw_cd_pie(center, ICON_RADIUS, cd_ratio)
 		var bc := ab_color if cd_ratio <= 0.0 else Color(0.4, 0.4, 0.4, 0.6)
-		draw_arc(center, ICON_RADIUS, 0.0, TAU, 24, bc, 1.5)
+		draw_arc(center, ICON_RADIUS, 0.0, TAU, 28, bc, 2.0)
 
 
 func _draw_emblem(
