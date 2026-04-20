@@ -1,5 +1,137 @@
 # TangleBattle — Рабочий лог
 
+## 2026-04-20 — feat(ui): текстурные иконки способностей вместо процедурных эмблем
+
+### Запрос пользователя
+Пользователь добавил папку `my_assets/abillities/` (опечатка) с 17 PNG
+иконками 1024×1024 для всех активных способностей. Нужно "вырезать и
+поменять в игре" — интегрировать как текстурные иконки вместо
+процедурных shape-draw эмблем.
+
+### Что сделано
+
+#### 1. Обработка ассетов
+Python-скрипт:
+- RGB → RGBA (исходники без alpha)
+- Применена круговая маска радиуса 508 (из 512) — чистые края, без
+  "квадратных" углов вокруг круглого бейджа
+- Переименованы в snake_case под enum-имена
+- Скопированы в `assets/textures/abilities/` (17 PNG)
+
+Mapping (из my_assets/abillities/ → assets/textures/abilities/):
+- `Yarn Toss.png` → `yarn_toss.png`
+- `Thread Pul.png` → `thread_pull.png` (исправлена опечатка)
+- `Heaven's Wrath.png` → `heavens_wrath.png` (убран апостроф)
+- + 14 остальных
+
+#### 2. Новый helper `scripts/ui/ability_icon.gd`
+- `class_name AbilityIcon`
+- `NAMES: Array` — enum-id → файл-имя (по порядку из `data/abilities.json`)
+- Static cache `_cache` (один load на ability_id)
+- `get_texture(ability_id)` — лениво грузит с fallback null
+- `draw_at(canvas, center, radius, ability_id, modulate)` — рисует
+  `draw_texture_rect`. Фоллбек на coloured circle если текстуры нет.
+
+#### 3. Замена рендеринга эмблем в 3 местах
+| Файл | Раньше | Стало |
+|------|--------|-------|
+| `player.gd::_draw_ability_icons` | `_draw_emblem` + подложка | `AbilityIcon.draw_at(... ICON_RADIUS)` с CD-затемнением через modulate |
+| `lobby.gd::_draw_card` | `_draw_ability_emblem_lobby` + подложка | `AbilityIcon.draw_at(... 18.0)` |
+| `ability_pickup.gd::_draw` | `_draw_emblem` | `AbilityIcon.draw_at(... PICKUP_RADIUS)` |
+
+Старые match-case функции `_draw_emblem` / `_draw_ability_emblem_lobby`
+оставлены как dead code (не ломаем сейчас, уберём отдельным refactor'ом).
+
+### Файлы
+- 17 новых PNG в `assets/textures/abilities/`
+- `scripts/ui/ability_icon.gd` (новый, 61 строка)
+- `scripts/characters/player.gd` (-15 строк в _draw_ability_icons)
+- `scripts/ui/lobby.gd` (-4 строки)
+- `scripts/characters/ability_pickup.gd` (-3 строки)
+
+### Тест
+Godot 4.6.1: после `--import` для регистрации `class_name AbilityIcon`,
+проект запускается без ошибок. VFX ability emblems теперь — professional
+1024×1024 pixel art badges вместо процедурной геометрии.
+
+---
+
+## 2026-04-20 — docs: актуализация документации способностей и пассивок
+
+### Запрос пользователя
+"Актуализируй документации по способностям и пассивкам."
+
+### Что было не так
+Сравнил `docs/abilities/`, `docs/passives/` с `data/*.json`:
+
+**Abilities** — в `data/abilities.json` было 17, доков было только 14:
+- Отсутствовали: **Black Hole** (id 14), **Portal Gate** (id 15),
+  **Heaven's Wrath** (id 16) — три самых поздних способности
+
+**Passives** — в `data/passives.json` 25 пассивок, доков было только 15
+(0-14). Отсутствовали 10:
+- Shockwave (15), Lightning Strike (16), Heavy Impact (17),
+  Homing Projectiles (18), Burst Fire (19), Lucky Star (20),
+  Spirit Burst (21), Shield Mastery (22), Parry Burst (23),
+  Phase Shot (24)
+
+`docs/passives/README.md` указывал "23 пассивки" — устарело.
+`docs/abilities/README.md` не имел ссылок на файлы и не отмечал что
+префиксы файлов не совпадают с enum-ID (legacy numbering).
+
+### Что сделано
+
+#### 1. Созданы 3 ability docs (по `data/abilities.json`)
+- `docs/abilities/14_black_hole.md` — Чёрная дыра (250px радиус, 8с
+  активность, pull_force=350, drain=12 HP/s, КД 12с)
+- `docs/abilities/15_portal_gate.md` — Парные порталы (2-step активация,
+  rope auto-cut при teleport)
+- `docs/abilities/16_heavens_wrath.md` — 6 столбов света (55 урона
+  каждый, spacing 120px)
+
+#### 2. Созданы 10 passive docs
+| ID | Файл |
+|----|------|
+| 15 | `docs/passives/15_shockwave.md` |
+| 16 | `docs/passives/16_lightning_strike.md` |
+| 17 | `docs/passives/17_heavy_impact.md` |
+| 18 | `docs/passives/18_homing_projectiles.md` |
+| 19 | `docs/passives/19_burst_fire.md` |
+| 20 | `docs/passives/20_lucky_star.md` |
+| 21 | `docs/passives/21_spirit_burst.md` |
+| 22 | `docs/passives/22_shield_mastery.md` |
+| 23 | `docs/passives/23_parry_burst.md` |
+| 24 | `docs/passives/24_phase_shot.md` |
+
+В каждом — описание, таблица редкостей, полный TOML config из json'а.
+
+#### 3. Обновлены README'ы
+- `docs/abilities/README.md`:
+  - Таблица теперь имеет колонку "Файл" со ссылками
+  - Добавлено явное предупреждение: префиксы XX в filename НЕ совпадают
+    с enum-ID (legacy numbering)
+  - Расширена секция "Особенности механик" — добавлены Portal Gate
+    activation flow, Black Hole friendly-fire, Heaven's Wrath геометрия,
+    grapple auto-cut на teleport (fix v0.5)
+- `docs/passives/README.md`:
+  - "23 пассивки" → "25 пассивок"
+  - Полная таблица 0-24 с file links и редкостями
+  - Секция "Mythic-only" с подсветкой Spirit Burst
+  - Секция "Синергии" с 4 примерами комбо
+
+### Не сделано (TODO следующего pass'а)
+- Не сверял value-by-value все 14 ранее существовавших ability docs
+  с текущим json'ом. Возможно балансные числа в части файлов устарели
+  (например, в `14_iron_skin.md` указаны 4 редкости, но в data 5 = добавлена
+  Mythic). Системная reconciliation потребует отдельного прохода.
+
+### Файлы
+- 3 новых ability doc'а в `docs/abilities/`
+- 10 новых passive doc'ов в `docs/passives/`
+- 2 README обновлены
+
+---
+
 ## 2026-04-19 — fix+feat: 3 баг-фикса + zero-G space + slippery ice
 
 ### Запрос пользователя

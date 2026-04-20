@@ -538,8 +538,8 @@ func _draw_ability_selector(
 		draw_rect(box, ab_color.darkened(0.3), false, 2.0)
 
 		var icon_x := cx - box_w / 2.0 + 30.0
-		draw_circle(Vector2(icon_x, cy + 10), 18.0, Color(0.1, 0.1, 0.15))
-		_draw_ability_emblem_lobby(ab_id, Vector2(icon_x, cy + 10), ab_color)
+		# Textured ability icon (assets/textures/abilities/<name>.png)
+		AbilityIcon.draw_at(self, Vector2(icon_x, cy + 10), 18.0, ab_id)
 		draw_arc(
 			Vector2(icon_x, cy + 10), 18.0, 0.0, TAU, 16, ab_color, 2.0
 		)
