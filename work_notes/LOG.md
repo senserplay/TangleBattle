@@ -1,5 +1,34 @@
 # TangleBattle — Рабочий лог
 
+## 2026-04-20 — fix(vfx): переименование projectile_sprites._get → _get_tex
+
+### Проблема
+Парсер GDScript 4.6 жаловался:
+`Parser Error: The function signature doesn't match the parent. Parent signature is "_get(StringName) -> Variant".`
+
+Метод `_get` — зарезервированное виртуальное имя на `Object` (Godot ожидает
+`_get(property: StringName) -> Variant` для property-lookup). Мой
+`static func _get(name: String) -> Texture2D` в `projectile_sprites.gd`
+конфликтовал по сигнатуре, хотя static. Даже если бы пропарсилось, было
+бы опасно переопределять зарезервированное имя.
+
+### Фикс
+`projectile_sprites.gd::_get` → `_get_tex`, параметр `name` → `tex_name`
+(избегаем также шэдовинга `Node.name`). Единственный внешний caller —
+`heavens_wrath.gd::ProjectileSprites._get(...)` — тоже обновлён.
+
+Cleanup: удалена unused `var size: Vector2` в `draw_single`.
+
+### Файлы
+- `scripts/characters/projectile_sprites.gd` (3 rename + 1 cleanup)
+- `scripts/characters/heavens_wrath.gd` (1 call-site rename)
+
+### Тест
+- `mcp__godot__run_project` — без parser error, без новых warnings
+  (все оставшиеся — pre-existing shadow warnings).
+
+---
+
 ## 2026-04-20 — feat(vfx): текстурные снаряды и VFX для 8 способностей
 
 ### Запрос
