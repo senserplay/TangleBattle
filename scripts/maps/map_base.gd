@@ -22,10 +22,20 @@ var teleports: Array = []
 var destructibles: Array = []
 ## Item spawn points: [x, y] — items spawn randomly at these positions
 var item_spawns: Array = []
-## Map events enabled
-var events_enabled: bool = false
+## Map events: which random hazard fires every EVENT_INTERVAL seconds.
+## "none"      — no periodic events
+## "wind"      — horizontal gust knockback
+## "meteor"    — falling meteor damage in a random column
+## "lightning" — strike a random player (damage + stun)
+## "all"       — pick one of the three at random each interval
+var event_type: String = "none"
+var events_enabled: bool = false  # legacy flag, kept in sync with event_type
 var event_timer: float = 0.0
 const EVENT_INTERVAL := 20.0
+# Event warning banner — big text on screen when an event fires.
+var event_banner_text: String = ""
+var event_banner_timer: float = 0.0
+var event_banner_color: Color = Color(1, 0.85, 0.3)
 
 ## Parallax layers: [{color, elements: [{x, y, size, shape}], scroll_factor}]
 ## scroll_factor: 0.0 = static, 1.0 = moves with camera
@@ -238,6 +248,41 @@ func _draw() -> void:
 	_draw_water_floor()
 	_draw_side_vignette()
 	_draw_walls()
+	_draw_event_banner()
+
+
+func _draw_event_banner() -> void:
+	if event_banner_timer <= 0.0 or event_banner_text == "":
+		return
+	var cam := get_viewport().get_camera_2d()
+	if cam == null:
+		return
+	var vp: Vector2 = get_viewport().get_visible_rect().size
+	# Banner anchored near top of screen, in world space via camera pos.
+	var cx: float = cam.position.x
+	var cy: float = cam.position.y - vp.y * 0.35
+	var fade: float = clampf(event_banner_timer * 1.5, 0.0, 1.0)
+	var font := ThemeDB.fallback_font
+	var fs := 58
+	var text_sz := font.get_string_size(event_banner_text,
+		HORIZONTAL_ALIGNMENT_LEFT, -1, fs)
+	var box_w: float = text_sz.x + 80.0
+	var box_h: float = text_sz.y + 30.0
+	# Background plate (world-space coords scaled by camera zoom)
+	var bg_col := Color(0.08, 0.05, 0.12, 0.80 * fade)
+	draw_rect(Rect2(
+		cx - box_w * 0.5, cy - box_h * 0.5,
+		box_w, box_h), bg_col)
+	var edge := event_banner_color
+	edge.a = 0.95 * fade
+	draw_rect(Rect2(
+		cx - box_w * 0.5, cy - box_h * 0.5,
+		box_w, box_h), edge, false, 3.0)
+	var text_col := event_banner_color
+	text_col.a = fade
+	draw_string(font,
+		Vector2(cx - text_sz.x * 0.5, cy + text_sz.y * 0.25),
+		event_banner_text, HORIZONTAL_ALIGNMENT_LEFT, -1, fs, text_col)
 
 
 func _draw_parallax() -> void:
@@ -958,12 +1003,21 @@ func _process(delta: float) -> void:
 				p.global_position.y = map_rect.end.y - r_val
 				p.velocity.y = -absf(p.velocity.y) * 1.0 - 150.0
 
-	# Map events
-	if events_enabled:
+	# Decay event banner display timer
+	if event_banner_timer > 0.0:
+		event_banner_timer -= delta
+	# Map events (legacy events_enabled flag implies "all")
+	if event_type == "none" and events_enabled:
+		event_type = "all"
+	if event_type != "" and event_type != "none":
 		event_timer += delta
 		if event_timer >= EVENT_INTERVAL:
 			event_timer = 0.0
-			_trigger_random_event()
+			match event_type:
+				"wind":      _event_wave()
+				"meteor":    _event_meteor()
+				"lightning": _event_lightning()
+				_:           _trigger_random_event()
 
 	# Item spawning
 	if item_spawns.size() > 0 and Engine.get_physics_frames() % 900 == 0:
@@ -1314,6 +1368,7 @@ func _event_meteor() -> void:
 		map_rect.position.x + danger_left + 200,
 		map_rect.end.x - danger_right - 200
 	)
+	_show_event_banner("☄ METEOR INCOMING ☄", Color(1.0, 0.45, 0.2), 1.8)
 	# Damage all players near impact line
 	await get_tree().create_timer(1.0).timeout  # warning delay
 	for p in get_tree().get_nodes_in_group("players"):
@@ -1338,6 +1393,7 @@ func _event_lightning() -> void:
 	if alive.is_empty():
 		return
 	var target: CharacterBody2D = alive[randi_range(0, alive.size() - 1)]
+	_show_event_banner("⚡ LIGHTNING STRIKE ⚡", Color(1.0, 0.95, 0.5), 1.2)
 	await get_tree().create_timer(0.5).timeout
 	if is_instance_valid(target) and target.is_alive:
 		target.take_damage(30.0)
@@ -1348,10 +1404,18 @@ func _event_lightning() -> void:
 func _event_wave() -> void:
 	# Horizontal wind pushes all players
 	var dir := 1.0 if randf() > 0.5 else -1.0
+	var arrow: String = "→→→" if dir > 0 else "←←←"
+	_show_event_banner("💨 STRONG WIND  " + arrow, Color(0.6, 0.9, 1.0), 1.2)
 	for p in get_tree().get_nodes_in_group("players"):
 		if p.is_alive:
 			p.apply_knockback(Vector2(dir * 400.0, -100.0))
 	SoundManager.play_dash()
+
+
+func _show_event_banner(text: String, color: Color, dur: float) -> void:
+	event_banner_text = text
+	event_banner_color = color
+	event_banner_timer = dur
 
 
 func _draw_decorations() -> void:

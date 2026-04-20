@@ -54,7 +54,12 @@ const BUILTIN_MAPS: Array[Dictionary] = [
 @onready var prop_danger_b: SpinBox   = %PropDangerB
 @onready var prop_gravity: SpinBox    = %PropGravity
 @onready var prop_friction: SpinBox   = %PropFriction
-@onready var prop_events: CheckBox    = %PropEvents
+@onready var prop_event: OptionButton = %PropEvent
+
+const EVENT_IDS: Array[String] = ["none", "all", "wind", "meteor", "lightning"]
+const EVENT_LABELS: Array[String] = [
+	"None", "Random (all)", "Wind gust", "Meteor", "Lightning",
+]
 
 @onready var sel_panel: VBoxContainer = %SelectedPanel
 @onready var sel_label: Label         = %SelLabel
@@ -103,6 +108,7 @@ func _ready() -> void:
 	_ensure_dir()
 	_populate_bg_dropdown()
 	_populate_palette_dropdown()
+	_populate_event_dropdown()
 	_populate_import_menu()
 	_refresh_load_menu()
 	_connect_signals()
@@ -133,6 +139,12 @@ func _populate_palette_dropdown() -> void:
 	prop_palette.clear()
 	for p in BgPresets.PALETTES:
 		prop_palette.add_item(p)
+
+
+func _populate_event_dropdown() -> void:
+	prop_event.clear()
+	for label in EVENT_LABELS:
+		prop_event.add_item(label)
 
 
 func _refresh_load_menu() -> void:
@@ -178,7 +190,7 @@ func _connect_signals() -> void:
 	prop_danger_b.value_changed.connect(_on_prop_changed.unbind(1))
 	prop_gravity.value_changed.connect(_on_prop_changed.unbind(1))
 	prop_friction.value_changed.connect(_on_prop_changed.unbind(1))
-	prop_events.toggled.connect(_on_prop_changed.unbind(1))
+	prop_event.item_selected.connect(_on_prop_changed.unbind(1))
 
 	sel_x.value_changed.connect(_on_sel_changed.unbind(1))
 	sel_y.value_changed.connect(_on_sel_changed.unbind(1))
@@ -234,6 +246,7 @@ func _default_map() -> Dictionary:
 		"danger_top": 0,
 		"gravity_multiplier": 1.0,
 		"floor_friction_mult": 1.0,
+		"event_type": "all",
 		"events_enabled": true,
 		"platforms": [
 			{"x": 2250, "y": 2300, "w": 2800, "h": 60, "one_way": false},
@@ -264,7 +277,12 @@ func _load_props_from_data() -> void:
 	prop_danger_b.value = map_data["danger_bottom"]
 	prop_gravity.value = map_data["gravity_multiplier"]
 	prop_friction.value = map_data.get("floor_friction_mult", 1.0)
-	prop_events.button_pressed = map_data["events_enabled"]
+	var ev_id: String = String(map_data.get("event_type", "none"))
+	# Back-compat: if only legacy events_enabled=true is present, map to "all"
+	if ev_id == "none" and map_data.get("events_enabled", false):
+		ev_id = "all"
+	var ev_idx: int = EVENT_IDS.find(ev_id)
+	prop_event.selected = ev_idx if ev_idx >= 0 else 0
 	_updating_props = false
 	_load_sel_from_data()
 	canvas.queue_redraw()
@@ -282,7 +300,9 @@ func _on_prop_changed() -> void:
 	map_data["danger_bottom"] = prop_danger_b.value
 	map_data["gravity_multiplier"] = prop_gravity.value
 	map_data["floor_friction_mult"] = prop_friction.value
-	map_data["events_enabled"] = prop_events.button_pressed
+	var ev_id: String = EVENT_IDS[prop_event.selected] if prop_event.selected >= 0 else "none"
+	map_data["event_type"] = ev_id
+	map_data["events_enabled"] = ev_id != "none"
 	canvas.queue_redraw()
 
 
@@ -862,9 +882,12 @@ func _handle_left_up(world: Vector2) -> void:
 			var cy := (a.y + b.y) * 0.5
 			match current_tool:
 				"platform":
+					# Default every new platform to one-way so the user can
+					# always jump up through from below. Uncheck "One-Way"
+					# in the properties panel if you need a solid wall.
 					map_data["platforms"].append({
 						"x": cx, "y": cy, "w": rect_size.x, "h": rect_size.y,
-						"one_way": rect_size.y < 50,
+						"one_way": true,
 					})
 					selected = {"type": "platform", "idx": map_data["platforms"].size() - 1}
 				"spike":

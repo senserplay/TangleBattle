@@ -1,5 +1,70 @@
 # TangleBattle — Рабочий лог
 
+## 2026-04-20 — feat(editor): events dropdown + banners + water slippery + default one-way
+
+### Жалобы пользователя
+1. Map Events должен быть **dropdown**, не чекбокс — выбирать конкретный.
+2. Events **не работают** (не видно в игре).
+3. Water-палитра выглядит как лёд — платформы должны **скользить всегда**.
+4. **One-way не работает** — любая платформа блокирует снизу.
+
+### Фиксы
+
+#### 1. Events — dropdown c выбором типа
+`map_base.gd`: добавлено поле `event_type: String` со значениями
+`"none" | "all" | "wind" | "meteor" | "lightning"`. В `_process`:
+```
+match event_type:
+    "wind":      _event_wave()
+    "meteor":    _event_meteor()
+    "lightning": _event_lightning()
+    _:           _trigger_random_event()
+```
+Back-compat: legacy `events_enabled=true` без `event_type` автоматически
+эскалируется в `"all"`.
+
+В редакторе `CheckBox` заменён на `OptionButton` с 5 пунктами. Поле
+`map_data["event_type"]` сохраняется в JSON (+ `events_enabled` = `!= "none"`
+для обратной совместимости).
+
+#### 2. On-screen warning banners
+Раньше events работали, но не имели визуала: метеор → `await 1s` → урон,
+молния → `await 0.5s` → урон. Пользователь не понимал что произошло.
+
+Добавлены поля `event_banner_text/timer/color` + метод `_show_event_banner`.
+Каждое событие перед уроном показывает большой баннер в центре экрана
+(world-space, привязан к камере):
+- `☄ METEOR INCOMING ☄` (оранжевый)
+- `⚡ LIGHTNING STRIKE ⚡` (жёлтый)
+- `💨 STRONG WIND →→→` (голубой, со стрелкой направления)
+
+Baner fades over 1.2-1.8s. `_draw_event_banner()` рисует plate + edge +
+текст. Таймер декрементится в `_process`.
+
+#### 3. Water palette = slippery
+`custom_map.load_from_dict`:
+```
+if platform_palette == "water":
+    floor_friction_mult = 0.15
+```
+Безусловно (перекрывает значение из JSON) — water-карты всегда скользят.
+
+#### 4. One-way default
+В редакторе новые платформы **всегда** получают `one_way = true`
+(раньше было `size.y < 50`, толстые платформы были solid). Юзер может
+снять галку в properties-панели если нужна solid-стена.
+
+### Файлы
+- `scripts/maps/map_base.gd` (+70 строк: event_type, banner, draw)
+- `scripts/maps/custom_map.gd` (+4 строки: slippery water, event_type)
+- `scripts/main/map_editor.gd` (+25 строк: OptionButton, EVENT_IDS, default one_way)
+- `scenes/main/map_editor.tscn` (PropEvents → PropEvent OptionButton)
+
+### Тест
+- `mcp__godot__run_project` на `map_editor.tscn` — без ошибок / warnings.
+
+---
+
 ## 2026-04-20 — fix(editor): коллизии custom_map, import встроенных карт, events clarify
 
 ### Жалобы пользователя

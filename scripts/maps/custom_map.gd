@@ -22,7 +22,11 @@ func load_from_dict(d: Dictionary) -> void:
 	danger_top    = float(d.get("danger_top",    0))
 	gravity_multiplier = float(d.get("gravity_multiplier", 1.0))
 	floor_friction_mult = float(d.get("floor_friction_mult", 1.0))
-	events_enabled = bool(d.get("events_enabled", false))
+	# Water-palette maps are always slippery (wet/ice-like surface).
+	if platform_palette == "water":
+		floor_friction_mult = 0.15
+	event_type = String(d.get("event_type", "none"))
+	events_enabled = bool(d.get("events_enabled", false)) or event_type not in ["", "none"]
 
 	# Colors — picked from palette defaults, can be overridden by the dict
 	match platform_palette:
@@ -47,6 +51,9 @@ func load_from_dict(d: Dictionary) -> void:
 	# Platforms: array of [x, y, w, h, one_way]
 	platforms.clear()
 	for p in d.get("platforms", []):
+		# Default one_way=true (user can uncheck in the editor to get a
+		# solid wall); platforms without the key saved from earlier
+		# versions are also treated as one-way.
 		platforms.append([
 			float(p.get("x", 0)), float(p.get("y", 0)),
 			float(p.get("w", 200)), float(p.get("h", 32)),
@@ -127,6 +134,7 @@ func to_dict() -> Dictionary:
 		"gravity_multiplier": gravity_multiplier,
 		"floor_friction_mult": floor_friction_mult,
 		"events_enabled": events_enabled,
+		"event_type": event_type,
 		"platforms": plats,
 		"hazards": hazs,
 		"teleports": tps,
