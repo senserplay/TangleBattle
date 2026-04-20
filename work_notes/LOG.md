@@ -1,5 +1,110 @@
 # TangleBattle — Рабочий лог
 
+## 2026-04-20 — feat(maps): полная перестройка карт на параллакс-фоны и единые borders
+
+### Запрос пользователя
+Удалить все карты, все бэкграунды, все платформо-текстуры. В `my_assets/maps/`
+лежат 5 паков параллакс-фонов (Desert, Iceberg+Ocean+Winternight, Forest Blue,
+dark_halloween, winter pixel nature) + PNG с 5 seamless платформ-текстурами +
+SVG (брать только текстуру земли). Все платформы — прямоугольники закруглённые.
+Паралакс-эффект согласно слоям. Границы: **снизу — вода, по бокам — затемнение**.
+Всё в новой ветке для возможности отката.
+
+### Что сделано
+
+#### 1. Удаление устаревших ассетов
+- **Карты:** удалены 8 старых сцен/скриптов: `ancient_ruins`, `deep_space`,
+  `forest_glade`, `frozen_lake`, `mystic_hollow`, `sky_citadel`, `sunset_spires`,
+  `volcano_crater` (scenes/maps + scripts/maps, вместе с `.uid`).
+- **Фоны:** удалены `assets/textures/backgrounds/`: `clouds_blue`,
+  `clouds_sunset`, `dawn`, `forest`, `nature`, `space`.
+- **Платформы:** удалены `grass.png`, `ice.png`, `magma.png` (+`.import`).
+
+#### 2. Новые платформо-текстуры (пользователь положил ранее)
+- `stone.png` (изменён), `wood.png` (изменён)
+- Новые: `sand.png`, `water.png`, `lava_ice.png` — seamless strips из
+  `computer-games-seamless-layers-background-set.png`.
+
+#### 3. Новые фоны (пользователь положил ранее, 7 тем)
+- `backgrounds/forest_blue/` (10 слоёв)
+- `backgrounds/desert/` (9 слоёв)
+- `backgrounds/iceberg/` (7 слоёв)
+- `backgrounds/ocean/` (7 слоёв)
+- `backgrounds/winter_pixel/` (10 слоёв)
+- `backgrounds/winternight/` (5 слоёв)
+- `backgrounds/halloween/` (11 слоёв)
+
+#### 4. Рефакторинг `scripts/maps/map_base.gd`
+- Удалён большой `const BG_THEMES := {...}` (~60 строк конфига старых тем)
+  и хелпер `_get_theme_layers` + кэш `_bg_layer_cache`.
+- Удалены все `_draw_dz_*` функции (lava, void, abyss, stars, spikes, swamp,
+  mist, default) + `_draw_themed_danger_zones` + `_draw_danger_rect` +
+  `_dz_soft_edge` (~240 строк).
+- Удалены `bg_theme`, `death_zone_style` — больше не используются.
+- Добавлен новый **per-map** массив `bg_layers: Array` c полями
+  `{path, scroll, mode, y, scale, tint}`. `scroll=0` = слой залочен на экран
+  (небо); `scroll=1` = залочен на мир (передний план). Режимы:
+  `fill` (1 растянутая копия), `bottom_tile`, `top_tile`.
+- Новая функция `_draw_parallax_background()` читает `bg_layers` и рисует
+  слои через `draw_texture_rect` с tile=true и parallax-сдвигом.
+- Новая функция `_draw_water_floor()` — тайлит `water.png` снизу на всю
+  ширину карты как анимированную полосу + глубокий тёмно-синий fill ниже
+  + soft fade на верхней кромке.
+- Новая функция `_draw_side_vignette()` — вертикальные полосы чёрного
+  alpha-градиента слева/справа (по `danger_left`/`danger_right`), затухание
+  внутрь карты.
+- Изменён порядок `_draw()`: bg → platforms → objects → **water снизу +
+  вертикальные vignette по бокам** (borders рисуются поверх всего).
+- `queue_redraw()` теперь дёргается каждый кадр (анимированная вода +
+  параллакс требуют постоянного обновления).
+
+#### 5. Семь новых карт (scripts/maps + scenes/maps)
+| Карта | Фон-тема | Платформы |
+|-------|----------|-----------|
+| Forest Glade   | forest_blue  | stone    |
+| Desert Dunes   | desert       | sand     |
+| Iceberg Bay    | iceberg      | lava_ice |
+| Ocean Shore    | ocean        | sand     |
+| Winter Valley  | winter_pixel | stone (low-friction) |
+| Winter Night   | winternight  | wood     |
+| Haunted Castle | halloween    | stone    |
+
+Каждая карта: `map_rect=4500x2800`, `danger_left/right=280`,
+`danger_bottom=420` (вода), `danger_top=0`. Layout — 8-9 платформ
+симметрично, 4 spawn points. scroll-factors подобраны вручную под каждый
+пак (от 0.00 для неба до 0.85-0.92 для foreground).
+
+#### 6. Обновлён `scripts/main/game.gd`
+`MAP_SCENES` указывает на 7 новых `.tscn`.
+
+### Файлы
+- -8 map scripts, -8 map scenes, -16 `.uid`
+- -6 bg folders (clouds_blue, clouds_sunset, dawn, forest, nature, space)
+- -3 platform textures (grass, ice, magma) + imports
+- +7 new map scripts, +7 new map scenes
+- `map_base.gd`: ~1590 → ~1320 строк (удалено ~430, добавлено ~180)
+- `game.gd`: обновлён MAP_SCENES
+
+### Тест
+- `godot --import` прошёл без ошибок (479 шагов reimport).
+- `mcp__godot__run_project` с основной сценой — запуск без runtime errors,
+  все 7 карт компилируются (общий базовый класс), lobby → матч работает.
+- Warnings в debug-output — все pre-existing (не от моих изменений).
+
+### Что дальше
+- Визуально проверить все 7 карт в игре, затюнить scroll-factors где
+  параллакс слабо заметен.
+- Возможно заменить stretch-UV в `_draw_themed_platform` на тайлинг,
+  чтобы seamless-текстуры не сжимались на широких платформах.
+- При желании — извлечь ground-texture из SVG
+  `my_assets/maps/platform/b6id06lfemo6b5wof.svg` (отложено, текущих 5
+  PNG достаточно).
+
+### Ветка
+`feature/maps-rebuild-parallax` — для возможности отката.
+
+---
+
 ## 2026-04-20 — feat(ui): текстурные иконки способностей вместо процедурных эмблем
 
 ### Запрос пользователя
