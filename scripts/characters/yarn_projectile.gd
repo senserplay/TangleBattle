@@ -1,5 +1,7 @@
 extends Area2D
 
+const ProjectileSprites := preload("res://scripts/characters/projectile_sprites.gd")
+
 var owner_id: int = -1
 var owner_ref: Node = null  # reference to owner player for passives
 var direction: Vector2 = Vector2.RIGHT
@@ -135,19 +137,16 @@ func _on_body_entered(body: Node2D) -> void:
 
 
 func _draw() -> void:
-	# Trail
+	# Trail — tinted glow orbs that fade with distance.
 	for i in range(trail_points.size()):
 		var local_pos: Vector2 = trail_points[i] - global_position
 		var t := 1.0 - float(i) / TRAIL_MAX
-		var r := 10.0 * t
-		var alpha := 0.4 * t
-		draw_circle(local_pos, r, Color(color.r, color.g, color.b, alpha))
+		var r := 14.0 * t
+		var alpha := 0.45 * t
+		draw_circle(local_pos, r,
+			Color(color.r, color.g, color.b, alpha))
 
-	# Body
-	draw_circle(Vector2.ZERO, 12.0, color)
-	# Shine
-	draw_circle(Vector2(-3, -3), 4.0, Color(1, 1, 1, 0.4))
-	# Yarn pattern
-	var dark := color.darkened(0.3)
-	draw_line(Vector2(-5, -3), Vector2(5, 3), dark, 2.0)
-	draw_line(Vector2(-4, 4), Vector2(4, -4), dark, 2.0)
+	# Textured yarn ball body. direction.angle() keeps the built-in
+	# motion blur lines trailing behind the ball as it moves.
+	var ang: float = direction.angle()
+	ProjectileSprites.draw_single(self, "yarn_toss.png", 48.0, ang, color)

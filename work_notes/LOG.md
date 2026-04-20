@@ -1,5 +1,86 @@
 # TangleBattle — Рабочий лог
 
+## 2026-04-20 — feat(vfx): текстурные снаряды и VFX для 8 способностей
+
+### Запрос
+Пользователь положил в `my_assets/Анимации снарядов/` папку с текстурами
+для снарядов и эффектов. Задача — интегрировать их "по красоте".
+
+### Ассеты (9 PNG)
+| Файл                   | Размер     | Тип                          |
+|------------------------|------------|------------------------------|
+| yarn toss.png          | 1024×1024  | single — катящийся клубок    |
+| grenade.png            | 1024×1024  | single — клубок-граната      |
+| boomerang.png          | 1024×1024  | single — вращающийся X       |
+| heavens_wrath.png      | 528×1984   | single — вертикальный луч    |
+| black hole.png         | 2544×416   | 6-frame — растущая воронка   |
+| Stink cloud.png        | 2549×416   | 6-frame — облако газа растёт |
+| portal gate.png        | 2320×464   | 5-frame — открытие портала   |
+| Swap(pers).png         | 2320×464   | 5-frame — звёздная вспышка   |
+| Thread Pull.png        | 1408×768   | атлас канатов (пока не вшит) |
+
+### Компоненты
+
+#### 1. `scripts/characters/projectile_sprites.gd` — helper
+Ленивый кэш текстур + три API:
+- `draw_single(ci, name, display_w, rotation, modulate, flip_h)` — одно
+  изображение центрировано на (0,0)
+- `draw_frame(ci, name, frame_count, frame, display_w, rotation, modulate)`
+  — кадр из горизонтального sprite sheet'а
+- `draw_vframe(...)` — кадр из вертикального sprite sheet'а (задел)
+
+#### 2. Интеграция
+
+**`yarn_projectile.gd`** — clubок-текстура 48px, вращается по `direction.angle()`,
+трейл из 14px orbs (было 10px).
+
+**`grenade.gd`** — граната-текстура 40px, slow-spin по `timer * 4`,
+flash-модуляция цвета перед взрывом.
+
+**`boomerang.gd`** — вращается по `spin`, тинтуется под цвет владельца,
+трейл 10px.
+
+**`heavens_wrath.gd`** — заменены три `draw_rect` (core/glow/outer) на
+`draw_texture_rect` с heavens_wrath.png; beam_width = `pw * 1.8`,
+сохранены leading-edge flash и impact ring. Для impact-phase та же
+текстура с `alpha`-модуляцией, для fading-phase — тонкий 1.0*pw с
+мягким alpha.
+
+**`black_hole.gd`** — 6-frame sprite sheet, frame = `growth * 6`,
+поверх rotate 0.9 rad/s для лишней динамики. Убраны core/dark_fill/
+accretion_disk rects (текстура их заменяет). Оставлены:
+- 14 частиц, затягиваемых в центр (motion juice)
+- warning ring во время expand phase
+
+**`stink_cloud.gd`** — 6-frame sprite sheet, growth progress over 0.8s,
+display_w растёт с `pulse`. Убраны 4 concentric circle fills. Оставлены
+10 летающих toxin-motes поверх.
+
+**`player.gd::has_portal_gate marker`** — вместо procedural circle+arcs
+показывается frame 2..4 из portal_gate.png, циклически пульсируя
+между формированиями портала. Сохранены 6 sparkle-частиц вокруг.
+
+**`player.gd::_vfx_swap_line`** — swap.png 5-frame на ОБЕИХ концах
+(player + target), frame = `(1-t) * 5` (звезда → открытое кольцо).
+Сохранён zigzag-trail между ними.
+
+### Файлы
+- `assets/textures/effects/projectiles/*.png` (новые, 9 штук + imports)
+- `scripts/characters/projectile_sprites.gd` (новый, ~90 строк)
+- `scripts/characters/yarn_projectile.gd`, `grenade.gd`, `boomerang.gd`,
+  `heavens_wrath.gd`, `black_hole.gd`, `stink_cloud.gd`, `player.gd`
+  (применён helper)
+
+### Тест
+- `mcp__godot__run_project` — без ошибок.
+
+### Что дальше (nice-to-have)
+- `thread_pull.png` атлас — обрезать подписи-labels, вшить в grapple
+  rope для грэппла (сейчас draw_line).
+- Добавить impact-explosion текстуру для гранаты (нужен отдельный ассет).
+
+---
+
 ## 2026-04-20 — tweak(ui): увеличены иконки способностей над персонажем
 
 ### Запрос

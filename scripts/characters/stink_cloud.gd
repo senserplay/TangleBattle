@@ -1,4 +1,6 @@
 extends Node2D
+
+const ProjectileSprites := preload("res://scripts/characters/projectile_sprites.gd")
 ## Stationary poison cloud. Poisons enemies who enter.
 
 var owner_id: int = -1
@@ -92,33 +94,25 @@ func _run_poison(player: CharacterBody2D, pid: int) -> void:
 
 func _draw() -> void:
 	var fade := clampf(lifetime / 0.5, 0.0, 1.0)  # fade out last 0.5s
-	var pulse := sin(time_alive * 4.0) * 0.03 + 1.0
+	var pulse := sin(time_alive * 4.0) * 0.04 + 1.0
 
-	# Outer cloud
-	var r := cloud_radius * pulse
-	var col := Color(0.2, 0.7, 0.1, 0.08 * fade)
-	draw_circle(Vector2.ZERO, r, col)
+	# Animated 6-frame cloud sprite — growth during the first 0.8s,
+	# then hold the fully-expanded frame until lifetime runs out.
+	var growth: float = clampf(time_alive / 0.8, 0.0, 1.0)
+	var frame: int = clampi(int(growth * 6.0), 0, 5)
+	var display_w: float = cloud_radius * 2.1 * pulse
+	ProjectileSprites.draw_frame(self, "stink_cloud.png", 6, frame,
+		display_w, 0.0, Color(1, 1, 1, fade))
 
-	# Middle layer
-	draw_circle(Vector2.ZERO, r * 0.7, Color(0.25, 0.75, 0.1, 0.1 * fade))
-
-	# Inner core
-	draw_circle(Vector2.ZERO, r * 0.35, Color(0.3, 0.8, 0.15, 0.12 * fade))
-
-	# Edge ring
-	draw_arc(
-		Vector2.ZERO, r, 0.0, TAU, 32,
-		Color(0.3, 0.8, 0.1, 0.15 * fade), 2.0
-	)
-
-	# Floating particles
-	for i in range(12):
-		var angle := time_alive * (0.5 + i * 0.15) + i * TAU / 12.0
-		var dist := r * (0.3 + fmod(i * 0.17, 0.5))
+	# Floating toxin motes on top for motion juice.
+	var r: float = cloud_radius * pulse
+	for i in range(10):
+		var angle := time_alive * (0.5 + i * 0.15) + i * TAU / 10.0
+		var dist := r * (0.35 + fmod(i * 0.17, 0.45))
 		var px := cos(angle) * dist
 		var py := sin(angle) * dist
 		var ps := 3.0 + sin(time_alive * 2.0 + i) * 1.5
 		draw_circle(
 			Vector2(px, py), ps,
-			Color(0.3, 0.85, 0.15, 0.2 * fade)
+			Color(0.4, 0.95, 0.25, 0.28 * fade)
 		)
