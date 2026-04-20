@@ -2,16 +2,16 @@
 
 importer="texture"
 type="CompressedTexture2D"
-uid="uid://b3j1g4q38l7qg"
-path="res://.godot/imported/portal_gate.png-1ef86ac460acf2f4c86f1be9837ab9c4.ctex"
+uid="uid://cgn72nm1ttp36"
+path="res://.godot/imported/swap_1.png-c4d8ee8a8c462d947921c6f05cebab72.ctex"
 metadata={
 "vram_texture": false
 }
 
 [deps]
 
-source_file="res://assets/textures/effects/projectiles/portal_gate.png"
-dest_files=["res://.godot/imported/portal_gate.png-1ef86ac460acf2f4c86f1be9837ab9c4.ctex"]
+source_file="res://assets/textures/effects/projectiles/swap_1.png"
+dest_files=["res://.godot/imported/swap_1.png-c4d8ee8a8c462d947921c6f05cebab72.ctex"]
 
 [params]
 

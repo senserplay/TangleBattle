@@ -107,13 +107,14 @@ func _draw() -> void:
 
 	var time_val := time_alive * 2.0
 
-	# Animated vortex sprite: 6 frames of growing spiral, frame picked
-	# by the current radius / max_radius progression.
+	# Animated vortex sprite — 6 individual per-frame PNGs, each trimmed
+	# & centered on content. Frame picked by growth progress. Continuous
+	# rotation adds extra motion on top of the sprite's baked swirl.
 	var growth: float = clampf(current_radius / max_radius, 0.0, 1.0)
 	var frame: int = clampi(int(growth * 6.0), 0, 5)
-	# Continuous rotation in addition to the sprite's internal swirl.
 	var rot: float = time_alive * 0.9
-	ProjectileSprites.draw_frame(self, "black_hole.png", 6, frame,
+	var tex_name: String = "black_hole_%d.png" % frame
+	ProjectileSprites.draw_single(self, tex_name,
 		current_radius * 2.4, rot, Color(1, 1, 1, fade))
 
 	# Extra particle pulls for motion juice (on top of the sprite).

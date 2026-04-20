@@ -96,12 +96,13 @@ func _draw() -> void:
 	var fade := clampf(lifetime / 0.5, 0.0, 1.0)  # fade out last 0.5s
 	var pulse := sin(time_alive * 4.0) * 0.04 + 1.0
 
-	# Animated 6-frame cloud sprite — growth during the first 0.8s,
-	# then hold the fully-expanded frame until lifetime runs out.
+	# Animated 6-frame cloud, per-frame PNGs trimmed+centered on content.
+	# Growth during first 0.8s, then hold final frame.
 	var growth: float = clampf(time_alive / 0.8, 0.0, 1.0)
 	var frame: int = clampi(int(growth * 6.0), 0, 5)
 	var display_w: float = cloud_radius * 2.1 * pulse
-	ProjectileSprites.draw_frame(self, "stink_cloud.png", 6, frame,
+	var tex_name: String = "stink_cloud_%d.png" % frame
+	ProjectileSprites.draw_single(self, tex_name,
 		display_w, 0.0, Color(1, 1, 1, fade))
 
 	# Floating toxin motes on top for motion juice.

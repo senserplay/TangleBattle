@@ -1875,17 +1875,16 @@ func _draw() -> void:
 		draw_arc(grab_to, gr_r, 0.0, TAU, 16,
 			Color(gc.r, gc.g, gc.b, pulse), 2.0)
 
-	# Portal Gate marker — animated 5-frame portal sprite, breathing
-	# slowly between the two "open" frames.
+	# Portal Gate marker — per-frame PNG sprite cycling through formed
+	# states (frames 2..4) for a breathing idle.
 	if has_portal_gate:
 		var pg: Vector2 = portal_gate_pos - global_position
 		var pg_time := float(Engine.get_physics_frames()) * 0.02
-		# Loop over frames 2..4 (the formed-portal frames) for a breathing
-		# idle cycle.
 		var phase: float = fmod(pg_time, 2.4) / 2.4
 		var frame_idx: int = 2 + int(phase * 3.0) % 3
 		draw_set_transform(pg, 0.0, Vector2.ONE)
-		ProjectileSprites.draw_frame(self, "portal_gate.png", 5, frame_idx,
+		var tex_name: String = "portal_gate_%d.png" % frame_idx
+		ProjectileSprites.draw_single(self, tex_name,
 			180.0, 0.0, Color(1, 1, 1, 0.95))
 		draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
 		# Sparkles around the portal for extra shine.

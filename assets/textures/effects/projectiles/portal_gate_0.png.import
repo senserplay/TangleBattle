@@ -2,16 +2,16 @@
 
 importer="texture"
 type="CompressedTexture2D"
-uid="uid://xb45t4wnbv7f"
-path="res://.godot/imported/black_hole.png-07a45ff8d48a29a2c4febbaa8e1967da.ctex"
+uid="uid://ch6e6qv550t7f"
+path="res://.godot/imported/portal_gate_0.png-94a8d99107e35423ba0c85c571369549.ctex"
 metadata={
 "vram_texture": false
 }
 
 [deps]
 
-source_file="res://assets/textures/effects/projectiles/black_hole.png"
-dest_files=["res://.godot/imported/black_hole.png-07a45ff8d48a29a2c4febbaa8e1967da.ctex"]
+source_file="res://assets/textures/effects/projectiles/portal_gate_0.png"
+dest_files=["res://.godot/imported/portal_gate_0.png-94a8d99107e35423ba0c85c571369549.ctex"]
 
 [params]
 

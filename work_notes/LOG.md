@@ -1,5 +1,88 @@
 # TangleBattle — Рабочий лог
 
+## 2026-04-20 — fix(vfx): per-frame PNG + центровка + телепорт в world-space
+
+### Жалобы пользователя
+1. Исходные sprite-sheet'ы — не чистые PNG: в них **painted checkerboard**
+   (painted, не alpha=0). Нужно физически вырезать кадры, очистить фон
+   и сохранить как отдельные PNG-и.
+2. black_hole / stink_cloud (и всё animated) — центр контента НЕ
+   совпадал с центром cell'а → ядро было смещено.
+3. Анимация телепорта (swap/portal_gate) **следовала за игроком**, а
+   должна оставаться в точке телепорта.
+
+### Причина (центровка)
+Мой `draw_frame` брал cell `(frame_w*i, 0, frame_w*(i+1), h)` из атласа.
+Внутри cell'а контент был сдвинут к одной стороне (мелкие кадры стояли
+слева), и `draw_texture_rect_region` с центрированием рисовал cell-rect
+центрированным — но КОНТЕНТ внутри оказывался off-center.
+
+### Причина (teleport follow)
+`player._add_vfx("swap_line", 0.4, ...)` добавлял VFX в массив эффектов
+**игрока**. Когда игрок двигался после swap'а, `_draw_vfx` рисовал с
+локальных координат = player's current position. Эффект "ехал" с игроком.
+
+### Фиксы
+
+#### 1. Python-скрипт: extract + clean + trim
+Python/PIL скрипт:
+- Убирает painted checkerboard chroma-key'ом (grey с `max-min <= 14` в
+  brightness range `[45, 175]`) → эти пиксели становятся `alpha=0`.
+- Вырезает каждый frame cell с **inner margin=4** (предотвращает
+  frame-to-frame bleed).
+- Каждую ячейку обрезает до bbox непрозрачного контента + `inflate=2`
+  (сохраняет AA-кромку).
+- Trim_bottom=50 на portal_gate (обрезает "30px/50px" labels).
+
+Итоговые размеры: `stink_cloud_0=60×62` (тиx2) → `stink_cloud_5=375×389`;
+`portal_gate_0=161×164` → `portal_gate_2=330×356` (без labels); и т.д.
+Каждый PNG теперь имеет контент **по центру своего изображения**.
+
+Старые монолитные `black_hole.png`, `stink_cloud.png`, `portal_gate.png`,
+`swap.png` удалены.
+
+#### 2. Код перешёл с `draw_frame` на `draw_single`
+В `black_hole.gd` / `stink_cloud.gd` / `player.gd::portal_gate marker`:
+```
+var tex_name: String = "black_hole_%d.png" % frame
+ProjectileSprites.draw_single(self, tex_name, display_w, rot, modulate)
+```
+`draw_single` центрирует изображение на `(0,0)` локальной системы,
+что теперь ГАРАНТИРУЕТ центровку контента.
+
+#### 3. `scripts/effects/swap_effect.gd` — standalone Node2D
+Отдельный `Node2D` со скриптом. Static-метод `spawn(parent, world_pos)`
+создаёт ноду в сцене на фиксированной мировой позиции. Внутренне
+проигрывает 5-frame swap-анимацию (`swap_0..4.png`) за `DURATION=0.45s`
+с fade, затем `queue_free()`.
+
+`_ab_swap()`:
+```
+SwapEffect.spawn(current_scene, my_pos)
+SwapEffect.spawn(current_scene, their_pos)
+```
+— burst спавнится в ОБЕИХ исходных позициях. Игроки swap'ятся, эффект
+остаётся на месте.
+
+`_ab_portal_gate()`: аналогично spawn в `pos_a` и `pos_b`.
+
+Оба удалили зависимость от `player._add_vfx("swap_line", ...)`.
+`_vfx_swap_line` остался как dead code (безопаснее не трогать).
+
+### Файлы
+- `assets/textures/effects/projectiles/*_N.png` — 22 новых per-frame
+  PNG (+ удалены 4 монолитных sheet'а + imports)
+- `scripts/effects/swap_effect.gd` — новый, ~35 строк
+- `scripts/characters/black_hole.gd`, `stink_cloud.gd`, `player.gd`
+  (portal marker) — на `draw_single` с индексированным именем
+- `scripts/characters/player_abilities.gd` — swap/portal spawn через
+  SwapEffect в world-пространстве
+
+### Тест
+- `mcp__godot__run_project` — без ошибок. Все warnings pre-existing.
+
+---
+
 ## 2026-04-20 — fix(vfx): переименование projectile_sprites._get → _get_tex
 
 ### Проблема

@@ -2,16 +2,16 @@
 
 importer="texture"
 type="CompressedTexture2D"
-uid="uid://8gvx7542swdl"
-path="res://.godot/imported/swap.png-c1a075d8c35049e1259a73ef8ff2d980.ctex"
+uid="uid://tpe1rw6odc2i"
+path="res://.godot/imported/stink_cloud_0.png-8b44367a4c8c27aeb3b5ab99625366d3.ctex"
 metadata={
 "vram_texture": false
 }
 
 [deps]
 
-source_file="res://assets/textures/effects/projectiles/swap.png"
-dest_files=["res://.godot/imported/swap.png-c1a075d8c35049e1259a73ef8ff2d980.ctex"]
+source_file="res://assets/textures/effects/projectiles/stink_cloud_0.png"
+dest_files=["res://.godot/imported/stink_cloud_0.png-8b44367a4c8c27aeb3b5ab99625366d3.ctex"]
 
 [params]
 
