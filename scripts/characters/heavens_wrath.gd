@@ -137,7 +137,7 @@ func _draw() -> void:
 		var pw: float = p["w"]
 		var phase: String = p["phase"]
 
-		var tex := ProjectileSprites._get("heavens_wrath.png")
+		var tex := ProjectileSprites._get_tex("heavens_wrath.png")
 		if phase == "falling":
 			# Light beam falling from sky — use the vertical beam texture
 			var beam_top: float = map_top

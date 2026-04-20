@@ -12,14 +12,14 @@ const DIR := "res://assets/textures/effects/projectiles/"
 static var _cache: Dictionary = {}
 
 
-static func _get(name: String) -> Texture2D:
-	if _cache.has(name):
-		return _cache[name]
-	var path: String = DIR + name
+static func _get_tex(tex_name: String) -> Texture2D:
+	if _cache.has(tex_name):
+		return _cache[tex_name]
+	var path: String = DIR + tex_name
 	var tex: Texture2D = null
 	if ResourceLoader.exists(path):
 		tex = load(path)
-	_cache[name] = tex
+	_cache[tex_name] = tex
 	return tex
 
 
@@ -30,12 +30,11 @@ static func draw_single(
 	rotation: float = 0.0, modulate: Color = Color.WHITE,
 	flip_h: bool = false
 ) -> void:
-	var tex: Texture2D = _get(tex_name)
+	var tex: Texture2D = _get_tex(tex_name)
 	if tex == null:
 		return
 	var native: Vector2 = tex.get_size()
 	var scl: float = display_w / native.x
-	var size: Vector2 = native * scl
 	ci.draw_set_transform(Vector2.ZERO, rotation,
 		Vector2(-scl if flip_h else scl, scl))
 	ci.draw_texture_rect(
@@ -53,7 +52,7 @@ static func draw_frame(
 	display_w: float, rotation: float = 0.0,
 	modulate: Color = Color.WHITE
 ) -> void:
-	var tex: Texture2D = _get(tex_name)
+	var tex: Texture2D = _get_tex(tex_name)
 	if tex == null or frame_count <= 0:
 		return
 	var native: Vector2 = tex.get_size()
@@ -80,7 +79,7 @@ static func draw_vframe(
 	display_h: float, rotation: float = 0.0,
 	modulate: Color = Color.WHITE
 ) -> void:
-	var tex: Texture2D = _get(tex_name)
+	var tex: Texture2D = _get_tex(tex_name)
 	if tex == null or frame_count <= 0:
 		return
 	var native: Vector2 = tex.get_size()
