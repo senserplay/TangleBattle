@@ -330,22 +330,33 @@ func _draw_parallax_background() -> void:
 				)
 				draw_texture_rect(tex, dst, false, tint)
 			"bottom_tile":
-				var y_top := map_rect.end.y + y_off - tex_size.y \
+				# Auto-scale layer so its height covers the full map (+ buffer
+				# for parallax overshoot), preserving aspect ratio. If the user
+				# set `scale` bigger than the auto-fit, honor it.
+				var cover_h: float = map_rect.size.y + 1200.0
+				var auto_scale: float = cover_h / tex.get_size().y
+				var eff_scale: float = maxf(tex_scale, auto_scale)
+				var eff_size: Vector2 = tex.get_size() * eff_scale
+				var y_top := map_rect.end.y + y_off - eff_size.y \
 					+ parallax.y * 0.35
 				var band_w := map_rect.size.x + 8000.0
 				var x_start := map_rect.position.x - 4000.0 \
-					+ fmod(parallax.x, tex_size.x) - tex_size.x
+					+ fmod(parallax.x, eff_size.x) - eff_size.x
 				var dst := Rect2(Vector2(x_start, y_top),
-					Vector2(band_w + tex_size.x * 2, tex_size.y))
+					Vector2(band_w + eff_size.x * 2.0, eff_size.y))
 				draw_texture_rect(tex, dst, true, tint)
 			"top_tile":
+				var cover_h: float = map_rect.size.y + 1200.0
+				var auto_scale: float = cover_h / tex.get_size().y
+				var eff_scale: float = maxf(tex_scale, auto_scale)
+				var eff_size: Vector2 = tex.get_size() * eff_scale
 				var y_top := map_rect.position.y + y_off \
 					+ parallax.y * 0.35
 				var band_w := map_rect.size.x + 8000.0
 				var x_start := map_rect.position.x - 4000.0 \
-					+ fmod(parallax.x, tex_size.x) - tex_size.x
+					+ fmod(parallax.x, eff_size.x) - eff_size.x
 				var dst := Rect2(Vector2(x_start, y_top),
-					Vector2(band_w + tex_size.x * 2, tex_size.y))
+					Vector2(band_w + eff_size.x * 2.0, eff_size.y))
 				draw_texture_rect(tex, dst, true, tint)
 
 
@@ -566,12 +577,13 @@ func _draw_themed_platform(
 
 	var hw := w / 2.0
 	var hh := h / 2.0
-	var r := minf(hh, hw * 0.15)
-	r = clampf(r, 4.0, 20.0)
+	# Use a larger corner radius so rounding reads clearly on short platforms.
+	var r := minf(hh * 0.95, h * 0.45)
+	r = clampf(r, 6.0, 26.0)
 
-	# Build rounded-rect polygon (capsule)
+	# 1. Build the rounded capsule polygon.
 	var pts: PackedVector2Array = []
-	var segs := 6
+	var segs := 8
 	for i in range(segs + 1):
 		var a := PI + float(i) / segs * (PI / 2.0)
 		pts.append(Vector2(cx - hw + r + cos(a) * r, cy - hh + r + sin(a) * r))
@@ -585,31 +597,55 @@ func _draw_themed_platform(
 		var a := PI / 2.0 + float(i) / segs * (PI / 2.0)
 		pts.append(Vector2(cx - hw + r + cos(a) * r, cy + hh - r + sin(a) * r))
 
-	# UVs: stretch-to-fit the entire texture across the platform.
-	# This avoids visible repeat-seams that appeared when wide platforms
-	# tiled the texture multiple times.
-	var uvs: PackedVector2Array = []
-	for p in pts:
-		var u: float = (p.x - (cx - hw)) / w
-		var v: float = (p.y - (cy - hh)) / h
-		uvs.append(Vector2(u, v))
+	# 2. Solid rounded base. Fills rounded corners where the tiled strip
+	#    can't reach; shows through as the platform's "frame".
+	draw_colored_polygon(pts, platform_color)
 
-	var colors := PackedColorArray([Color.WHITE])
-	draw_polygon(pts, colors, uvs, tex)
+	# 3. Tile the seamless strip horizontally at a scale that fits platform
+	#    height, preserving aspect ratio. Width wraps = copies of the
+	#    same texture side by side (no stretching).
+	var tex_native: Vector2 = tex.get_size()
+	# Scale so texture height = platform height (+ tiny overshoot)
+	var scl: float = (h + 4.0) / tex_native.y
+	var tile_w: float = tex_native.x * scl
+	var tile_h: float = tex_native.y * scl
+	# Keep solid color visible at the rounded ends by insetting the tile band
+	var inset_x: float = r * 0.65
+	var inset_y: float = 0.0
+	var inner_x: float = cx - hw + inset_x
+	var inner_y: float = cy - hh + inset_y - 2.0
+	var inner_w: float = w - inset_x * 2.0
+	if inner_w <= 1.0:
+		# Extremely narrow platform — skip tiling, solid color only.
+		pass
+	else:
+		var n_tiles: int = int(ceil(inner_w / tile_w))
+		for i in range(n_tiles):
+			var tx: float = inner_x + i * tile_w
+			var remain: float = (inner_x + inner_w) - tx
+			var draw_w: float = minf(tile_w, remain)
+			# Region in texture space = draw_w / scl, full height
+			var region := Rect2(
+				Vector2(0.0, 0.0),
+				Vector2(draw_w / scl, tex_native.y)
+			)
+			draw_texture_rect_region(
+				tex,
+				Rect2(Vector2(tx, inner_y), Vector2(draw_w, tile_h)),
+				region,
+				Color.WHITE
+			)
 
-	# Edge outline + top highlight + bottom shadow for crisp readability
+	# 4. Edge outline + top highlight + bottom shadow.
 	var edge: Color = _get_palette_edge(palette)
-	# Outline
 	for i in range(pts.size()):
 		var i2 := (i + 1) % pts.size()
-		draw_line(pts[i], pts[i2], edge, 1.5)
-	# Top highlight
+		draw_line(pts[i], pts[i2], edge, 2.0)
 	draw_line(
 		Vector2(cx - hw + r, cy - hh),
 		Vector2(cx + hw - r, cy - hh),
 		edge.lightened(0.35), 2.0
 	)
-	# Bottom shadow
 	draw_line(
 		Vector2(cx - hw + r, cy + hh),
 		Vector2(cx + hw - r, cy + hh),
