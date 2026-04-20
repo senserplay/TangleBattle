@@ -1,5 +1,52 @@
 # TangleBattle — Рабочий лог
 
+## 2026-04-20 — fix(maps): откат split-polygon → single UV-wrap polygon + base fill
+
+### Жалоба пользователя (скриншот)
+Split-polygon подход не сработал: (1) на rounded-arc нет текстуры,
+(2) между секциями тонкий разрыв.
+
+### Причины
+- arc в первой секции покрывал крошечный UV-slice `[0, r/width]` =
+  `[0, 0.06]` — 120 колонок текстуры сжимались в 14-пиксельный arc,
+  визуально читалось как "пустое".
+- Joints между соседними `draw_polygon` вызовами имеют anti-alias
+  edge-falloff (обе стороны alpha-fade к 0), получается 1-2px
+  полупрозрачный зазор, сквозь который проглядывает фон карты.
+
+### Фикс — откат к single polygon + GPU texture_repeat + solid base
+
+В `_ready()` ставится `texture_repeat = CanvasItem.TEXTURE_REPEAT_ENABLED`.
+GPU семплер (GL_REPEAT) честно оборачивает UV > 1 на уровне
+аппаратной выборки с LINEAR-фильтром — при этом pixel[0]=pixel[tex_w-1]
+(seamless) гарантирует, что по обе стороны UV=N·1.0 усреднение
+двух текселов даёт одинаковый цвет.
+
+`_draw_themed_platform` — один вызов:
+1. `draw_colored_polygon(pts, platform_color)` — базовая подложка на
+   случай, если anti-alias на скруглении даст 1px разрыв (через него
+   будет видно platform_color, близкий к усреднённому цвету текстуры).
+2. `draw_polygon(pts, WHITE, uvs, tex)` — **один** полигон на всю
+   скруглённую капсулу, UV.x `0..u_max` (тайлы через GL_REPEAT),
+   UV.y `0..1` (без вертикального wrap).
+3. Outline + top highlight + bottom shadow.
+
+Helper `_build_rounded_rect_pts` + `_draw_platform_section` удалены
+(больше не нужны).
+
+### Файлы
+- `scripts/maps/map_base.gd` (+8 / -128 — чистый упрощённый код)
+
+### Тест
+- `mcp__godot__run_project` — без ошибок.
+
+### Что дальше если gap всё ещё виден
+→ создать child-Node2D с `texture_filter = NEAREST` только для платформ,
+это полностью убивает bilinear-bleed любой природы (ценой чуть более
+пикселизированного вида текстуры).
+
+---
+
 ## 2026-04-20 — fix(maps): split-polygon тайлы + снятие шейдера + cap 4×
 
 ### Жалобы пользователя

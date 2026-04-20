@@ -86,12 +86,13 @@ var global_shrink_timer: float = 0.0
 
 
 func _ready() -> void:
-	# The custom-shader approach caused washed-out bgs (shader-level
-	# sampling broke draw_texture_rect for bg layers). Platforms now
-	# render as a chain of rounded polygons, each one tile wide, with
-	# UVs in [0..1] — no UV wrap needed at all, and joints between
-	# sections are invisible because the source strip textures are
-	# pixel-seamless at their left/right columns.
+	# Enable GPU-level texture repeat for this CanvasItem. A single
+	# draw_polygon renders the full rounded capsule with UVs 0..N (N =
+	# number of tile copies); the GPU sampler wraps UV > 1.0 natively
+	# via GL_REPEAT. The strip textures are pixel-identical at col 0 vs
+	# col tex_w-1 (verified), so LINEAR filter samples the same pair on
+	# both sides of each tile boundary — zero visible seam.
+	texture_repeat = CanvasItem.TEXTURE_REPEAT_ENABLED
 	for data in platforms:
 		if data.size() > 4 and data[4] is String and data[4] == "sticky":
 			_create_platform(data[0], data[1], data[2], data[3], false)
@@ -602,47 +603,43 @@ func _draw_themed_platform(
 	r = clampf(r, 6.0, 26.0)
 	var segs := 12
 
-	# Aspect-preserve tile width: 1 tile at platform height.
+	# Build the full rounded capsule polygon.
+	var pts: PackedVector2Array = []
+	for i in range(segs + 1):
+		var a := PI + float(i) / segs * (PI / 2.0)
+		pts.append(Vector2(cx - hw + r + cos(a) * r, cy - hh + r + sin(a) * r))
+	for i in range(segs + 1):
+		var a := -PI / 2.0 + float(i) / segs * (PI / 2.0)
+		pts.append(Vector2(cx + hw - r + cos(a) * r, cy - hh + r + sin(a) * r))
+	for i in range(segs + 1):
+		var a := 0.0 + float(i) / segs * (PI / 2.0)
+		pts.append(Vector2(cx + hw - r + cos(a) * r, cy + hh - r + sin(a) * r))
+	for i in range(segs + 1):
+		var a := PI / 2.0 + float(i) / segs * (PI / 2.0)
+		pts.append(Vector2(cx - hw + r + cos(a) * r, cy + hh - r + sin(a) * r))
+
+	# Solid base fill underneath the polygon — guards against any 1-px
+	# anti-alias falloff on the rounded arc edges; the color is chosen
+	# to blend with the texture's dominant mid-tone so hairline joints
+	# disappear under it.
+	draw_colored_polygon(pts, platform_color)
+
+	# One textured polygon spanning the WHOLE capsule (including the
+	# rounded corners). UV.x goes 0..u_max where u_max = w / tile_w;
+	# GPU sampler wraps UV>1 via GL_REPEAT (texture_repeat=ENABLED in
+	# _ready). UV.y goes 0..1 across platform height.
 	var tex_size: Vector2 = tex.get_size()
 	var scl: float = h / tex_size.y
-	var tile_w: float = tex_size.x * scl  # world px per full texture copy
-	# Integer tile count: fit as many FULL copies as possible, plus one
-	# partial tile on the right for the remainder.
-	var n_full: int = int(floor(w / tile_w))
-	var leftover: float = w - n_full * tile_w
+	var tile_w: float = tex_size.x * scl
+	var u_max: float = w / tile_w
+	var uvs: PackedVector2Array = []
+	for p in pts:
+		var u: float = ((p.x - (cx - hw)) / w) * u_max
+		var v: float = (p.y - (cy - hh)) / h
+		uvs.append(Vector2(u, v))
+	draw_polygon(pts, PackedColorArray([Color.WHITE]), uvs, tex)
 
-	# Render the platform as a chain of sections drawn left→right. Each
-	# section is a rounded-polygon panel with UVs fixed in [0..1] — no UV
-	# wrap needed, and joints between sections are invisible because the
-	# source strip texture is pixel-seamless (pixel[0]==pixel[tex_w-1]).
-	var left_x: float = cx - hw
-	var colors := PackedColorArray([Color.WHITE])
-
-	# Section X ranges:
-	#   [left_x, left_x + tile_w] × n_full times
-	#   [..., left_x + w] — leftover partial tile (may be 0)
-	for i in range(n_full):
-		var sx: float = left_x + i * tile_w
-		var sx_end: float = sx + tile_w
-		_draw_platform_section(
-			tex, sx, sx_end, cy - hh, cy + hh, r, segs,
-			i == 0, i == n_full - 1 and leftover < 1.0,
-			0.0, 1.0, colors
-		)
-	if leftover >= 1.0:
-		var sx_left: float = left_x + n_full * tile_w
-		var sx_right: float = cx + hw
-		var u_right: float = leftover / tile_w  # partial U in [0..1]
-		_draw_platform_section(
-			tex, sx_left, sx_right, cy - hh, cy + hh, r, segs,
-			n_full == 0, true,
-			0.0, u_right, colors
-		)
-
-	# Rebuild the full outline polygon for the border stroke + highlights.
-	var pts: PackedVector2Array = _build_rounded_rect_pts(
-		cx - hw, cy - hh, cx + hw, cy + hh, r, segs
-	)
+	# Edge outline + top highlight + bottom shadow.
 	var edge: Color = _get_palette_edge(palette)
 	for i in range(pts.size()):
 		var i2 := (i + 1) % pts.size()
@@ -657,83 +654,6 @@ func _draw_themed_platform(
 		Vector2(cx + hw - r, cy + hh),
 		edge.darkened(0.3), 2.0
 	)
-
-
-# Build a rounded-rect polygon from two opposite corners + radius.
-func _build_rounded_rect_pts(
-	x0: float, y0: float, x1: float, y1: float, r: float, segs: int
-) -> PackedVector2Array:
-	var pts: PackedVector2Array = []
-	# TL
-	for i in range(segs + 1):
-		var a := PI + float(i) / segs * (PI / 2.0)
-		pts.append(Vector2(x0 + r + cos(a) * r, y0 + r + sin(a) * r))
-	# TR
-	for i in range(segs + 1):
-		var a := -PI / 2.0 + float(i) / segs * (PI / 2.0)
-		pts.append(Vector2(x1 - r + cos(a) * r, y0 + r + sin(a) * r))
-	# BR
-	for i in range(segs + 1):
-		var a := 0.0 + float(i) / segs * (PI / 2.0)
-		pts.append(Vector2(x1 - r + cos(a) * r, y1 - r + sin(a) * r))
-	# BL
-	for i in range(segs + 1):
-		var a := PI / 2.0 + float(i) / segs * (PI / 2.0)
-		pts.append(Vector2(x0 + r + cos(a) * r, y1 - r + sin(a) * r))
-	return pts
-
-
-# Draw one section of the platform. Rounded on the left iff `round_left`,
-# rounded on the right iff `round_right`, square on the other side (so it
-# butts flush against the next section). UVs span [u0..u1] × [0..1].
-func _draw_platform_section(
-	tex: Texture2D,
-	x0: float, x1: float, y0: float, y1: float,
-	r: float, segs: int,
-	round_left: bool, round_right: bool,
-	u0: float, u1: float,
-	colors: PackedColorArray
-) -> void:
-	var pts: PackedVector2Array = []
-	# Left edge
-	if round_left:
-		for i in range(segs + 1):
-			var a := PI + float(i) / segs * (PI / 2.0)
-			pts.append(Vector2(x0 + r + cos(a) * r, y0 + r + sin(a) * r))
-	else:
-		pts.append(Vector2(x0, y0))
-	# Right edge top
-	if round_right:
-		for i in range(segs + 1):
-			var a := -PI / 2.0 + float(i) / segs * (PI / 2.0)
-			pts.append(Vector2(x1 - r + cos(a) * r, y0 + r + sin(a) * r))
-	else:
-		pts.append(Vector2(x1, y0))
-	# Right edge bottom
-	if round_right:
-		for i in range(segs + 1):
-			var a := 0.0 + float(i) / segs * (PI / 2.0)
-			pts.append(Vector2(x1 - r + cos(a) * r, y1 - r + sin(a) * r))
-	else:
-		pts.append(Vector2(x1, y1))
-	# Left edge bottom
-	if round_left:
-		for i in range(segs + 1):
-			var a := PI / 2.0 + float(i) / segs * (PI / 2.0)
-			pts.append(Vector2(x0 + r + cos(a) * r, y1 - r + sin(a) * r))
-	else:
-		pts.append(Vector2(x0, y1))
-
-	# UVs: u maps x linearly across [x0..x1] → [u0..u1]; v maps y across
-	# [y0..y1] → [0..1].
-	var width: float = x1 - x0
-	var height: float = y1 - y0
-	var uvs: PackedVector2Array = []
-	for p in pts:
-		var u: float = u0 + ((p.x - x0) / width) * (u1 - u0)
-		var v: float = (p.y - y0) / height
-		uvs.append(Vector2(u, v))
-	draw_polygon(pts, colors, uvs, tex)
 
 
 func _draw_objects() -> void:
