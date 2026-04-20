@@ -1273,6 +1273,10 @@ func die() -> void:
 	grapple_retracting = false
 	grapple_target_player = null
 	visible = false
+	# Snapshot the death position BEFORE moving the corpse off-map —
+	# death VFX + dropped pickup both need to spawn where the player
+	# actually died, not at (-99999, -99999).
+	var death_pos: Vector2 = global_position
 	# Hard-disable all collision so corpse can't be stood on, blocked
 	# against, or grappled to. Set both layer/mask AND the shape disabled
 	# directly (not deferred) so neighbours stop seeing this body now.
@@ -1292,14 +1296,14 @@ func die() -> void:
 	if cam != null and cam.has_method("add_shake"):
 		cam.add_shake(8.0)
 	var fx: Node2D = _death_effect_scene.instantiate()
-	fx.setup(player_color, global_position)
+	fx.setup(player_color, death_pos)
 	get_tree().current_scene.add_child(fx)
 	# Drop one random ability pickup on death
 	var pickup_scn: PackedScene = preload("res://scenes/characters/ability_pickup.tscn")
 	var drop_slot: int = randi_range(0, 1)
 	var drop: Area2D = pickup_scn.instantiate()
 	var drop_vel := Vector2(randf_range(-200, 200), randf_range(-400, -200))
-	drop.setup_dropped(ability_ids[drop_slot], global_position, drop_vel)
+	drop.setup_dropped(ability_ids[drop_slot], death_pos, drop_vel)
 	drop.add_to_group("pickups")
 	get_tree().current_scene.add_child(drop)
 	died.emit(player_id)

@@ -1,5 +1,534 @@
 # TangleBattle — Рабочий лог
 
+## 2026-04-20 — fix(maps): найдена реальная причина зазоров — 56px alpha=0 padding в PNG'ах
+
+### Разбор
+Пользователь прислал скриншот с чёткими тёмными вертикальными полосами
+между тайлами на wood-платформе. Проверил PIL'ом **все 5** платформенных
+текстур:
+```
+stone     (2000x278): transparent cols: left=56 right=56
+wood      (2000x273): transparent cols: left=56 right=56
+sand      (2000x277): transparent cols: left=56 right=56
+water     (2000x276): transparent cols: left=56 right=56
+lava_ice  (2000x276): transparent cols: left=56 right=56
+```
+**Каждая текстура имеет 56px полностью прозрачных колонок с обеих
+сторон** (alpha=0). В точке UV-wrap сэмплер читал `pixel[1999]` (α=0)
+и `pixel[0]` (α=0) — прозрачный тексель, сквозь него просвечивал
+`platform_color` подложка = видимая тёмная полоса шириной ~112px
+вблизи каждой границы тайла.
+
+### Фикс — обрезал PNG в 2000→1888 px
+Python'ом через PIL вырезал эти прозрачные поля:
+```python
+cropped = im.crop((56, 0, w - 56, h))
+cropped.save(path)
+```
+Результат:
+- `stone.png`:    2000x278 → 1888x278
+- `wood.png`:     2000x273 → 1888x273
+- `sand.png`:     2000x277 → 1888x277
+- `water.png`:    2000x276 → 1888x276
+- `lava_ice.png`: 2000x276 → 1888x276
+
+После обрезки `edge_dist` между колонками 0 и 1887 ≈ 20-30 (по 4
+каналам), т.е. разница ~7 единиц на канал на одну колонку — почти
+незаметно под LINEAR-фильтром (~3% от полного диапазона).
+
+Переимпорт через `godot --headless --import`. Сам код `map_base.gd`
+не изменился — GL_REPEAT + single polygon + UV 0..u_max продолжает
+работать.
+
+### Файлы
+- `assets/textures/platforms/{stone,wood,sand,water,lava_ice}.png` —
+  обрезаны
+- `.import` файлы переимпортированы автоматически
+
+### Тест
+- `mcp__godot__run_project` — без ошибок.
+
+---
+
+## 2026-04-20 — fix(maps): откат split-polygon → single UV-wrap polygon + base fill
+
+### Жалоба пользователя (скриншот)
+Split-polygon подход не сработал: (1) на rounded-arc нет текстуры,
+(2) между секциями тонкий разрыв.
+
+### Причины
+- arc в первой секции покрывал крошечный UV-slice `[0, r/width]` =
+  `[0, 0.06]` — 120 колонок текстуры сжимались в 14-пиксельный arc,
+  визуально читалось как "пустое".
+- Joints между соседними `draw_polygon` вызовами имеют anti-alias
+  edge-falloff (обе стороны alpha-fade к 0), получается 1-2px
+  полупрозрачный зазор, сквозь который проглядывает фон карты.
+
+### Фикс — откат к single polygon + GPU texture_repeat + solid base
+
+В `_ready()` ставится `texture_repeat = CanvasItem.TEXTURE_REPEAT_ENABLED`.
+GPU семплер (GL_REPEAT) честно оборачивает UV > 1 на уровне
+аппаратной выборки с LINEAR-фильтром — при этом pixel[0]=pixel[tex_w-1]
+(seamless) гарантирует, что по обе стороны UV=N·1.0 усреднение
+двух текселов даёт одинаковый цвет.
+
+`_draw_themed_platform` — один вызов:
+1. `draw_colored_polygon(pts, platform_color)` — базовая подложка на
+   случай, если anti-alias на скруглении даст 1px разрыв (через него
+   будет видно platform_color, близкий к усреднённому цвету текстуры).
+2. `draw_polygon(pts, WHITE, uvs, tex)` — **один** полигон на всю
+   скруглённую капсулу, UV.x `0..u_max` (тайлы через GL_REPEAT),
+   UV.y `0..1` (без вертикального wrap).
+3. Outline + top highlight + bottom shadow.
+
+Helper `_build_rounded_rect_pts` + `_draw_platform_section` удалены
+(больше не нужны).
+
+### Файлы
+- `scripts/maps/map_base.gd` (+8 / -128 — чистый упрощённый код)
+
+### Тест
+- `mcp__godot__run_project` — без ошибок.
+
+### Что дальше если gap всё ещё виден
+→ создать child-Node2D с `texture_filter = NEAREST` только для платформ,
+это полностью убивает bilinear-bleed любой природы (ценой чуть более
+пикселизированного вида текстуры).
+
+---
+
+## 2026-04-20 — fix(maps): split-polygon тайлы + снятие шейдера + cap 4×
+
+### Жалобы пользователя
+1. На картах с деревьями бэкграунд не достаёт до верха — повысить масштаб.
+2. Платформы **сломаны**: отрисовывается только ОДНА текстура у левого
+   края, дальше — пусто, только border. Текстура начинается **после**
+   закругления.
+
+### Что случилось с прошлой версией
+4-tap bilinear-шейдер на всей ноде ломал `draw_texture_rect` для bg-слоёв
+(`mod()` на edge-пикселях бэкграунда вымывал цвет до серо-белого). Также
+видимо UV>1 в связке с ShaderMaterial в Compat рендере вело себя
+нестабильно — в результате рисовалась только первая копия текстуры.
+
+### Новый подход
+
+#### 1. Шейдер — **удалён**. В `_ready()` больше нет ShaderMaterial;
+убрано также `texture_repeat = ENABLED` (не нужно).
+
+#### 2. Платформы — **split-polygon** из N секций
+`_draw_themed_platform` теперь делит платформу на цепочку секций:
+- `n_full` полностью-текстурных секций шириной `tile_w = tex_w * h/tex_h`
+  (в pixel space: 1 копия = `tile_w`)
+- Одна правая секция на `leftover = w - n_full * tile_w` (с UV=`0..leftover/tile_w`)
+
+Каждая секция рисуется отдельным `draw_polygon` через хелпер
+`_draw_platform_section(round_left, round_right, u0, u1)`. UVs
+**всегда** в `[0..1]` — никаких wrap-проблем. Скругление только на
+первой и последней секции (`round_left`/`round_right`), внутренние
+секции прямоугольные, плотно прилегают к соседям.
+
+Joints между секциями **невидимы**: текстуры seamless на уровне
+пикселей (`pixel[0] == pixel[tex_w-1]`, проверено PIL), и стандартный
+GL CLAMP-фильтр на обеих сторонах joint семплирует соответствующие
+края, которые равны.
+
+Хелпер `_build_rounded_rect_pts()` — общий генератор полигона для
+обводки и highlights.
+
+#### 3. BG scale cap: `2.5 → 4.0`
+Для 1920×1080 текстур: auto_scale 3.7 теперь не упирается в cap → деревья
+растягиваются до полной высоты карты. Для маленьких 225×340 castle
+cap 4.0 даёт `900×1360` — всё ещё компактный силуэт, не огромный блоб.
+
+### Файлы
+- `scripts/maps/map_base.gd` (+115 / -46)
+
+### Тест
+- `mcp__godot__run_project` — без runtime ошибок.
+
+---
+
+## 2026-04-20 — fix(maps): wrap-aware bilinear шейдер — наконец-то реально seamless
+
+### Почему предыдущий fract(UV) шейдер не работал
+Пользователь опять видел тонкую вертикальную линию на каждой платформе.
+Разбор:
+- `fract(UV)` в шейдере возвращает UV в `[0..1)` — корректно по математике.
+- Но GPU-фильтр LINEAR семплирует **пару** текселов вокруг точки:
+  - На фрагменте UV=0.999 (fract=0.999): пара `(pixel[1998], pixel[1999])`
+  - На фрагменте UV=1.001 (fract=0.001): пара `(pixel[0], pixel[1])`
+- Это **разные** пары текселов, хотя `pixel[0] == pixel[1999]`! Результат
+  усреднения отличается → видимый 1-2px шов.
+
+### Фикс — manual 4-tap bilinear с `mod()` по X
+В `_ready()` теперь шейдер:
+```glsl
+shader_type canvas_item;
+void fragment(){
+  vec2 tex_size = vec2(textureSize(TEXTURE, 0));
+  vec2 px = UV * tex_size - 0.5;
+  vec2 pi = floor(px);
+  vec2 pf = fract(px);
+  float x0 = mod(pi.x,       tex_size.x);
+  float x1 = mod(pi.x + 1.0, tex_size.x);
+  float y0 = clamp(pi.y,       0.0, tex_size.y - 1.0);
+  float y1 = clamp(pi.y + 1.0, 0.0, tex_size.y - 1.0);
+  vec4 c00 = texture(TEXTURE, (vec2(x0, y0) + 0.5) / tex_size);
+  vec4 c10 = texture(TEXTURE, (vec2(x1, y0) + 0.5) / tex_size);
+  vec4 c01 = texture(TEXTURE, (vec2(x0, y1) + 0.5) / tex_size);
+  vec4 c11 = texture(TEXTURE, (vec2(x1, y1) + 0.5) / tex_size);
+  COLOR = mix(mix(c00, c10, pf.x), mix(c01, c11, pf.x), pf.y) * COLOR;
+}
+```
+Ключевое: `mod(pi.x, tex_size.x)` делает так, что на ОБЕИХ сторонах
+UV=N*1.0 семплируется **одна и та же** пара текселов
+`(pixel[tex_w-1], pixel[0])`. Усреднение идентично → **шов исчезает**
+полностью.
+
+Y — `clamp()` (не `mod()`): платформо-текстуры не seamless
+вертикально (сверху трава/верх, снизу глубокая заливка), вертикальный
+wrap дал бы артефакт на нижней кромке.
+
+Bg-слои (UV в `[0..1]`) обрабатываются тем же шейдером: внутри
+диапазона sampling эквивалентен стандартному bilinear; на крайней
+правой кромке прямоугольника есть 1px wrap-артефакт (семплит pixel[0]
+слева), но кромка закрыта vignette.
+
+### Файлы
+- `scripts/maps/map_base.gd` (+20 / -4 в шейдерном коде)
+
+### Тест
+- `mcp__godot__run_project` — шейдер компилируется, без ошибок.
+
+---
+
+## 2026-04-20 — fix(maps): ShaderMaterial+fract UV-wrap для seamless тайлинга платформ
+
+### Запрос пользователя
+"С платформами ты не разобрался, все равно зазоры есть между текстурами,
+ты просто их закрасил, а надо текстуры было совместить."
+
+Пользователь отверг подход с corner-masks — его раздражал solid-color срез
+на углах, и сами тайлы внутри прямоугольной полосы всё ещё имели видимую
+границу при wrap на `CanvasItem.texture_repeat=ENABLED` в OpenGL Compat
+рендере (известный sub-pixel filter bleed на 0..1 UV-границе).
+
+### Фикс в `scripts/maps/map_base.gd`
+
+#### 1. ShaderMaterial с ручным fract(UV)
+В `_ready()` создаётся и применяется `ShaderMaterial` на ноду карты:
+```glsl
+shader_type canvas_item;
+void fragment(){
+  vec2 uv = vec2(fract(UV.x), fract(UV.y));
+  COLOR = texture(TEXTURE, uv) * COLOR;
+}
+```
+Шейдер явно оборачивает UV через `fract()` в fragment-стадии — это
+работает одинаково во всех рендерерах (Forward+, Mobile, Compatibility)
+и не зависит от `texture_repeat`. При UV > 1.0 `fract()` возвращает
+дробную часть, семплируя «следующую копию» текстуры в той же позиции,
+что и начало — для seamless-текстур (`pixel[0] == pixel[1999]`,
+проверено) шов становится невидим даже под LINEAR фильтром.
+
+Побочный эффект на bg/water: при обычном `draw_texture_rect(tile=false)`
+UV идёт 0..1, `fract()` не меняет значения кроме exact 1.0. На правой
+кромке bg-rect может семплироваться `pixel[0]` вместо `pixel[end]` —
+визуально 1px, закрывается vignette. Для воды и vignette (без texture)
+шейдер индифферентен.
+
+#### 2. `_draw_themed_platform` — простой UV-полигон
+Удалены:
+- `draw_colored_polygon(platform_color)` подложка
+- `draw_set_transform` + `draw_texture_rect(tile=true)`
+- 4 corner-mask полигона
+- Ручной reset трансформа
+
+Осталось: один `draw_polygon(pts, WHITE, uvs, tex)` с UV в диапазоне
+`0 .. (w / (tex_w * h/tex_h))` по X, `0 .. 1` по Y. Текстура **плотно
+заполняет** скруглённую капсулу включая углы, тайлы стыкуются без
+швов через шейдерный wrap. `segs` повышен 10 → 12 для плавности углов.
+
+#### 3. Чистка warnings
+- Убран unused `bg_rect` в `_draw_parallax_background`.
+- Убран unused `tex_size` там же.
+
+### Файлы
+- `scripts/maps/map_base.gd` (+17 / -60)
+
+### Тест
+- `mcp__godot__run_project` — без runtime ошибок и warnings от моих правок.
+
+---
+
+## 2026-04-20 — fix(maps): scale-cap фонов, transform+tile платформ, волнистая вода, -winter_valley
+
+### Запрос пользователя (скриншоты)
+1. Haunted Castle: фон **слишком сильно расширен** (тёмные силуэты стали
+   гигантскими блобами) — ограничить масштаб.
+2. Удалить карту **winter_valley**.
+3. Платформы **всё ещё с тонкими зазорами** между тайлами — переделать.
+4. Вода-убийца должна иметь **волны на границе**, а не плоскую линию.
+
+### Фиксы в `scripts/maps/map_base.gd`
+
+#### 1. BG — aspect-preserve + max_scale cap
+`fill` и `bottom_tile`/`top_tile` теперь сохраняют пропорции текстуры:
+- `fill`: `eff_scale = max(want_w/tex_w, want_h/tex_h)` — однородный scale
+  покрывает map+буфер по обеим осям, без растяжения с разным X/Y.
+- `bottom_tile`/`top_tile`: `eff_scale = min(want_h/tex_h, max_scale) * tex_scale`
+  (дефолт `max_scale=2.5`). Маленькие текстуры (225×340) больше не
+  раздуваются в огромные блобы. Позиционирование — по центру карты;
+  небо (`fill` мод) закрывает щели, где слой не дотягивается.
+- Каждый слой может переопределить cap через `"max_scale": 3.0` в конфиге.
+
+#### 2. Платформы — transform + `draw_texture_rect(tile=true)` + corner masks
+Отказался от UV-полигонного тайлинга (в Compatibility рендере давал
+sub-pixel filter bleed на границах tile — пользователь видел тонкие
+линии даже при пиксельно-seamless текстуре, проверено через
+`python/PIL: avg_dist=0.00` между краями). Новая реализация:
+1. `draw_colored_polygon(pts, platform_color)` — сплошная скруглённая
+   подложка (её цвет будет показываться в 4 «срезах» углов).
+2. `draw_set_transform(origin, 0, Vector2(scl, scl))` — канвас
+   масштабируется так, чтобы native tex-высота = h платформы.
+3. `draw_texture_rect(tex, local_rect, tile=true, WHITE)` — Godot сам
+   тайлит текстуру через GPU texture repeat, **без subpixel-шва**.
+4. `draw_set_transform(Vector2.ZERO, 0, Vector2.ONE)` — сброс.
+5. 4 corner-masks: полигоны «углов прямоугольника минус четверть диска»
+   перекрашиваются в `platform_color` → прямоугольный тайл-rect
+   обрезается до скруглённой капсулы без швов.
+6. Outline + top highlight + bottom shadow — поверх масок.
+
+#### 3. Вода — анимированная волнистая граница
+`_draw_water_floor` переделан: вместо `draw_rect + draw_line(flat)`
+теперь строит `top_pts: PackedVector2Array` с двумя суперпозированными
+синусами (амплитуда 14, длина 220, фаза по времени). Поверх:
+- Deep-water `draw_colored_polygon(top_pts + bottom-right + bottom-left,
+  Color(0.06,0.14,0.24))` — тёмная заливка с волнистым верхом.
+- Surface strip `draw_colored_polygon(top_pts + top_pts+48px_down)` —
+  средне-синий слой высотой 48px для глубины waterline.
+- `draw_polyline(top_pts, 0.55/0.82/0.95, 3.0)` — яркий блик по гребню.
+- Secondary `draw_polyline(top+7px, dim, 2.0)` — приглушённый echo.
+
+#### 4. Удаление winter_valley
+- `scripts/maps/winter_valley.gd` + `scenes/maps/winter_valley.tscn` → `git rm`.
+- `MAP_SCENES` в `scripts/main/game.gd` — 6 карт вместо 7.
+
+### Файлы
+- -2 (winter_valley .gd + .tscn)
+- `scripts/maps/map_base.gd` (+78 / -42)
+- `scripts/main/game.gd` (-1 line)
+
+### Тест
+- `mcp__godot__run_project` — без runtime ошибок.
+
+---
+
+## 2026-04-20 — fix(maps): seamless tiling платформ, stretch фонов, чистая вода
+
+### Жалобы пользователя (скриншоты)
+1. Платформы: **зазоры** между тайлами + **текстура не доходит до скруглений**.
+2. На всех картах снизу — **светло-голубая wavy "лёдо-подобная"** текстура,
+   нужно убрать.
+3. Фоны **тайлятся** (видны повторения), должны **растягиваться** по ширине.
+
+### Фиксы в `scripts/maps/map_base.gd`
+
+#### 1. Платформы — polygon UV-tiling
+Отказался от ручного цикла `draw_texture_rect_region` (давал зазоры из-за
+filter-bleed на границах тайлов). Теперь в `_ready()` выставляется
+`texture_repeat = CanvasItem.TEXTURE_REPEAT_ENABLED` на сам Node2D. В
+`_draw_themed_platform`:
+- Строится скруглённый polygon с `segs=10` на угол (было 6, плавнее).
+- UV: `u_max = w / (tex_w * scale)`, `scale = h / tex_h` (aspect-preserve).
+  UV-координаты выходят в диапазон `0..u_max` где `u_max` = число тайлов,
+  например `520 / (2000 * 0.115) ≈ 2.26`.
+- `draw_polygon(pts, WHITE, uvs, tex)` — texture_repeat=ENABLED превращает
+  UV>1.0 в tiling, **без швов**. Тайл занимает всю полигональную форму,
+  включая скруглённые концы.
+- Убрал `draw_colored_polygon` подложку — текстура теперь сама доходит
+  до углов.
+
+#### 2. Фоны — stretch вместо tile
+`bottom_tile`/`top_tile` режимы полностью переписаны: больше не тайлят
+текстуру, а рисуют **одну копию растянутую** на `map_w + 4000` ширины и
+`map_h + 1200` высоты, со сдвигом параллакса 0.25×. Пропорции не
+сохраняются — но на прямоугольных панорамных слоях визуально нормально,
+и нет раздражающих повторений. `fill`-режим (небо) не менялся.
+
+#### 3. Вода — тёмная заливка без wavy-полосы
+Убран `draw_texture_rect(water.png, tile=true)` на поверхности — он
+действительно выглядел как лёд. Теперь `_draw_water_floor`:
+- Solid dark-blue fill по всему floor-band (`Color(0.06, 0.14, 0.24)`).
+- 10-ступенчатый вертикальный градиент сверху вниз — светлее у поверхности,
+  темнее глубже.
+- Тонкая анимированная линия-блик на waterline (`sin(t)*1.5` bob).
+- Текстура `water.png` больше не используется для пола.
+
+### Файлы
+- `scripts/maps/map_base.gd` (+11 / -55)
+
+### Тест
+- `mcp__godot__run_project` — без runtime errors.
+
+### Что дальше
+Визуальная проверка пользователем — готов к тюнингу (напр., сохранить
+aspect ratio в stretch-моде, варьировать цвет воды per-map, и т.д.).
+
+---
+
+## 2026-04-20 — fix(maps): auto-scale BG + платформо-тайлинг + правильное скругление
+
+### Запрос пользователя
+"Вверх растянуть бг, лучше увеличить масштаб чтобы покрывало всю карту. Платформы
+странно выглядят — скругления кривые, текстуры не доходят до углов, а на длинных
+платформах текстура растягивается. Нужно, чтобы длинные платформы состояли из
+одинаковых тайлов, идущих друг за другом."
+
+### Что изменилось в `scripts/maps/map_base.gd`
+
+#### 1. BG auto-scale (режимы `bottom_tile` / `top_tile`)
+Раньше слои рисовались в нативном размере (обычно 1920×1080), анкорились к низу
+и закрывали лишь нижнюю 1080-полосу на 2800-пиксельной карте — остальное было
+чистое небо. Теперь каждый non-fill слой авто-масштабируется так, чтобы его
+высота покрывала `map_rect.size.y + 1200` (карта + буфер для параллакса),
+пропорционально увеличивая ширину — горизонтальный тайлинг работает на новом
+масштабе. `scale` в конфиге слоя остаётся: если он больше авто-значения, берётся
+он (ручное управление не сломалось).
+
+#### 2. Платформы — rounded capsule + horizontal tiling
+`_draw_themed_platform` полностью переписан:
+- Радиус углов: `r = clamp(min(hh*0.95, h*0.45), 6, 26)` — вместо старого
+  `clamp(min(hh, hw*0.15), 4, 20)`. Теперь короткие и широкие платформы
+  (h=32, w=500) получают **настоящее** скругление, а не еле заметное.
+- `draw_colored_polygon(pts, platform_color)` — плотная заливка скруглённой
+  формы. Это фон, закрывающий округлые углы.
+- `draw_texture_rect_region` в цикле — тайлит seamless текстуру (2000×278)
+  **копиями друг за другом** (никакого растягивания): вычисляется
+  `scl = (h + 4) / tex_native_h`, `tile_w = tex_native_w * scl`, затем
+  `n = ceil(inner_w / tile_w)` тайлов рисуется на inner_rect с
+  `inset = r * 0.65` слева/справа чтобы не перекрывать скругления.
+  Последний тайл клипается через region-W, чтобы не вылезти за inner_w.
+- Обводка и top/bottom highlights остались.
+
+Результат: на любой ширине платформа выглядит как **цельный закруглённый
+прямоугольник**, внутри — семплы одной и той же seamless-текстуры идут
+одинаковыми копиями, текстура **не растягивается**, углы выглядят круглыми.
+
+### Файлы
+- `scripts/maps/map_base.gd` (-18 / +60)
+
+### Тест
+- `mcp__godot__run_project` — запуск без runtime errors/warnings от правок.
+
+---
+
+## 2026-04-20 — feat(maps): полная перестройка карт на параллакс-фоны и единые borders
+
+### Запрос пользователя
+Удалить все карты, все бэкграунды, все платформо-текстуры. В `my_assets/maps/`
+лежат 5 паков параллакс-фонов (Desert, Iceberg+Ocean+Winternight, Forest Blue,
+dark_halloween, winter pixel nature) + PNG с 5 seamless платформ-текстурами +
+SVG (брать только текстуру земли). Все платформы — прямоугольники закруглённые.
+Паралакс-эффект согласно слоям. Границы: **снизу — вода, по бокам — затемнение**.
+Всё в новой ветке для возможности отката.
+
+### Что сделано
+
+#### 1. Удаление устаревших ассетов
+- **Карты:** удалены 8 старых сцен/скриптов: `ancient_ruins`, `deep_space`,
+  `forest_glade`, `frozen_lake`, `mystic_hollow`, `sky_citadel`, `sunset_spires`,
+  `volcano_crater` (scenes/maps + scripts/maps, вместе с `.uid`).
+- **Фоны:** удалены `assets/textures/backgrounds/`: `clouds_blue`,
+  `clouds_sunset`, `dawn`, `forest`, `nature`, `space`.
+- **Платформы:** удалены `grass.png`, `ice.png`, `magma.png` (+`.import`).
+
+#### 2. Новые платформо-текстуры (пользователь положил ранее)
+- `stone.png` (изменён), `wood.png` (изменён)
+- Новые: `sand.png`, `water.png`, `lava_ice.png` — seamless strips из
+  `computer-games-seamless-layers-background-set.png`.
+
+#### 3. Новые фоны (пользователь положил ранее, 7 тем)
+- `backgrounds/forest_blue/` (10 слоёв)
+- `backgrounds/desert/` (9 слоёв)
+- `backgrounds/iceberg/` (7 слоёв)
+- `backgrounds/ocean/` (7 слоёв)
+- `backgrounds/winter_pixel/` (10 слоёв)
+- `backgrounds/winternight/` (5 слоёв)
+- `backgrounds/halloween/` (11 слоёв)
+
+#### 4. Рефакторинг `scripts/maps/map_base.gd`
+- Удалён большой `const BG_THEMES := {...}` (~60 строк конфига старых тем)
+  и хелпер `_get_theme_layers` + кэш `_bg_layer_cache`.
+- Удалены все `_draw_dz_*` функции (lava, void, abyss, stars, spikes, swamp,
+  mist, default) + `_draw_themed_danger_zones` + `_draw_danger_rect` +
+  `_dz_soft_edge` (~240 строк).
+- Удалены `bg_theme`, `death_zone_style` — больше не используются.
+- Добавлен новый **per-map** массив `bg_layers: Array` c полями
+  `{path, scroll, mode, y, scale, tint}`. `scroll=0` = слой залочен на экран
+  (небо); `scroll=1` = залочен на мир (передний план). Режимы:
+  `fill` (1 растянутая копия), `bottom_tile`, `top_tile`.
+- Новая функция `_draw_parallax_background()` читает `bg_layers` и рисует
+  слои через `draw_texture_rect` с tile=true и parallax-сдвигом.
+- Новая функция `_draw_water_floor()` — тайлит `water.png` снизу на всю
+  ширину карты как анимированную полосу + глубокий тёмно-синий fill ниже
+  + soft fade на верхней кромке.
+- Новая функция `_draw_side_vignette()` — вертикальные полосы чёрного
+  alpha-градиента слева/справа (по `danger_left`/`danger_right`), затухание
+  внутрь карты.
+- Изменён порядок `_draw()`: bg → platforms → objects → **water снизу +
+  вертикальные vignette по бокам** (borders рисуются поверх всего).
+- `queue_redraw()` теперь дёргается каждый кадр (анимированная вода +
+  параллакс требуют постоянного обновления).
+
+#### 5. Семь новых карт (scripts/maps + scenes/maps)
+| Карта | Фон-тема | Платформы |
+|-------|----------|-----------|
+| Forest Glade   | forest_blue  | stone    |
+| Desert Dunes   | desert       | sand     |
+| Iceberg Bay    | iceberg      | lava_ice |
+| Ocean Shore    | ocean        | sand     |
+| Winter Valley  | winter_pixel | stone (low-friction) |
+| Winter Night   | winternight  | wood     |
+| Haunted Castle | halloween    | stone    |
+
+Каждая карта: `map_rect=4500x2800`, `danger_left/right=280`,
+`danger_bottom=420` (вода), `danger_top=0`. Layout — 8-9 платформ
+симметрично, 4 spawn points. scroll-factors подобраны вручную под каждый
+пак (от 0.00 для неба до 0.85-0.92 для foreground).
+
+#### 6. Обновлён `scripts/main/game.gd`
+`MAP_SCENES` указывает на 7 новых `.tscn`.
+
+### Файлы
+- -8 map scripts, -8 map scenes, -16 `.uid`
+- -6 bg folders (clouds_blue, clouds_sunset, dawn, forest, nature, space)
+- -3 platform textures (grass, ice, magma) + imports
+- +7 new map scripts, +7 new map scenes
+- `map_base.gd`: ~1590 → ~1320 строк (удалено ~430, добавлено ~180)
+- `game.gd`: обновлён MAP_SCENES
+
+### Тест
+- `godot --import` прошёл без ошибок (479 шагов reimport).
+- `mcp__godot__run_project` с основной сценой — запуск без runtime errors,
+  все 7 карт компилируются (общий базовый класс), lobby → матч работает.
+- Warnings в debug-output — все pre-existing (не от моих изменений).
+
+### Что дальше
+- Визуально проверить все 7 карт в игре, затюнить scroll-factors где
+  параллакс слабо заметен.
+- Возможно заменить stretch-UV в `_draw_themed_platform` на тайлинг,
+  чтобы seamless-текстуры не сжимались на широких платформах.
+- При желании — извлечь ground-texture из SVG
+  `my_assets/maps/platform/b6id06lfemo6b5wof.svg` (отложено, текущих 5
+  PNG достаточно).
+
+### Ветка
+`feature/maps-rebuild-parallax` — для возможности отката.
+
+---
+
 ## 2026-04-20 — feat(ui): текстурные иконки способностей вместо процедурных эмблем
 
 ### Запрос пользователя

@@ -1,6 +1,0 @@
-[gd_scene load_steps=2 format=3]
-
-[ext_resource type="Script" path="res://scripts/maps/volcano_crater.gd" id="1"]
-
-[node name="volcano_crater" type="Node2D"]
-script = ExtResource("1")

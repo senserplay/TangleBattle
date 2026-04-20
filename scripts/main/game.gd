@@ -5,13 +5,11 @@ var pickup_scene: PackedScene = preload("res://scenes/characters/ability_pickup.
 
 const MAP_SCENES: Array[String] = [
 	"res://scenes/maps/forest_glade.tscn",
-	"res://scenes/maps/sunset_spires.tscn",
-	"res://scenes/maps/sky_citadel.tscn",
-	"res://scenes/maps/volcano_crater.tscn",
-	"res://scenes/maps/frozen_lake.tscn",
-	"res://scenes/maps/deep_space.tscn",
-	"res://scenes/maps/ancient_ruins.tscn",
-	"res://scenes/maps/mystic_hollow.tscn",
+	"res://scenes/maps/desert_dunes.tscn",
+	"res://scenes/maps/iceberg_bay.tscn",
+	"res://scenes/maps/ocean_shore.tscn",
+	"res://scenes/maps/winter_night.tscn",
+	"res://scenes/maps/haunted_castle.tscn",
 ]
 
 @onready var map_container: Node2D = $MapContainer
