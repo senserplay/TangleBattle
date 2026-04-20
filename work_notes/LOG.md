@@ -1,5 +1,64 @@
 # TangleBattle — Рабочий лог
 
+## 2026-04-20 — fix(maps): ShaderMaterial+fract UV-wrap для seamless тайлинга платформ
+
+### Запрос пользователя
+"С платформами ты не разобрался, все равно зазоры есть между текстурами,
+ты просто их закрасил, а надо текстуры было совместить."
+
+Пользователь отверг подход с corner-masks — его раздражал solid-color срез
+на углах, и сами тайлы внутри прямоугольной полосы всё ещё имели видимую
+границу при wrap на `CanvasItem.texture_repeat=ENABLED` в OpenGL Compat
+рендере (известный sub-pixel filter bleed на 0..1 UV-границе).
+
+### Фикс в `scripts/maps/map_base.gd`
+
+#### 1. ShaderMaterial с ручным fract(UV)
+В `_ready()` создаётся и применяется `ShaderMaterial` на ноду карты:
+```glsl
+shader_type canvas_item;
+void fragment(){
+  vec2 uv = vec2(fract(UV.x), fract(UV.y));
+  COLOR = texture(TEXTURE, uv) * COLOR;
+}
+```
+Шейдер явно оборачивает UV через `fract()` в fragment-стадии — это
+работает одинаково во всех рендерерах (Forward+, Mobile, Compatibility)
+и не зависит от `texture_repeat`. При UV > 1.0 `fract()` возвращает
+дробную часть, семплируя «следующую копию» текстуры в той же позиции,
+что и начало — для seamless-текстур (`pixel[0] == pixel[1999]`,
+проверено) шов становится невидим даже под LINEAR фильтром.
+
+Побочный эффект на bg/water: при обычном `draw_texture_rect(tile=false)`
+UV идёт 0..1, `fract()` не меняет значения кроме exact 1.0. На правой
+кромке bg-rect может семплироваться `pixel[0]` вместо `pixel[end]` —
+визуально 1px, закрывается vignette. Для воды и vignette (без texture)
+шейдер индифферентен.
+
+#### 2. `_draw_themed_platform` — простой UV-полигон
+Удалены:
+- `draw_colored_polygon(platform_color)` подложка
+- `draw_set_transform` + `draw_texture_rect(tile=true)`
+- 4 corner-mask полигона
+- Ручной reset трансформа
+
+Осталось: один `draw_polygon(pts, WHITE, uvs, tex)` с UV в диапазоне
+`0 .. (w / (tex_w * h/tex_h))` по X, `0 .. 1` по Y. Текстура **плотно
+заполняет** скруглённую капсулу включая углы, тайлы стыкуются без
+швов через шейдерный wrap. `segs` повышен 10 → 12 для плавности углов.
+
+#### 3. Чистка warnings
+- Убран unused `bg_rect` в `_draw_parallax_background`.
+- Убран unused `tex_size` там же.
+
+### Файлы
+- `scripts/maps/map_base.gd` (+17 / -60)
+
+### Тест
+- `mcp__godot__run_project` — без runtime ошибок и warnings от моих правок.
+
+---
+
 ## 2026-04-20 — fix(maps): scale-cap фонов, transform+tile платформ, волнистая вода, -winter_valley
 
 ### Запрос пользователя (скриншоты)

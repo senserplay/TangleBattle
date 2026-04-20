@@ -86,10 +86,20 @@ var global_shrink_timer: float = 0.0
 
 
 func _ready() -> void:
-	# Enable UV-based texture repeat for this canvas — lets polygon platforms
-	# tile their seamless strip textures across the platform width via
-	# UVs > 1.0 without any inter-tile gaps or pixel filter bleed.
-	texture_repeat = CanvasItem.TEXTURE_REPEAT_ENABLED
+	# Force the whole canvas to manually wrap any UV beyond [0,1] via
+	# fract(). This is required because CanvasItem.texture_repeat is not
+	# reliably honored for `draw_polygon` UV > 1.0 in the OpenGL
+	# Compatibility renderer — users saw a thin vertical seam where each
+	# tile copy began. Explicit fract() is renderer-independent.
+	var shader := Shader.new()
+	shader.code = "shader_type canvas_item;\n" \
+		+ "void fragment(){\n" \
+		+ "  vec2 uv = vec2(fract(UV.x), fract(UV.y));\n" \
+		+ "  COLOR = texture(TEXTURE, uv) * COLOR;\n" \
+		+ "}\n"
+	var mat := ShaderMaterial.new()
+	mat.shader = shader
+	material = mat
 	for data in platforms:
 		if data.size() > 4 and data[4] is String and data[4] == "sticky":
 			_create_platform(data[0], data[1], data[2], data[3], false)
@@ -302,13 +312,6 @@ func _draw_parallax_background() -> void:
 		else (map_rect.position + map_rect.size / 2.0)
 	var center: Vector2 = map_rect.position + map_rect.size / 2.0
 
-	# Extended bg rect used for fill-mode stretching. Larger than map so the
-	# sky covers the off-screen margin players can still see past borders.
-	var bg_rect := Rect2(
-		map_rect.position.x - 3500, map_rect.position.y - 3500,
-		map_rect.size.x + 7000, map_rect.size.y + 7000
-	)
-
 	for layer in bg_layers:
 		var path: String = layer.get("path", "")
 		var tex: Texture2D = _load_bg_tex(path)
@@ -321,7 +324,6 @@ func _draw_parallax_background() -> void:
 		var tint: Color = (layer.get("tint", Color.WHITE) as Color) * bg_tint
 		tint.a = (layer.get("tint", Color.WHITE) as Color).a
 		var parallax := (cam_pos - center) * (1.0 - scroll)
-		var tex_size: Vector2 = tex.get_size() * tex_scale
 
 		match mode:
 			"fill":
@@ -606,9 +608,13 @@ func _draw_themed_platform(
 	var hh := h / 2.0
 	var r := minf(hh * 0.95, h * 0.45)
 	r = clampf(r, 6.0, 26.0)
-	var segs := 10
+	var segs := 12
 
-	# Full rounded capsule polygon (used for base fill + outline).
+	# Rounded capsule polygon. The texture is applied directly to this
+	# polygon — it extends into the rounded corners (no solid-color
+	# mask). Horizontal tiling is achieved with UV > 1.0 ranges; the
+	# node's fract() shader wraps UV in the fragment stage, producing
+	# seamless tile joints regardless of platform width.
 	var pts: PackedVector2Array = []
 	for i in range(segs + 1):
 		var a := PI + float(i) / segs * (PI / 2.0)
@@ -623,49 +629,23 @@ func _draw_themed_platform(
 		var a := PI / 2.0 + float(i) / segs * (PI / 2.0)
 		pts.append(Vector2(cx - hw + r + cos(a) * r, cy + hh - r + sin(a) * r))
 
-	# 1. Solid rounded base — same color used to mask rectangle corners later.
-	draw_colored_polygon(pts, platform_color)
-
-	# 2. Draw the seamless tiled strip via scaled transform + tile=true.
-	#    `draw_texture_rect(tile=true)` tiles the texture at its native
-	#    pixel size via GPU repeat, which avoids the sub-pixel filter
-	#    bleed gaps a manual per-tile loop produced. We scale the canvas
-	#    so one native-height tile == platform height; width repeats to
-	#    fill the whole platform.
+	# Aspect-preserve tile width: 1 tile fills platform height exactly.
 	var tex_size: Vector2 = tex.get_size()
 	var scl: float = h / tex_size.y
-	var local_w: float = w / scl
-	draw_set_transform(
-		Vector2(cx - hw, cy - hh), 0.0, Vector2(scl, scl)
-	)
-	draw_texture_rect(
-		tex, Rect2(Vector2.ZERO, Vector2(local_w, tex_size.y)),
-		true, Color.WHITE
-	)
-	draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
+	var tile_world_w: float = tex_size.x * scl
+	var u_max: float = w / tile_world_w
 
-	# 3. Hide the rectangle's sharp corners (that the tile strip drew over
-	#    the rounded polygon's curved corners) by overdrawing the four
-	#    outside-of-arc regions in platform_color.
-	var corners: Array = [
-		# [rect_corner, arc_center, start_angle]
-		[Vector2(cx - hw, cy - hh), Vector2(cx - hw + r, cy - hh + r), PI],
-		[Vector2(cx + hw, cy - hh), Vector2(cx + hw - r, cy - hh + r), -PI / 2.0],
-		[Vector2(cx + hw, cy + hh), Vector2(cx + hw - r, cy + hh - r), 0.0],
-		[Vector2(cx - hw, cy + hh), Vector2(cx - hw + r, cy + hh - r), PI / 2.0],
-	]
-	for corner in corners:
-		var origin: Vector2 = corner[0]
-		var arc_c: Vector2 = corner[1]
-		var start_ang: float = corner[2]
-		var mask_pts: PackedVector2Array = []
-		mask_pts.append(origin)
-		for i in range(segs + 1):
-			var a: float = start_ang + float(i) / segs * (PI / 2.0)
-			mask_pts.append(Vector2(arc_c.x + cos(a) * r, arc_c.y + sin(a) * r))
-		draw_colored_polygon(mask_pts, platform_color)
+	# UVs: u spans 0..u_max (wraps in shader), v spans 0..1 stretched
+	# to platform height.
+	var uvs: PackedVector2Array = []
+	for p in pts:
+		var u: float = ((p.x - (cx - hw)) / w) * u_max
+		var v: float = (p.y - (cy - hh)) / h
+		uvs.append(Vector2(u, v))
+	var colors := PackedColorArray([Color.WHITE])
+	draw_polygon(pts, colors, uvs, tex)
 
-	# 4. Outline + top highlight + bottom shadow for crisp readability.
+	# Edge outline + top highlight + bottom shadow.
 	var edge: Color = _get_palette_edge(palette)
 	for i in range(pts.size()):
 		var i2 := (i + 1) % pts.size()
