@@ -97,9 +97,9 @@ func _on_body_entered(body: Node2D) -> void:
 func _draw() -> void:
 	draw_circle(Vector2.ZERO, PICKUP_RADIUS + 8,
 		Color(ability_color.r, ability_color.g, ability_color.b, 0.08))
-	draw_circle(Vector2.ZERO, PICKUP_RADIUS, Color(0.1, 0.08, 0.14, 0.9))
+	# Textured ability icon (replaces procedural emblem)
+	AbilityIcon.draw_at(self, Vector2.ZERO, PICKUP_RADIUS, ability_id)
 	draw_arc(Vector2.ZERO, PICKUP_RADIUS, 0.0, TAU, 20, ability_color, 3.0)
-	_draw_emblem()
 	# Change timer indicator — shrinking arc
 	var change_ratio := change_timer / CHANGE_INTERVAL
 	draw_arc(Vector2.ZERO, PICKUP_RADIUS + 3, 0.0, TAU * change_ratio, 12,

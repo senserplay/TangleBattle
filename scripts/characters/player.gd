@@ -2041,8 +2041,9 @@ func _draw_ability_icons() -> void:
 		var cd_ratio: float = ability_cds[i] / max_cd if max_cd > 0 else 0.0
 		var ab_color: Color = data["color"]
 
-		draw_circle(center, ICON_RADIUS, Color(0.15, 0.15, 0.15, 0.7))
-		_draw_emblem(ab_id, center, cd_ratio, ab_color)
+		# Textured icon from assets/textures/abilities/. Darkened on CD.
+		var icon_mod := Color.WHITE if cd_ratio <= 0.0 else Color(0.45, 0.45, 0.45, 1.0)
+		AbilityIcon.draw_at(self, center, ICON_RADIUS, ab_id, icon_mod)
 		if cd_ratio > 0.0:
 			_draw_cd_pie(center, ICON_RADIUS, cd_ratio)
 		var bc := ab_color if cd_ratio <= 0.0 else Color(0.4, 0.4, 0.4, 0.6)
