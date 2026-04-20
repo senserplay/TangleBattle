@@ -1,5 +1,26 @@
 # TangleBattle — Рабочий лог
 
+## 2026-04-20 — tweak(ui): увеличены иконки способностей над персонажем
+
+### Запрос
+"Сделай иконки способностей которые есть у персонажа, побольше, а то их плохо видно."
+
+### Изменение
+В `scripts/characters/player.gd`:
+- `ICON_RADIUS`  18.0 → **26.0** (+44% диаметр)
+- `ICON_SPACING` 42.0 → **62.0** (пропорционально, чтобы значки не слиплись)
+- `_draw_ability_icons`: отступ от головы 40 → **54** px — чтобы бОльшие
+  иконки не наезжали на лицо
+- `draw_arc` outline: сегментов 24 → 28, толщина 1.5 → 2.0 для чёткости
+
+### Файлы
+- `scripts/characters/player.gd` (3 constant/number tweaks)
+
+### Тест
+- `mcp__godot__run_project` — без новых ошибок (все warnings pre-existing).
+
+---
+
 ## 2026-04-20 — feat(events): visible meteor/lightning/wind VFX + canvas clip
 
 ### Жалобы
