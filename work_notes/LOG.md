@@ -1,5 +1,59 @@
 # TangleBattle — Рабочий лог
 
+## 2026-04-20 — fix(maps): wrap-aware bilinear шейдер — наконец-то реально seamless
+
+### Почему предыдущий fract(UV) шейдер не работал
+Пользователь опять видел тонкую вертикальную линию на каждой платформе.
+Разбор:
+- `fract(UV)` в шейдере возвращает UV в `[0..1)` — корректно по математике.
+- Но GPU-фильтр LINEAR семплирует **пару** текселов вокруг точки:
+  - На фрагменте UV=0.999 (fract=0.999): пара `(pixel[1998], pixel[1999])`
+  - На фрагменте UV=1.001 (fract=0.001): пара `(pixel[0], pixel[1])`
+- Это **разные** пары текселов, хотя `pixel[0] == pixel[1999]`! Результат
+  усреднения отличается → видимый 1-2px шов.
+
+### Фикс — manual 4-tap bilinear с `mod()` по X
+В `_ready()` теперь шейдер:
+```glsl
+shader_type canvas_item;
+void fragment(){
+  vec2 tex_size = vec2(textureSize(TEXTURE, 0));
+  vec2 px = UV * tex_size - 0.5;
+  vec2 pi = floor(px);
+  vec2 pf = fract(px);
+  float x0 = mod(pi.x,       tex_size.x);
+  float x1 = mod(pi.x + 1.0, tex_size.x);
+  float y0 = clamp(pi.y,       0.0, tex_size.y - 1.0);
+  float y1 = clamp(pi.y + 1.0, 0.0, tex_size.y - 1.0);
+  vec4 c00 = texture(TEXTURE, (vec2(x0, y0) + 0.5) / tex_size);
+  vec4 c10 = texture(TEXTURE, (vec2(x1, y0) + 0.5) / tex_size);
+  vec4 c01 = texture(TEXTURE, (vec2(x0, y1) + 0.5) / tex_size);
+  vec4 c11 = texture(TEXTURE, (vec2(x1, y1) + 0.5) / tex_size);
+  COLOR = mix(mix(c00, c10, pf.x), mix(c01, c11, pf.x), pf.y) * COLOR;
+}
+```
+Ключевое: `mod(pi.x, tex_size.x)` делает так, что на ОБЕИХ сторонах
+UV=N*1.0 семплируется **одна и та же** пара текселов
+`(pixel[tex_w-1], pixel[0])`. Усреднение идентично → **шов исчезает**
+полностью.
+
+Y — `clamp()` (не `mod()`): платформо-текстуры не seamless
+вертикально (сверху трава/верх, снизу глубокая заливка), вертикальный
+wrap дал бы артефакт на нижней кромке.
+
+Bg-слои (UV в `[0..1]`) обрабатываются тем же шейдером: внутри
+диапазона sampling эквивалентен стандартному bilinear; на крайней
+правой кромке прямоугольника есть 1px wrap-артефакт (семплит pixel[0]
+слева), но кромка закрыта vignette.
+
+### Файлы
+- `scripts/maps/map_base.gd` (+20 / -4 в шейдерном коде)
+
+### Тест
+- `mcp__godot__run_project` — шейдер компилируется, без ошибок.
+
+---
+
 ## 2026-04-20 — fix(maps): ShaderMaterial+fract UV-wrap для seamless тайлинга платформ
 
 ### Запрос пользователя

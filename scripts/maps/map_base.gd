@@ -86,16 +86,35 @@ var global_shrink_timer: float = 0.0
 
 
 func _ready() -> void:
-	# Force the whole canvas to manually wrap any UV beyond [0,1] via
-	# fract(). This is required because CanvasItem.texture_repeat is not
-	# reliably honored for `draw_polygon` UV > 1.0 in the OpenGL
-	# Compatibility renderer — users saw a thin vertical seam where each
-	# tile copy began. Explicit fract() is renderer-independent.
+	# Apply a wrap-aware bilinear-filter shader. A naive `fract(UV)` +
+	# `texture()` combo still left a visible seam at UV=1.0 because the
+	# GPU's LINEAR filter samples a 2-texel neighbourhood: on the "just
+	# below 1.0" side the neighbourhood was (tex_w-2, tex_w-1); on the
+	# "just after 1.0" side, fract made it (0, 1) — different pairs, so
+	# the two fragments either side of the wrap saw *different* blended
+	# colours even though the edge columns are pixel-identical.
+	#
+	# This shader manually does a 2x2 bilinear tap with `mod()` on the X
+	# integer pixel index, so both sides of the wrap see the SAME pair
+	# (tex_w-1 and 0), producing zero visible seam. Y is clamped (no
+	# vertical wrap) — platform textures are not seamless top-to-bottom
+	# (grass top, deep fill bottom), so vertical wrap would bleed.
 	var shader := Shader.new()
 	shader.code = "shader_type canvas_item;\n" \
 		+ "void fragment(){\n" \
-		+ "  vec2 uv = vec2(fract(UV.x), fract(UV.y));\n" \
-		+ "  COLOR = texture(TEXTURE, uv) * COLOR;\n" \
+		+ "  vec2 tex_size = vec2(textureSize(TEXTURE, 0));\n" \
+		+ "  vec2 px = UV * tex_size - 0.5;\n" \
+		+ "  vec2 pi = floor(px);\n" \
+		+ "  vec2 pf = fract(px);\n" \
+		+ "  float x0 = mod(pi.x, tex_size.x);\n" \
+		+ "  float x1 = mod(pi.x + 1.0, tex_size.x);\n" \
+		+ "  float y0 = clamp(pi.y, 0.0, tex_size.y - 1.0);\n" \
+		+ "  float y1 = clamp(pi.y + 1.0, 0.0, tex_size.y - 1.0);\n" \
+		+ "  vec4 c00 = texture(TEXTURE, (vec2(x0, y0) + 0.5) / tex_size);\n" \
+		+ "  vec4 c10 = texture(TEXTURE, (vec2(x1, y0) + 0.5) / tex_size);\n" \
+		+ "  vec4 c01 = texture(TEXTURE, (vec2(x0, y1) + 0.5) / tex_size);\n" \
+		+ "  vec4 c11 = texture(TEXTURE, (vec2(x1, y1) + 0.5) / tex_size);\n" \
+		+ "  COLOR = mix(mix(c00, c10, pf.x), mix(c01, c11, pf.x), pf.y) * COLOR;\n" \
 		+ "}\n"
 	var mat := ShaderMaterial.new()
 	mat.shader = shader
