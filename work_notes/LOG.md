@@ -1,5 +1,35 @@
 # TangleBattle — Рабочий лог
 
+## 2026-04-21 — fix(vfx): чистая вырезка boomerang из зелёного фона
+
+### Запрос
+Пользователь добавил в `my_assets/Анимации снарядов/boomerang_green_background.png`
+новую картинку бумеранга на сплошном ярко-зелёном фоне. Попросил вырезать
+бумеранг чисто и заменить текущую текстуру.
+
+### Реализация
+Python/PIL chroma-key:
+- Reference BG color: `(141, 251, 2)` (проверено через color histogram —
+  dominant цвет, 60K из 260K отсэмплированных пикселей)
+- Distance-based threshold:
+  - `dist <= 70`  — fully transparent (чистый фон)
+  - `dist 70..110` — feathered alpha (анти-алиас-кромка)
+  - `dist > 110` — keep fully (контент бумеранга)
+- Motion-blur teal/cyan streaks (sampled `(39, 159, 181)`) сохранены —
+  distance от BG > 350, далеко за порогом.
+- After chroma-key: `getbbox()` → crop до 865×870.
+- Saved as `assets/textures/effects/projectiles/boomerang.png`,
+  перезаписал старый.
+
+### Файлы
+- `assets/textures/effects/projectiles/boomerang.png` (перезаписан)
+
+### Тест
+- `godot --import` — boomerang переимпортирован без ошибок.
+- `mcp__godot__run_project` — runtime чисто, все warnings pre-existing.
+
+---
+
 ## 2026-04-20 — fix(vfx): per-frame PNG + центровка + телепорт в world-space
 
 ### Жалобы пользователя
