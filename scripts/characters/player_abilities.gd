@@ -768,6 +768,9 @@ func _ab_portal_gate() -> bool:
 		# First press — place portal A
 		player.portal_gate_pos = player.global_position
 		player.has_portal_gate = true
+		# Stamp when the portal was placed so the marker plays the opening
+		# animation (frames 0..4) then holds frame 4.
+		player.portal_gate_placed_time = float(Time.get_ticks_msec()) / 1000.0
 		SoundManager.play_blink()
 		player._add_vfx("shield_flash", 0.2)
 		return false  # no cooldown yet
@@ -813,6 +816,7 @@ func _ab_portal_gate() -> bool:
 	swap_fx.spawn(get_tree().current_scene, pos_b)
 	player.has_portal_gate = false
 	player.portal_gate_pos = Vector2.ZERO
+	player.portal_gate_placed_time = -1.0
 	return true
 
 

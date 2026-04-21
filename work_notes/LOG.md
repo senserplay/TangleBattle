@@ -1,5 +1,65 @@
 # TangleBattle — Рабочий лог
 
+## 2026-04-21 — feat(vfx): portal gate opening anim + purple particles
+
+### Запрос
+"Портал: на картинке 5 тайлов, сохранить пропорции, при использовании
+способности portal gate на месте использования начать проигрывать
+анимацию, завершающий тайл должен остаться до повторного использования
+(телепорт назад). Пока стоит — добавить фиолетовые партиклы, вылетающие
+из него."
+
+### Реализация
+
+**1. Экстракция** `my_assets/Анимации снарядов/portal_gate_green_background.png`
+(2320×464) — peak-detection по «чёрным центрам» (`R+G+B<90` opaque) с
+fallback на номинальный центр для кадра 0 (белая вспышка, нет чёрного).
+Обнаруженные центры: `[232, 696, 1160, 1609, 2092]` — после fallback на
+frame 0. Границы band'ов = midpoint между соседними центрами; крайние
+расширены до 0..w источника.
+
+Результаты (пропорции сохранены):
+- `0: 97×115` (вспышка-звезда)
+- `1: 143×312` (вертикальный разрез)
+- `2: 319×325` (портал открывается с розовой вспышкой внутри)
+- `3: 290×354` (портал широко открыт)
+- `4: 273×358` (чистый фиолетовый овал — финальное состояние)
+
+**2. Логика в `player.gd`**
+- Добавлено поле `portal_gate_placed_time: float = -1.0`.
+- В `player_abilities.gd::_ab_portal_gate()`: при первом нажатии
+  `placed_time = Time.get_ticks_msec() / 1000.0`, при втором нажатии
+  (телепорт) сбрасывается в `-1.0` + swap-effect на обоих концах.
+- Цикл respawn в `player.gd` тоже сбрасывает поле.
+- В `player.gd::_draw` portal marker блок:
+  - `elapsed = now - placed_time`
+  - `elapsed < 0.55s`: frame = `int(t * 5)` → **0..4** (opening)
+  - `>= 0.55s`: frame = **4** (hold, до телепорта)
+  - `draw_single` центрирует каждый PNG на `pg` местом портала —
+    размеры всех кадров пропорциональны реальному содержимому.
+
+**3. Purple particles**
+Пока портал в hold-фазе (frame 4), в том же draw-блоке:
+- 12 частиц с stagger'енной lifetime (`life_t = fmod(now*1.3 + i/N, 1)`)
+- Angle = `i * TAU/N + now * 0.4` (медленный орбитальный drift)
+- Radius: `lerp(35, 150, life_t)` — вылетают от центра портала наружу
+- Alpha: `(1-life_t) * 0.85`, size `2.5..6.0` (уменьшается к концу)
+- Core: `draw_circle(pos, size, Color(0.72, 0.35, 1.0, alpha))`
+- Inner: `draw_circle(pos, size*0.4, Color(0.95, 0.75, 1.0, alpha*0.9))`
+
+Без stateful массивов — полностью детерминированная процедурная генерация
+на основе `Time.get_ticks_msec()`, каждый кадр считает позиции заново.
+
+### Файлы
+- `assets/textures/effects/projectiles/portal_gate_{0..4}.png`
+- `scripts/characters/player.gd` (portal marker ~+30 строк, reset)
+- `scripts/characters/player_abilities.gd` (+2 строки — stamp/clear)
+
+### Тест
+- `mcp__godot__run_project` — runtime чисто.
+
+---
+
 ## 2026-04-21 — tweak(vfx): чёрная дыра теперь полупрозрачная + fade in/out
 
 ### Запрос
