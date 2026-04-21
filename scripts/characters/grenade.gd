@@ -10,6 +10,10 @@ var exploded: bool = false
 
 var fuse_time: float = 2.0
 var timer: float = 2.0
+# Visual spin accumulator — driven by horizontal velocity each physics
+# frame. Sign follows the flight direction, magnitude scales with speed
+# so fast throws spin faster than slow lobs.
+var spin_angle: float = 0.0
 var bounce_damping: float = 0.5
 var explosion_radius: float = 180.0
 var damage: float = 50.0
@@ -102,6 +106,14 @@ func _physics_process(delta: float) -> void:
 		if "gravity_multiplier" in game.current_map:
 			grav_mul = game.current_map.gravity_multiplier
 	velocity.y += GRAVITY * delta * grav_mul
+
+	# Accumulate visual spin — rate proportional to horizontal speed,
+	# sign follows flight direction (right → CW, left → CCW). Vertical
+	# motion adds a small extra spin so a straight-down drop still wobbles.
+	var horiz: float = velocity.x
+	var vert_bias: float = absf(velocity.y) * 0.15 * signf(velocity.x)
+	var spin_speed: float = (horiz + vert_bias) * 0.0045
+	spin_angle += spin_speed * delta
 
 	# Save pre-slide velocity for bounce calculation
 	var vel_before := velocity
@@ -208,6 +220,6 @@ func _draw() -> void:
 	var flash_rate := 0.3 * (timer / fuse_time) + 0.05
 	var flash := fmod(timer, flash_rate) < flash_rate * 0.5
 	var mod: Color = Color.WHITE if not flash else Color(1.4, 1.4, 1.2, 1.0)
-	# Slight spin based on lifetime.
-	var spin: float = timer * 4.0
-	ProjectileSprites.draw_single(self, "grenade.png", 40.0, spin, mod)
+	# spin_angle is driven by velocity in _physics_process — direction
+	# and speed of spin now match the actual flight trajectory.
+	ProjectileSprites.draw_single(self, "grenade.png", 44.0, spin_angle, mod)
