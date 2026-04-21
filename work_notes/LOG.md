@@ -1,5 +1,34 @@
 # TangleBattle — Рабочий лог
 
+## 2026-04-21 — tweak(vfx): прозрачность stink_cloud + fade in/out
+
+### Запрос
+"Добавь прозрачность на эту анимацию."
+
+### Фикс
+В `stink_cloud.gd::_draw`:
+```
+const BASE_ALPHA := 0.75
+var alpha_mul := 1.0
+if time_alive < grow_time:
+    alpha_mul = time_alive / grow_time
+elif time_alive >= shrink_start:
+    alpha_mul = 1.0 - (time_alive - shrink_start) / shrink_time
+fade = BASE_ALPHA * clamp(alpha_mul, 0..1)
+```
+Применяется и к основному sprite `draw_single(..., Color(1,1,1,fade))`,
+и к toxin-motes (`alpha = 0.28 * fade`). На hold-фазе облако 75% opaque
+— сквозь него видны платформы и игроки. Grow/shrink плавно fade-in и
+fade-out.
+
+### Файлы
+- `scripts/characters/stink_cloud.gd` (+9 строк)
+
+### Тест
+- `mcp__godot__run_project` — runtime чисто.
+
+---
+
 ## 2026-04-21 — feat(vfx): stink_cloud 6-frame 3-phase (grow → hold → shrink)
 
 ### Запрос
