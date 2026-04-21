@@ -1,5 +1,49 @@
 # TangleBattle — Рабочий лог
 
+## 2026-04-21 — feat(vfx): текстурная верёвка грэппла вместо draw_line
+
+### Запрос
+"Теперь верёвка, которую выпускает игрок: она должна иметь такую
+текстуру. Убери зелёный фон также и попробуй наложить текстуру на
+верёвку. Толщину верёвки можно сделать побольше, чем сейчас, чтобы
+было видно текстуру."
+
+### Реализация
+
+**1. Вырезка** (`my_assets/Анимации снарядов/Thread_pull_green_background.png`,
+1408×768): hue-based chroma-key + десатурация (rope будет модулироваться
+цветом игрока). Crop до 1111×32 — длинная горизонтальная верёвка.
+Сохранено в `assets/textures/effects/projectiles/rope.png`.
+
+**2. Рендеринг** в `scripts/characters/player.gd` для обоих состояний
+(`is_grappling` и `grapple_shooting/retracting`):
+```
+var rope_len = rope_end.length()
+var angle = rope_end.angle()
+draw_set_transform(Vector2.ZERO, angle, Vector2.ONE)
+draw_texture_rect(rope_tex,
+    Rect2(0, -rope_thickness*0.5, rope_len, rope_thickness),
+    false, rope_col)
+draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
+```
+- `draw_set_transform` поворачивает локальную систему координат по
+  направлению выстрела — текстура растягивается вдоль верёвки.
+- `rope_thickness = 12.0` (было `draw_line` width 2.5) — теперь
+  хорошо видна текстура.
+- `rope_col = player_color.lerp(WHITE, 0.25)` — светлее цвета игрока
+  для чёткого текстурного contrast'а.
+- Fallback на `draw_line` если текстура не нашлась.
+- Hook tip (круглый наконечник) увеличен 5→6, inner 3→4.
+
+### Файлы
+- `assets/textures/effects/projectiles/rope.png` (новый).
+- `scripts/characters/player.gd` — rope drawing блок переписан.
+
+### Тест
+- `mcp__godot__run_project` — runtime чисто.
+
+---
+
 ## 2026-04-21 — fix(vfx): yarn_toss вырезан + десатурирован под player-color tint
 
 ### Запрос

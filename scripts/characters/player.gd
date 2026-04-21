@@ -1692,22 +1692,37 @@ func _draw() -> void:
 			draw_circle(trail_pos, trail_r,
 				Color(base_color.r, base_color.g, base_color.b, trail_alpha))
 
-	# Grapple rope / shooting hook (per-player color)
-	var rope_col := player_color.lerp(Color(0.7, 0.55, 0.35), 0.3)
+	# Grapple rope / shooting hook — textured rope (rope.png) tinted
+	# with the player's color. The texture is a horizontal rope strip
+	# that we stretch along the shot direction via draw_set_transform.
+	var rope_col := player_color.lerp(Color(0.95, 0.9, 0.85), 0.25)
 	var rope_active := false
 	var rope_end := Vector2.ZERO
+	var rope_thickness: float = 12.0
 	if is_grappling:
 		rope_end = grapple_point - global_position
-		draw_line(Vector2.ZERO, rope_end, rope_col, 2.5)
-		draw_circle(rope_end, 5.0, rope_col)
-		draw_circle(rope_end, 3.0, rope_col.lightened(0.3))
 		rope_active = true
 	elif grapple_shooting or grapple_retracting:
 		rope_end = grapple_tip - global_position
-		draw_line(Vector2.ZERO, rope_end, rope_col, 2.0)
-		draw_circle(rope_end, 5.0, rope_col)
-		draw_circle(rope_end, 3.0, rope_col.lightened(0.3))
 		rope_active = true
+	if rope_active:
+		var rope_len: float = rope_end.length()
+		if rope_len > 1.0:
+			var angle: float = rope_end.angle()
+			var rope_tex: Texture2D = ProjectileSprites._get_tex("rope.png")
+			if rope_tex != null:
+				draw_set_transform(Vector2.ZERO, angle, Vector2.ONE)
+				draw_texture_rect(
+					rope_tex,
+					Rect2(0, -rope_thickness * 0.5, rope_len, rope_thickness),
+					false, rope_col
+				)
+				draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
+			else:
+				draw_line(Vector2.ZERO, rope_end, rope_col, 4.0)
+		# Hook tip
+		draw_circle(rope_end, 6.0, rope_col)
+		draw_circle(rope_end, 4.0, rope_col.lightened(0.3))
 
 	# Fire Thread glow on rope
 	if rope_active and fire_thread_active:
