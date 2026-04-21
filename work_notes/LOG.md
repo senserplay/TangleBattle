@@ -1,5 +1,33 @@
 # TangleBattle — Рабочий лог
 
+## 2026-04-21 — fix(vfx): heavens_wrath beam вырезан + agressive despill
+
+### Запрос
+Каждый световой столб Heavens Wrath должен использовать эту текстуру,
+вырезать зелёный фон.
+
+### Фикс
+`my_assets/Анимации снарядов/heawens_wrath_green_background.png` (528×1984)
+— вертикальный белый/жёлтый beam на lime-green фоне. Chroma-key в
+Python/PIL:
+- `bg_score = (G - max(R,B)) / 100`
+- `≥ 0.60` → alpha=0 (чистый фон)
+- `0.10..0.60` → feathered + **hard despill** `G = min(G, max(R,B))`
+- `< 0.10` → content, но + **gentle despill** `G = min(G, max(R,B) + 8)`
+  (убирает residual зелёный cast даже на beam'е)
+
+Результат: чистый бело-золотой beam без fringing. После crop: 397×1728.
+В `heavens_wrath.gd` уже используется `draw_texture_rect` с этой
+текстурой — код не меняется, просто подменяется PNG.
+
+### Файлы
+- `assets/textures/effects/projectiles/heavens_wrath.png` — перезаписан.
+
+### Тест
+- `mcp__godot__run_project` — runtime чисто.
+
+---
+
 ## 2026-04-21 — fix(vfx): grenade вырезан из зелёного фона + velocity-based spin
 
 ### Запрос
