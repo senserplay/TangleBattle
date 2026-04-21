@@ -1,5 +1,49 @@
 # TangleBattle — Рабочий лог
 
+## 2026-04-21 — tweak(vfx): бумеранг в grayscale — чистый tint под цвет игрока
+
+### Запрос
+"Цвет бумеранга слишком тёмный. Сделай стандартный цвет снаряда белым,
+а уже в зависимости от игрока, добавляй туда цвет."
+
+### Причина
+В `boomerang.gd` используется `draw_single(self, "boomerang.png",
+... color)` где `color` — цвет владельца. Modulate перемножает RGB
+текстуры на RGB цвета. Исходная текстура была teal/cyan (низкий R,
+высокий G/B) → teal × red = тусклый muddy-цвет.
+
+### Фикс
+В Python-скрипте chroma-key'а (запустил снова на том же исходнике
+`boomerang_green_background.png`) после проверки дистанции каждый
+non-background пиксель конвертируется в grayscale по Rec.709:
+```
+lum = 0.2126*R + 0.7152*G + 0.0722*B
+lum = min(255, 60 + lum * 0.95)   # brighten range to [60..255]
+output = (lum, lum, lum, alpha)
+```
+Brightness-range shift 60..255 гарантирует, что самые тёмные участки
+(ниточные тени) не уйдут в pure-black — modulate цветом даст читаемые
+оттенки. Светлые блики близки к белому → modulate даёт насыщенный
+player-color на bright зонах.
+
+### Результат
+Нейтральный серо-белый бумеранг. В игре:
+- Player 1 (red) → красный бумеранг с нормальными тенями
+- Player 2 (blue) → синий и т.д.
+Motion-blur streaks сохранены, обесцвечены тоже.
+
+### Файлы
+- `assets/textures/effects/projectiles/boomerang.png` — перезаписан.
+
+### Тест
+- `mcp__godot__run_project` — runtime чисто.
+
+### Что дальше
+Пользователь хочет по очереди "починить" остальные снаряды. Стандарт:
+белый/grayscale base + player-color modulate.
+
+---
+
 ## 2026-04-21 — fix(vfx): чистая вырезка boomerang из зелёного фона
 
 ### Запрос
