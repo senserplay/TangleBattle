@@ -115,11 +115,21 @@ func _draw() -> void:
 		size_k = k * k
 		frame = clampi(5 - int(t * 6.0), 0, 5)
 
+	# Transparency — toxic gas should let platforms / players show through.
+	# Fades in on grow and out on shrink so appearance/dissipation is smooth.
+	const BASE_ALPHA := 0.75
+	var alpha_mul: float = 1.0
+	if time_alive < grow_time:
+		alpha_mul = time_alive / grow_time
+	elif time_alive >= shrink_start:
+		alpha_mul = 1.0 - (time_alive - shrink_start) / shrink_time
+	var fade: float = BASE_ALPHA * clampf(alpha_mul, 0.0, 1.0)
+
 	var pulse: float = sin(time_alive * 4.0) * 0.04 + 1.0
 	var display_w: float = cloud_radius * 2.1 * size_k * pulse
 	var tex_name: String = "stink_cloud_%d.png" % frame
 	ProjectileSprites.draw_single(self, tex_name,
-		display_w, 0.0, Color.WHITE)
+		display_w, 0.0, Color(1, 1, 1, fade))
 
 	# Floating toxin motes on top for motion juice.
 	var r: float = cloud_radius * pulse * size_k
@@ -131,5 +141,5 @@ func _draw() -> void:
 		var ps := (3.0 + sin(time_alive * 2.0 + i) * 1.5) * size_k
 		draw_circle(
 			Vector2(px, py), maxf(ps, 0.5),
-			Color(0.4, 0.95, 0.25, 0.28 * size_k)
+			Color(0.4, 0.95, 0.25, 0.28 * fade)
 		)
