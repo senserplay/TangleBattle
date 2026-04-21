@@ -1,5 +1,52 @@
 # TangleBattle — Рабочий лог
 
+## 2026-04-21 — fix(vfx): grenade вырезан из зелёного фона + velocity-based spin
+
+### Запрос
+"Теперь граната — то же самое, вырежи зелёный фон и придай лёгкое
+кручение снаряду, зависящее от скорости полёта. И направление кручения
+зависит от направления полёта."
+
+### Реализация
+
+**1. Chroma-key в Python/PIL**
+Hue-based фильтр (стабильнее distance для ассета с яркой orange-glow
+оправой, которая фейдит в BG):
+```
+bg_score = (G - max(R, B)) / 100.0
+  >= 0.8  → alpha = 0          (pure BG)
+  0.3..0.8 → alpha = lerp(255→0) + green-despill (G → avg(R,B))
+  < 0.3   → keep (grenade body / orange glow)
+```
+Orange halo (214, 174, 16) имеет `(G - max(R,B))/100 = -0.4` — далеко
+от порога, сохраняется полностью. После crop → 601×743.
+
+**2. Velocity-based spin**
+В `grenade.gd`:
+- Добавлен `var spin_angle: float = 0.0`
+- В `_physics_process` до bounce:
+  ```
+  horiz = velocity.x
+  vert_bias = |velocity.y| * 0.15 * sign(velocity.x)
+  spin_speed = (horiz + vert_bias) * 0.0045
+  spin_angle += spin_speed * delta
+  ```
+  - При `velocity.x > 0` → `spin_speed > 0` → **CW**
+  - При `velocity.x < 0` → `spin_speed < 0` → **CCW**
+  - Магнитуда растёт со скоростью (быстрый бросок = быстрее крутится)
+  - Vertical-bias добавляет небольшой wobble на вертикальных дугах
+- В `_draw`: `draw_single(..., spin_angle, mod)` вместо `timer * 4.0`
+- Размер бамперa 40 → 44 (текстура физически больше из-за glow)
+
+### Файлы
+- `assets/textures/effects/projectiles/grenade.png` — перезаписан
+- `scripts/characters/grenade.gd` — spin_angle + velocity-driven update
+
+### Тест
+- `mcp__godot__run_project` — runtime чисто.
+
+---
+
 ## 2026-04-21 — tweak(vfx): бумеранг в grayscale — чистый tint под цвет игрока
 
 ### Запрос
