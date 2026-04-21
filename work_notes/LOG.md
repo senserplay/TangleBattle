@@ -1,5 +1,41 @@
 # TangleBattle — Рабочий лог
 
+## 2026-04-21 — fix(vfx): yarn_toss вырезан + десатурирован под player-color tint
+
+### Запрос
+"Теперь yarn toss, также нужно убрать зелёный фон, добавь это в картинку снаряда."
+
+### Фикс
+`my_assets/Анимации снарядов/yarn_toss_green_background.png` — розовый
+клубок с motion-blur trail на lime-green. Chroma-key с
+десатурацией (как у бумеранга), потому что в [yarn_projectile.gd](scripts/characters/yarn_projectile.gd)
+текстура уже модулируется `color = player_color`:
+```
+ProjectileSprites.draw_single(self, "yarn_toss.png", 48.0, ang, color)
+```
+Поэтому pink тинтуется с color даёт грязь — нужен grayscale base.
+
+Фильтр:
+- `bg_score >= 0.75` → alpha=0
+- `0.25..0.75` → feathered alpha + grayscale (Rec.709 luminance,
+  brightness remapped в [60..255])
+- `< 0.25` → keep + grayscale тоже
+
+Motion-blur trail (bg_score ≈ -0.1..0.1) сохранён и тоже обесцвечен —
+теперь тинтуется цветом игрока.
+
+Результат: нейтральный серо-белый клубок с сохранёнными тенями и
+highlights. Crop: 762×515. В игре P1 (red) → красный клубок,
+P2 (blue) → синий и т.д. — **чисто**, без pink cast.
+
+### Файлы
+- `assets/textures/effects/projectiles/yarn_toss.png` — перезаписан.
+
+### Тест
+- `mcp__godot__run_project` — runtime чисто.
+
+---
+
 ## 2026-04-21 — fix(vfx): heavens_wrath beam вырезан + agressive despill
 
 ### Запрос
