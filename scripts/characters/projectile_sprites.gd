@@ -23,19 +23,22 @@ static func _get_tex(tex_name: String) -> Texture2D:
 	return tex
 
 
-## Draw a whole single-texture asset centered on (0,0) with the given
-## display width. Aspect preserved from the source.
+## Draw a whole single-texture asset centered on `offset` (default (0,0))
+## in the canvas item's local space, with the given display width. Aspect
+## preserved from the source. `draw_single` resets its own transform at
+## the end, so wrapping it in an outer `draw_set_transform` no longer
+## works — pass `offset` instead to position the draw.
 static func draw_single(
 	ci: CanvasItem, tex_name: String, display_w: float,
 	rotation: float = 0.0, modulate: Color = Color.WHITE,
-	flip_h: bool = false
+	flip_h: bool = false, offset: Vector2 = Vector2.ZERO
 ) -> void:
 	var tex: Texture2D = _get_tex(tex_name)
 	if tex == null:
 		return
 	var native: Vector2 = tex.get_size()
 	var scl: float = display_w / native.x
-	ci.draw_set_transform(Vector2.ZERO, rotation,
+	ci.draw_set_transform(offset, rotation,
 		Vector2(-scl if flip_h else scl, scl))
 	ci.draw_texture_rect(
 		tex,
