@@ -1,5 +1,63 @@
 # TangleBattle — Рабочий лог
 
+## 2026-04-21 — feat(vfx): black_hole 7-frame 3-phase анимация (grow → hold → shrink)
+
+### Запрос
+"Black hole — анимация появления, тут 7 этапов, нужно вырезать зелёный
+фон и начиная с первой (размер должен быть пропорционален тому, что на
+изображении) до последней прокрутить анимацию, а потом последнюю картинку
+крутить до тех пор, пока способность не закончится, затем проиграть
+анимацию в обратном направлении."
+
+### Ассеты
+`my_assets/Анимации снарядов/black_hole_green_background.png` (2488×416)
+— 7 стадий роста вихря от точки до полного портала.
+
+### Реализация
+
+**1. Экстракция** Python/PIL:
+- Chroma-key: `bg_score = (G - max(R,B))/100` → `≥0.60` transparent,
+  `0.15..0.60` feathered + hard despill `G = min(G, max(R,B))`,
+  `<0.15` content + gentle despill.
+- Inner margin 25px между кадрами (изначально 4 давал bleed frame 1 в
+  frame 0).
+- Каждый кадр crop до bbox + 2px inflate.
+
+Старые `black_hole_{0..5}.png` (6 frames) удалены. Новые
+`black_hole_{0..6}.png` имеют размеры пропорциональные содержимому:
+- `0: 47×51` (крошечная точка)
+- `1: 305×222`, `2: 305×304`, `3: 305×324`, `4: 305×382`
+- `5: 305×413`, `6: 305×414` (полный вихрь с ring glow)
+
+**2. 3-phase анимация** в `black_hole.gd`:
+- Новая переменная `shrink_time: float = 1.2` (cfg-overrideable).
+- `total_lifetime = expand_time + active_duration + shrink_time`.
+- В `_physics_process`:
+  - `time_alive < expand_time` → `radius = max * t²` (grow ease-in)
+  - `time_alive < total - shrink_time` → `radius = max` (hold)
+  - else → `radius = max * (1-t)²` (shrink ease-out)
+- В `_draw` выбор frame:
+  ```
+  if time < expand_time:      frame = int(t * 7)          # 0..6
+  elif time < shrink_start:   frame = 6                   # hold
+  else:                       frame = 6 - int(t * 7)      # 6..0
+  ```
+- Continuous rotation `time_alive * 0.9` на всех трёх фазах.
+- Fade-out по `remaining` убран — теперь shrink сам ведёт к нулю.
+
+### Файлы
+- `assets/textures/effects/projectiles/black_hole_0..6.png` (7 новых,
+  + imports)
+- `assets/textures/effects/projectiles/black_hole_{0..5}.png` (старые 6
+  перезаписаны первыми 6 из новых — 7-й — новый файл; old 0..5 больше
+  не актуальны по размерам, заменены)
+- `scripts/characters/black_hole.gd` — shrink phase + 7-frame indexing
+
+### Тест
+- `mcp__godot__run_project` — runtime чисто.
+
+---
+
 ## 2026-04-21 — feat(vfx): текстурная верёвка грэппла вместо draw_line
 
 ### Запрос

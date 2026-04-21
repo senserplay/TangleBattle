@@ -15,6 +15,9 @@ var drain_per_sec: float = 5.0
 var time_alive: float = 0.0
 var total_lifetime: float = 10.5
 var current_radius: float = 0.0
+# Shrink back to a dot in the last `shrink_time` seconds — the 7-frame
+# sprite replays in reverse while radius decays. Included in total_lifetime.
+var shrink_time: float = 1.2
 
 
 func setup_from_config(id: int, cfg: Dictionary) -> void:
@@ -24,7 +27,9 @@ func setup_from_config(id: int, cfg: Dictionary) -> void:
 	active_duration = cfg.get("active_duration", 8.0)
 	pull_force = cfg.get("pull_force", 350.0)
 	drain_per_sec = cfg.get("drain_per_sec", 5.0)
-	total_lifetime = expand_time + active_duration
+	shrink_time = cfg.get("shrink_time", 1.2)
+	# Lifetime covers growth, active, and shrink phases in that order.
+	total_lifetime = expand_time + active_duration + shrink_time
 
 
 func _ready() -> void:
@@ -58,12 +63,19 @@ func _physics_process(delta: float) -> void:
 			global_position, 0.6, sc, randf() * TAU,
 			Color(0.6, 0.3, 0.9, 0.9), 4.0)
 
+	# Three phases: grow (0..expand_time), hold (..total-shrink), shrink (last shrink_time).
+	var shrink_start: float = total_lifetime - shrink_time
 	if time_alive < expand_time:
 		# Expanding phase — grow radius, pull starts immediately but weaker
 		var t := time_alive / expand_time
 		current_radius = max_radius * t * t  # ease-in
-	else:
+	elif time_alive < shrink_start:
 		current_radius = max_radius
+	else:
+		# Shrink phase — ease-out back to zero
+		var t := (time_alive - shrink_start) / shrink_time
+		var k := 1.0 - t
+		current_radius = max_radius * k * k
 
 	# Pull and drain during ALL phases (not just active)
 	_pull_and_drain(delta)
@@ -101,17 +113,22 @@ func _draw() -> void:
 		return
 
 	var fade := 1.0
-	var remaining := total_lifetime - time_alive
-	if remaining < 1.0:
-		fade = remaining
 
 	var time_val := time_alive * 2.0
 
-	# Animated vortex sprite — 6 individual per-frame PNGs, each trimmed
-	# & centered on content. Frame picked by growth progress. Continuous
-	# rotation adds extra motion on top of the sprite's baked swirl.
-	var growth: float = clampf(current_radius / max_radius, 0.0, 1.0)
-	var frame: int = clampi(int(growth * 6.0), 0, 5)
+	# Animated vortex — 7 per-frame PNGs, content-centered.
+	# Phase-based frame index:
+	#   grow  : frames 0..6 over expand_time
+	#   hold  : frame 6 (rotating)
+	#   shrink: frames 6..0 over shrink_time (reverse)
+	var shrink_start: float = total_lifetime - shrink_time
+	var frame: int = 6
+	if time_alive < expand_time:
+		var t: float = time_alive / expand_time
+		frame = clampi(int(t * 7.0), 0, 6)
+	elif time_alive >= shrink_start:
+		var t: float = (time_alive - shrink_start) / shrink_time
+		frame = clampi(6 - int(t * 7.0), 0, 6)
 	var rot: float = time_alive * 0.9
 	var tex_name: String = "black_hole_%d.png" % frame
 	ProjectileSprites.draw_single(self, tex_name,
