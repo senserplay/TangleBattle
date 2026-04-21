@@ -93,27 +93,43 @@ func _run_poison(player: CharacterBody2D, pid: int) -> void:
 
 
 func _draw() -> void:
-	var fade := clampf(lifetime / 0.5, 0.0, 1.0)  # fade out last 0.5s
-	var pulse := sin(time_alive * 4.0) * 0.04 + 1.0
+	# 3-phase cloud animation (same pattern as black hole):
+	#   grow   [0..grow_time):         frame 0..5, size 0..1 (ease-in²)
+	#   hold   [grow_time..shrink):    frame 5, size 1
+	#   shrink [shrink_start..end):    frame 5..0, size 1..0 (ease-out²)
+	# Sized so grow + hold + shrink fit inside cloud_duration. For short
+	# durations the grow/shrink shrink proportionally so hold >= 0.
+	var grow_time: float = minf(0.6, cloud_duration * 0.3)
+	var shrink_time: float = minf(0.6, cloud_duration * 0.3)
+	var shrink_start: float = cloud_duration - shrink_time
 
-	# Animated 6-frame cloud, per-frame PNGs trimmed+centered on content.
-	# Growth during first 0.8s, then hold final frame.
-	var growth: float = clampf(time_alive / 0.8, 0.0, 1.0)
-	var frame: int = clampi(int(growth * 6.0), 0, 5)
-	var display_w: float = cloud_radius * 2.1 * pulse
+	var size_k: float = 1.0
+	var frame: int = 5
+	if time_alive < grow_time:
+		var t: float = time_alive / grow_time
+		size_k = t * t
+		frame = clampi(int(t * 6.0), 0, 5)
+	elif time_alive >= shrink_start:
+		var t: float = (time_alive - shrink_start) / shrink_time
+		var k: float = 1.0 - t
+		size_k = k * k
+		frame = clampi(5 - int(t * 6.0), 0, 5)
+
+	var pulse: float = sin(time_alive * 4.0) * 0.04 + 1.0
+	var display_w: float = cloud_radius * 2.1 * size_k * pulse
 	var tex_name: String = "stink_cloud_%d.png" % frame
 	ProjectileSprites.draw_single(self, tex_name,
-		display_w, 0.0, Color(1, 1, 1, fade))
+		display_w, 0.0, Color.WHITE)
 
 	# Floating toxin motes on top for motion juice.
-	var r: float = cloud_radius * pulse
+	var r: float = cloud_radius * pulse * size_k
 	for i in range(10):
 		var angle := time_alive * (0.5 + i * 0.15) + i * TAU / 10.0
 		var dist := r * (0.35 + fmod(i * 0.17, 0.45))
 		var px := cos(angle) * dist
 		var py := sin(angle) * dist
-		var ps := 3.0 + sin(time_alive * 2.0 + i) * 1.5
+		var ps := (3.0 + sin(time_alive * 2.0 + i) * 1.5) * size_k
 		draw_circle(
-			Vector2(px, py), ps,
-			Color(0.4, 0.95, 0.25, 0.28 * fade)
+			Vector2(px, py), maxf(ps, 0.5),
+			Color(0.4, 0.95, 0.25, 0.28 * size_k)
 		)

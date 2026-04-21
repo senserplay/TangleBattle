@@ -1,5 +1,54 @@
 # TangleBattle — Рабочий лог
 
+## 2026-04-21 — feat(vfx): stink_cloud 6-frame 3-phase (grow → hold → shrink)
+
+### Запрос
+"Stink_cloud: вырезать из **красного** фона, 6 тайлов, сохранить пропорции,
+при активации — анимация вперёд (финал статично), при окончании —
+в обратном порядке (как у чёрной дыры)."
+
+### Экстракция
+Source: `my_assets/Анимации снарядов/Stink_cloud_red_background.png`
+(2549×416). **Красный** BG (~254, 36, 30), поэтому chroma-key формула
+перевёрнута: `bg_score = (R - max(G, B)) / 100`.
+
+Тот же peak-detection подход: облако **зелёно-доминантное**, считаем по
+столбцам пиксели где `g > 80 and g > r and g > b`. Обнаруженные центры:
+`[318, 607, 994, 1586, 1793, 2500]`. Midpoint-границы + расширение
+крайних до источника.
+
+Результаты:
+- `0: 58×63` (малая точка)
+- `1: 194×176`, `2: 219×283`, `3: 278×321`
+- `4: 339×371`, `5: 377×393` (полное облако с бликами)
+
+### Анимация
+Переписана `stink_cloud.gd::_draw` по образцу `black_hole.gd`:
+```
+grow_time   = min(0.6, cloud_duration * 0.3)
+shrink_time = min(0.6, cloud_duration * 0.3)
+```
+- `time_alive < grow_time`: `size_k = t²` (ease-in), `frame = int(t*6)` → 0..5
+- mid-hold: `size_k = 1`, `frame = 5`
+- `time_alive >= cloud_duration - shrink_time`:
+  `size_k = (1-t)²` (ease-out), `frame = 5 - int(t*6)` → 5..0
+
+Размер применяется к `display_w = cloud_radius * 2.1 * size_k * pulse` —
+облако физически **растёт и усыхает** вместе со сменой кадров, не только
+меняет картинку. Floating toxin motes тоже масштабируются по `size_k`.
+
+Удалён старый `fade = lifetime / 0.5` (линейный alpha на последнюю 0.5с)
+— теперь сама фаза shrink плавно уменьшает облако.
+
+### Файлы
+- `assets/textures/effects/projectiles/stink_cloud_{0..5}.png` (6 новых)
+- `scripts/characters/stink_cloud.gd` (_draw переписан)
+
+### Тест
+- `mcp__godot__run_project` — runtime чисто.
+
+---
+
 ## 2026-04-21 — fix(vfx): portal marker застревал в игроке — не уважал внешний transform
 
 ### Жалоба
