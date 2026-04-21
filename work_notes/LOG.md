@@ -1,5 +1,56 @@
 # TangleBattle — Рабочий лог
 
+## 2026-04-21 — fix(vfx): portal marker застревал в игроке — не уважал внешний transform
+
+### Жалоба
+"Анимация портала не остаётся на том месте, где его поставили, она
+проигрывается в игроке и остаётся в нём. Партиклы при этом в нужном
+месте."
+
+### Причина
+`ProjectileSprites.draw_single` внутри выполняет:
+```
+ci.draw_set_transform(Vector2.ZERO, rotation, scale)
+```
+что **перезаписывает** любой внешний `draw_set_transform(pg, ...)`, который
+я ставил в player.gd. В итоге портал рисовался в (0,0) локальных
+координат = **позиции игрока**. Частицы рисовались через обычный
+`draw_circle(pg + offset, ...)` — без transform'а — поэтому были на
+правильном месте.
+
+### Фикс
+Добавил параметр `offset: Vector2 = Vector2.ZERO` в `draw_single`:
+```gdscript
+static func draw_single(
+    ci, tex_name, display_w,
+    rotation = 0.0, modulate = Color.WHITE,
+    flip_h = false, offset: Vector2 = Vector2.ZERO
+):
+    ...
+    ci.draw_set_transform(offset, rotation, scale)
+```
+В `player.gd` portal marker:
+```gdscript
+ProjectileSprites.draw_single(self, tex_name,
+    display_w, 0.0, Color(1, 1, 1, 0.95), false, pg)  # ← offset=pg
+```
+Внешний `draw_set_transform(pg, ...)` + reset в конце убраны — они
+больше не нужны.
+
+Default `offset = Vector2.ZERO` сохраняет обратную совместимость со
+всеми другими callsite'ами (yarn_projectile, grenade, boomerang,
+black_hole, stink_cloud, swap_effect — всем они рисуют на собственной
+ноде в (0,0)).
+
+### Файлы
+- `scripts/characters/projectile_sprites.gd` — новый `offset` параметр
+- `scripts/characters/player.gd` — portal marker использует `offset=pg`
+
+### Тест
+- `mcp__godot__run_project` — runtime чисто.
+
+---
+
 ## 2026-04-21 — feat(vfx): portal gate opening anim + purple particles
 
 ### Запрос

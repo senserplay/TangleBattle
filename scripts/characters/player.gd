@@ -1909,14 +1909,16 @@ func _draw() -> void:
 		if elapsed < PORTAL_OPEN_DUR:
 			frame_idx = clampi(int(elapsed / PORTAL_OPEN_DUR * 5.0), 0, 4)
 		# Portal sizes vary a lot between frames because frame 0 is a
-		# small flash and frame 4 is the fully-open oval; draw_single
-		# centers on local origin so physical proportions are preserved.
-		draw_set_transform(pg, 0.0, Vector2.ONE)
+		# small flash and frame 4 is the fully-open oval; pass `pg`
+		# as the draw offset so the PNG is anchored to the portal's
+		# world position, NOT the player's current position. (The
+		# player keeps moving after placing the portal; without an
+		# explicit offset, draw_single's internal draw_set_transform
+		# would place the sprite on the player.)
 		var display_w: float = 180.0
 		var tex_name: String = "portal_gate_%d.png" % frame_idx
 		ProjectileSprites.draw_single(self, tex_name,
-			display_w, 0.0, Color(1, 1, 1, 0.95))
-		draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
+			display_w, 0.0, Color(1, 1, 1, 0.95), false, pg)
 		# Purple particles flying outward once the portal is fully open.
 		if frame_idx >= 4:
 			var now_anim: float = now_sec * 1.0  # seconds since game start
