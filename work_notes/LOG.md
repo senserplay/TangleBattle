@@ -1,5 +1,35 @@
 # TangleBattle — Рабочий лог
 
+## 2026-04-21 — tweak(vfx): чёрная дыра теперь полупрозрачная + fade in/out
+
+### Запрос
+"Теперь добавь прозрачность чёрной дыре."
+
+### Фикс
+В `black_hole.gd::_draw`:
+```
+const BASE_ALPHA := 0.70
+var alpha_mul := 1.0
+if time_alive < expand_time:
+    alpha_mul = time_alive / expand_time        # fade in
+elif time_alive >= shrink_start:
+    alpha_mul = 1.0 - (time_alive - shrink_start) / shrink_time  # fade out
+fade = BASE_ALPHA * clamp(alpha_mul, 0..1)
+```
+- На hold-фазе альфа = 0.70 — через дыру видны платформы и игроки.
+- На grow (первые ~2с) плавно поднимается от 0 → 0.70.
+- На shrink (последняя 1.2с) плавно опускается 0.70 → 0.
+- Дубликат `shrink_start` удалён (он теперь объявлен один раз
+  в alpha-блоке).
+
+### Файлы
+- `scripts/characters/black_hole.gd` (+8 строк)
+
+### Тест
+- `mcp__godot__run_project` — runtime чисто.
+
+---
+
 ## 2026-04-21 — fix(vfx): black_hole_6 — убрана искусственная обрезка halo
 
 ### Жалоба
