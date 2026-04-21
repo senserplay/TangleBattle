@@ -403,10 +403,22 @@ func _load_random_map() -> void:
 		for node in get_tree().get_nodes_in_group(grp):
 			if is_instance_valid(node):
 				node.queue_free()
-	var idx: int = randi_range(0, MAP_SCENES.size() - 1)
-	var scene: PackedScene = load(MAP_SCENES[idx])
-	current_map = scene.instantiate()
-	map_container.add_child(current_map)
+	# Custom map path: editor pushed a Dictionary into GameManager.
+	# IMPORTANT: call load_from_dict BEFORE add_child so map_base._ready()
+	# sees the populated platforms/hazards/teleports arrays and creates
+	# StaticBody2D collisions, hazards and portals for them. Calling it
+	# AFTER add_child would skip physics-body creation for every object
+	# placed in the editor.
+	if not GameManager.pending_custom_map.is_empty():
+		var custom_scn: PackedScene = load("res://scenes/maps/custom_map.tscn")
+		current_map = custom_scn.instantiate()
+		current_map.load_from_dict(GameManager.pending_custom_map)
+		map_container.add_child(current_map)
+	else:
+		var idx: int = randi_range(0, MAP_SCENES.size() - 1)
+		var scene: PackedScene = load(MAP_SCENES[idx])
+		current_map = scene.instantiate()
+		map_container.add_child(current_map)
 	if current_map != null and "spawn_points" in current_map:
 		GameManager.spawn_points = current_map.spawn_points
 	game_camera.map_ref = current_map

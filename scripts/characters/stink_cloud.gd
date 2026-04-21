@@ -1,4 +1,6 @@
 extends Node2D
+
+const ProjectileSprites := preload("res://scripts/characters/projectile_sprites.gd")
 ## Stationary poison cloud. Poisons enemies who enter.
 
 var owner_id: int = -1
@@ -91,34 +93,53 @@ func _run_poison(player: CharacterBody2D, pid: int) -> void:
 
 
 func _draw() -> void:
-	var fade := clampf(lifetime / 0.5, 0.0, 1.0)  # fade out last 0.5s
-	var pulse := sin(time_alive * 4.0) * 0.03 + 1.0
+	# 3-phase cloud animation (same pattern as black hole):
+	#   grow   [0..grow_time):         frame 0..5, size 0..1 (ease-in²)
+	#   hold   [grow_time..shrink):    frame 5, size 1
+	#   shrink [shrink_start..end):    frame 5..0, size 1..0 (ease-out²)
+	# Sized so grow + hold + shrink fit inside cloud_duration. For short
+	# durations the grow/shrink shrink proportionally so hold >= 0.
+	var grow_time: float = minf(0.6, cloud_duration * 0.3)
+	var shrink_time: float = minf(0.6, cloud_duration * 0.3)
+	var shrink_start: float = cloud_duration - shrink_time
 
-	# Outer cloud
-	var r := cloud_radius * pulse
-	var col := Color(0.2, 0.7, 0.1, 0.08 * fade)
-	draw_circle(Vector2.ZERO, r, col)
+	var size_k: float = 1.0
+	var frame: int = 5
+	if time_alive < grow_time:
+		var t: float = time_alive / grow_time
+		size_k = t * t
+		frame = clampi(int(t * 6.0), 0, 5)
+	elif time_alive >= shrink_start:
+		var t: float = (time_alive - shrink_start) / shrink_time
+		var k: float = 1.0 - t
+		size_k = k * k
+		frame = clampi(5 - int(t * 6.0), 0, 5)
 
-	# Middle layer
-	draw_circle(Vector2.ZERO, r * 0.7, Color(0.25, 0.75, 0.1, 0.1 * fade))
+	# Transparency — toxic gas should let platforms / players show through.
+	# Fades in on grow and out on shrink so appearance/dissipation is smooth.
+	const BASE_ALPHA := 0.75
+	var alpha_mul: float = 1.0
+	if time_alive < grow_time:
+		alpha_mul = time_alive / grow_time
+	elif time_alive >= shrink_start:
+		alpha_mul = 1.0 - (time_alive - shrink_start) / shrink_time
+	var fade: float = BASE_ALPHA * clampf(alpha_mul, 0.0, 1.0)
 
-	# Inner core
-	draw_circle(Vector2.ZERO, r * 0.35, Color(0.3, 0.8, 0.15, 0.12 * fade))
+	var pulse: float = sin(time_alive * 4.0) * 0.04 + 1.0
+	var display_w: float = cloud_radius * 2.1 * size_k * pulse
+	var tex_name: String = "stink_cloud_%d.png" % frame
+	ProjectileSprites.draw_single(self, tex_name,
+		display_w, 0.0, Color(1, 1, 1, fade))
 
-	# Edge ring
-	draw_arc(
-		Vector2.ZERO, r, 0.0, TAU, 32,
-		Color(0.3, 0.8, 0.1, 0.15 * fade), 2.0
-	)
-
-	# Floating particles
-	for i in range(12):
-		var angle := time_alive * (0.5 + i * 0.15) + i * TAU / 12.0
-		var dist := r * (0.3 + fmod(i * 0.17, 0.5))
+	# Floating toxin motes on top for motion juice.
+	var r: float = cloud_radius * pulse * size_k
+	for i in range(10):
+		var angle := time_alive * (0.5 + i * 0.15) + i * TAU / 10.0
+		var dist := r * (0.35 + fmod(i * 0.17, 0.45))
 		var px := cos(angle) * dist
 		var py := sin(angle) * dist
-		var ps := 3.0 + sin(time_alive * 2.0 + i) * 1.5
+		var ps := (3.0 + sin(time_alive * 2.0 + i) * 1.5) * size_k
 		draw_circle(
-			Vector2(px, py), ps,
-			Color(0.3, 0.85, 0.15, 0.2 * fade)
+			Vector2(px, py), maxf(ps, 0.5),
+			Color(0.4, 0.95, 0.25, 0.28 * fade)
 		)

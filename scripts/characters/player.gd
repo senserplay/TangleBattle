@@ -1,5 +1,7 @@
 extends CharacterBody2D
 
+const ProjectileSprites := preload("res://scripts/characters/projectile_sprites.gd")
+
 signal died(player_id: int)
 
 const SPEED := 300.0
@@ -46,8 +48,8 @@ const CROSSHAIR_SIZE := 12.0
 
 # Ability icon layout
 const ICON_Y := -60.0
-const ICON_RADIUS := 18.0
-const ICON_SPACING := 42.0
+const ICON_RADIUS := 26.0
+const ICON_SPACING := 62.0
 
 # Player-to-player collision
 const PLAYER_BOUNCE := 200.0
@@ -221,6 +223,10 @@ var _death_effect_scene: PackedScene = preload(
 var tripwire_node: Node2D = null
 var portal_gate_pos: Vector2 = Vector2.ZERO
 var has_portal_gate: bool = false
+# `Time.get_ticks_msec() / 1000.0` at the moment the portal was placed.
+# Used by the marker draw to play an opening animation (frames 0..4) and
+# then hold frame 4 until the second press (teleport back).
+var portal_gate_placed_time: float = -1.0
 
 # Ability entity limit tracking: ability_id → count of active entities on map
 var ability_entity_count: Dictionary = {}
@@ -1348,6 +1354,7 @@ func respawn(pos: Vector2) -> void:
 	tripwire_node = null
 	portal_gate_pos = Vector2.ZERO
 	has_portal_gate = false
+	portal_gate_placed_time = -1.0
 	ability_entity_count.clear()
 	grabbed_player = null
 	grab_slot = -1
@@ -1690,22 +1697,37 @@ func _draw() -> void:
 			draw_circle(trail_pos, trail_r,
 				Color(base_color.r, base_color.g, base_color.b, trail_alpha))
 
-	# Grapple rope / shooting hook (per-player color)
-	var rope_col := player_color.lerp(Color(0.7, 0.55, 0.35), 0.3)
+	# Grapple rope / shooting hook — textured rope (rope.png) tinted
+	# with the player's color. The texture is a horizontal rope strip
+	# that we stretch along the shot direction via draw_set_transform.
+	var rope_col := player_color.lerp(Color(0.95, 0.9, 0.85), 0.25)
 	var rope_active := false
 	var rope_end := Vector2.ZERO
+	var rope_thickness: float = 12.0
 	if is_grappling:
 		rope_end = grapple_point - global_position
-		draw_line(Vector2.ZERO, rope_end, rope_col, 2.5)
-		draw_circle(rope_end, 5.0, rope_col)
-		draw_circle(rope_end, 3.0, rope_col.lightened(0.3))
 		rope_active = true
 	elif grapple_shooting or grapple_retracting:
 		rope_end = grapple_tip - global_position
-		draw_line(Vector2.ZERO, rope_end, rope_col, 2.0)
-		draw_circle(rope_end, 5.0, rope_col)
-		draw_circle(rope_end, 3.0, rope_col.lightened(0.3))
 		rope_active = true
+	if rope_active:
+		var rope_len: float = rope_end.length()
+		if rope_len > 1.0:
+			var angle: float = rope_end.angle()
+			var rope_tex: Texture2D = ProjectileSprites._get_tex("rope.png")
+			if rope_tex != null:
+				draw_set_transform(Vector2.ZERO, angle, Vector2.ONE)
+				draw_texture_rect(
+					rope_tex,
+					Rect2(0, -rope_thickness * 0.5, rope_len, rope_thickness),
+					false, rope_col
+				)
+				draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
+			else:
+				draw_line(Vector2.ZERO, rope_end, rope_col, 4.0)
+		# Hook tip
+		draw_circle(rope_end, 6.0, rope_col)
+		draw_circle(rope_end, 4.0, rope_col.lightened(0.3))
 
 	# Fire Thread glow on rope
 	if rope_active and fire_thread_active:
@@ -1873,27 +1895,52 @@ func _draw() -> void:
 		draw_arc(grab_to, gr_r, 0.0, TAU, 16,
 			Color(gc.r, gc.g, gc.b, pulse), 2.0)
 
-	# Portal Gate marker (drawn in world space)
+	# Portal Gate marker — 5-frame opening animation 0→4, then hold on
+	# frame 4 until the second press of the ability (which teleports and
+	# consumes the portal). While holding, emit purple particles radially.
 	if has_portal_gate:
 		var pg: Vector2 = portal_gate_pos - global_position
-		var pg_time := float(Engine.get_physics_frames()) * 0.03
-		var pg_pulse := 0.5 + 0.2 * sin(pg_time * 4.0)
-		var pg_col := Color(0.5, 0.2, 0.9, pg_pulse)
-		# Outer ring
-		draw_arc(pg, 100.0, 0.0, TAU, 20, pg_col, 2.5)
-		# Inner rotating arcs
-		for pi in range(3):
-			var arc_s := pg_time * 2.0 + pi * TAU / 3.0
-			draw_arc(pg, 60.0, arc_s, arc_s + 1.0, 8,
-				Color(0.6, 0.3, 1.0, pg_pulse * 0.6), 2.0)
-		# Center dot
-		draw_circle(pg, 8.0, Color(0.5, 0.2, 0.9, pg_pulse * 0.4))
-		# Sparkles
-		for pi in range(6):
-			var sa := pg_time * 1.5 + pi * TAU / 6.0
-			var sd := 70.0 + sin(pg_time + pi) * 20.0
-			draw_circle(pg + Vector2(cos(sa) * sd, sin(sa) * sd),
-				2.5, Color(0.7, 0.4, 1.0, pg_pulse * 0.5))
+		const PORTAL_OPEN_DUR: float = 0.55
+		var now_sec: float = float(Time.get_ticks_msec()) / 1000.0
+		var elapsed: float = now_sec - portal_gate_placed_time
+		if portal_gate_placed_time < 0.0:
+			elapsed = PORTAL_OPEN_DUR  # defensive fallback
+		var frame_idx: int = 4
+		if elapsed < PORTAL_OPEN_DUR:
+			frame_idx = clampi(int(elapsed / PORTAL_OPEN_DUR * 5.0), 0, 4)
+		# Portal sizes vary a lot between frames because frame 0 is a
+		# small flash and frame 4 is the fully-open oval; pass `pg`
+		# as the draw offset so the PNG is anchored to the portal's
+		# world position, NOT the player's current position. (The
+		# player keeps moving after placing the portal; without an
+		# explicit offset, draw_single's internal draw_set_transform
+		# would place the sprite on the player.)
+		var display_w: float = 180.0
+		var tex_name: String = "portal_gate_%d.png" % frame_idx
+		ProjectileSprites.draw_single(self, tex_name,
+			display_w, 0.0, Color(1, 1, 1, 0.95), false, pg)
+		# Purple particles flying outward once the portal is fully open.
+		if frame_idx >= 4:
+			var now_anim: float = now_sec * 1.0  # seconds since game start
+			var n_particles := 12
+			for pi in range(n_particles):
+				# Stagger each particle's phase so they emit continuously
+				var life_t: float = fmod(
+					now_anim * 1.3 + float(pi) / n_particles, 1.0
+				)
+				var angle: float = float(pi) * TAU / n_particles \
+					+ now_anim * 0.4
+				var r0: float = 35.0
+				var r1: float = 150.0
+				var rr: float = lerpf(r0, r1, life_t)
+				var alpha: float = (1.0 - life_t) * 0.85
+				var size: float = 2.5 + (1.0 - life_t) * 3.5
+				var pos: Vector2 = pg + Vector2(cos(angle), sin(angle)) * rr
+				draw_circle(pos, size,
+					Color(0.72, 0.35, 1.0, alpha))
+				# Inner lighter core
+				draw_circle(pos, size * 0.4,
+					Color(0.95, 0.75, 1.0, alpha * 0.9))
 
 	# Custom spawn point marker (drawn in world space)
 	if has_custom_spawn:
@@ -2035,7 +2082,7 @@ func _draw_hp_bar() -> void:
 
 
 func _draw_ability_icons() -> void:
-	var icon_y := -(get_player_radius() + 40.0) * squash_y
+	var icon_y := -(get_player_radius() + 54.0) * squash_y
 	for i in range(2):
 		var x: float = (i * 2 - 1) * (ICON_SPACING / 2.0)
 		var center := Vector2(x, icon_y)
@@ -2051,7 +2098,7 @@ func _draw_ability_icons() -> void:
 		if cd_ratio > 0.0:
 			_draw_cd_pie(center, ICON_RADIUS, cd_ratio)
 		var bc := ab_color if cd_ratio <= 0.0 else Color(0.4, 0.4, 0.4, 0.6)
-		draw_arc(center, ICON_RADIUS, 0.0, TAU, 24, bc, 1.5)
+		draw_arc(center, ICON_RADIUS, 0.0, TAU, 28, bc, 2.0)
 
 
 func _draw_emblem(
@@ -2327,8 +2374,8 @@ func _vfx_stink_puff(_fx: Dictionary, t: float) -> void:
 
 func _vfx_swap_line(fx: Dictionary, t: float) -> void:
 	var target_pos: Vector2 = fx["target"] - global_position
-	var col := Color(0.9, 0.3, 0.9, t)
-	# Zigzag lightning between positions
+	var col := Color(1.0, 0.5, 1.0, t)
+	# Zigzag lightning between positions for the line trail.
 	var segs := 10
 	var prev := Vector2.ZERO
 	for s in range(segs + 1):
@@ -2336,13 +2383,22 @@ func _vfx_swap_line(fx: Dictionary, t: float) -> void:
 		var pt: Vector2 = Vector2.ZERO.lerp(target_pos, st)
 		if s > 0 and s < segs:
 			var perp := (target_pos.normalized()).rotated(PI / 2.0)
-			pt += perp * sin(st * PI * 4.0 + (1.0 - t) * 15.0) * 12.0 * t
+			pt += perp * sin(st * PI * 4.0 + (1.0 - t) * 15.0) * 14.0 * t
 		if s > 0:
-			draw_line(prev, pt, col, 2.5 * t)
+			draw_line(prev, pt, col, 3.0 * t)
 		prev = pt
-	# Flash circles at both ends
-	draw_circle(Vector2.ZERO, 15.0 * t, Color(0.9, 0.3, 0.9, t * 0.4))
-	draw_circle(target_pos, 15.0 * t, Color(0.9, 0.3, 0.9, t * 0.4))
+	# Animated swap-burst sprite at BOTH ends — 5-frame sheet, frame picks
+	# by effect progress (t=1.0 fresh → frame 0 bright star; t→0 → frame 4
+	# fading open ring).
+	var frame: int = clampi(int((1.0 - t) * 5.0), 0, 4)
+	var sz: float = 140.0
+	draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
+	ProjectileSprites.draw_frame(self, "swap.png", 5, frame, sz, 0.0,
+		Color(1, 1, 1, t))
+	draw_set_transform(target_pos, 0.0, Vector2.ONE)
+	ProjectileSprites.draw_frame(self, "swap.png", 5, frame, sz, 0.0,
+		Color(1, 1, 1, t))
+	draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
 
 
 func _vfx_spin_lines(fx: Dictionary, t: float) -> void:

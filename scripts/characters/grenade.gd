@@ -1,4 +1,6 @@
 extends CharacterBody2D
+
+const ProjectileSprites := preload("res://scripts/characters/projectile_sprites.gd")
 ## Grenade with proper independent velocity and bounce physics.
 
 var owner_id: int = -1
@@ -8,6 +10,10 @@ var exploded: bool = false
 
 var fuse_time: float = 2.0
 var timer: float = 2.0
+# Visual spin accumulator — driven by horizontal velocity each physics
+# frame. Sign follows the flight direction, magnitude scales with speed
+# so fast throws spin faster than slow lobs.
+var spin_angle: float = 0.0
 var bounce_damping: float = 0.5
 var explosion_radius: float = 180.0
 var damage: float = 50.0
@@ -101,6 +107,14 @@ func _physics_process(delta: float) -> void:
 			grav_mul = game.current_map.gravity_multiplier
 	velocity.y += GRAVITY * delta * grav_mul
 
+	# Accumulate visual spin — rate proportional to horizontal speed,
+	# sign follows flight direction (right → CW, left → CCW). Vertical
+	# motion adds a small extra spin so a straight-down drop still wobbles.
+	var horiz: float = velocity.x
+	var vert_bias: float = absf(velocity.y) * 0.15 * signf(velocity.x)
+	var spin_speed: float = (horiz + vert_bias) * 0.0045
+	spin_angle += spin_speed * delta
+
 	# Save pre-slide velocity for bounce calculation
 	var vel_before := velocity
 	move_and_slide()
@@ -190,6 +204,7 @@ func _explode() -> void:
 
 func _draw() -> void:
 	if exploded:
+		# Stylised fireball layers (no art asset for explosion yet).
 		draw_circle(
 			Vector2.ZERO, explosion_radius * 0.5, Color(1, 0.7, 0.1, 0.4)
 		)
@@ -201,13 +216,10 @@ func _draw() -> void:
 		)
 		return
 
+	# Flicker white each fuse pulse to telegraph imminent boom.
 	var flash_rate := 0.3 * (timer / fuse_time) + 0.05
 	var flash := fmod(timer, flash_rate) < flash_rate * 0.5
-	var body_col := color if not flash else Color.WHITE
-
-	draw_circle(Vector2.ZERO, 14.0, body_col)
-	draw_circle(Vector2.ZERO, 14.0, Color(0, 0, 0, 0.15))
-	draw_line(Vector2(0, -14), Vector2(5, -22), Color(0.5, 0.35, 0.2), 2.5)
-	if flash:
-		draw_circle(Vector2(5, -22), 4.0, Color(1, 0.9, 0.3))
-		draw_circle(Vector2(5, -22), 6.0, Color(1, 0.8, 0.2, 0.3))
+	var mod: Color = Color.WHITE if not flash else Color(1.4, 1.4, 1.2, 1.0)
+	# spin_angle is driven by velocity in _physics_process — direction
+	# and speed of spin now match the actual flight trajectory.
+	ProjectileSprites.draw_single(self, "grenade.png", 44.0, spin_angle, mod)

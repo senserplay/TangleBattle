@@ -1,4 +1,6 @@
 extends Node2D
+
+const ProjectileSprites := preload("res://scripts/characters/projectile_sprites.gd")
 ## Heaven's Wrath — massive light pillars rain down from sky.
 ## Pillars spawn from player position toward aim direction, hitting the ground.
 ## They pass through platforms and deal damage on contact.
@@ -135,72 +137,57 @@ func _draw() -> void:
 		var pw: float = p["w"]
 		var phase: String = p["phase"]
 
+		var tex := ProjectileSprites._get_tex("heavens_wrath.png")
 		if phase == "falling":
-			# Light beam falling from sky
+			# Light beam falling from sky — use the vertical beam texture
 			var beam_top: float = map_top
 			var beam_bottom: float = p["y"]
 			var beam_height: float = beam_bottom - beam_top
-
 			if beam_height < 1.0:
 				continue
-
-			# Main beam — bright white-gold center
-			var hw := pw * 0.5
-			# Core (bright)
-			draw_rect(Rect2(px - hw * 0.3, beam_top, pw * 0.3, beam_height),
-				Color(1.0, 0.95, 0.8, 0.6))
-			# Glow (wider, semi-transparent)
-			draw_rect(Rect2(px - hw, beam_top, pw, beam_height),
-				Color(1.0, 0.9, 0.7, 0.15))
-			# Outer glow
-			draw_rect(Rect2(px - hw * 1.5, beam_top, pw * 1.5, beam_height),
-				Color(1.0, 0.85, 0.6, 0.05))
-
-			# Leading edge — bright flash at bottom
-			draw_circle(Vector2(px, beam_bottom), pw * 0.4,
-				Color(1.0, 1.0, 0.9, 0.7))
+			var display_w: float = pw * 1.8
+			if tex != null:
+				draw_texture_rect(tex,
+					Rect2(px - display_w * 0.5, beam_top,
+						display_w, beam_height),
+					false, Color(1, 1, 1, 0.95))
+			# Leading edge flash at the bottom of the falling beam
+			draw_circle(Vector2(px, beam_bottom), pw * 0.5,
+				Color(1.0, 1.0, 0.9, 0.75))
 
 		elif phase == "impact":
-			# Full pillar with impact flash
 			var alpha: float = p["impact_timer"] / 0.5
 			var height := map_bottom - map_top
-
-			# Core beam
-			draw_rect(Rect2(px - pw * 0.15, map_top, pw * 0.3, height),
-				Color(1.0, 0.95, 0.8, 0.5 * alpha))
-			# Glow
-			draw_rect(Rect2(px - pw * 0.5, map_top, pw, height),
-				Color(1.0, 0.9, 0.7, 0.12 * alpha))
-
+			var display_w: float = pw * 1.8
+			if tex != null:
+				draw_texture_rect(tex,
+					Rect2(px - display_w * 0.5, map_top,
+						display_w, height),
+					false, Color(1, 1, 1, alpha))
 			# Impact flash at bottom — expanding ring
 			var ring_r := pw * (1.5 - alpha * 0.5)
 			draw_arc(Vector2(px, map_bottom - 20),
 				ring_r, 0.0, TAU, 16,
-				Color(1.0, 0.95, 0.7, 0.4 * alpha), 3.0)
+				Color(1.0, 0.95, 0.7, 0.5 * alpha), 3.0)
 			draw_circle(Vector2(px, map_bottom - 20),
-				pw * 0.3 * alpha,
-				Color(1.0, 1.0, 0.9, 0.6 * alpha))
-
-			# Dissipation near bottom — fading particles
-			for i in range(4):
-				var scatter_x := px + randf_range(-pw, pw)
-				var scatter_y := map_bottom - 40.0 - i * 30.0
-				draw_circle(Vector2(scatter_x, scatter_y),
-					6.0 * alpha, Color(1.0, 0.9, 0.7, 0.2 * alpha))
+				pw * 0.4 * alpha,
+				Color(1.0, 1.0, 0.9, 0.7 * alpha))
 
 		elif phase == "fading":
 			if p["fade_timer"] <= 0.0:
 				continue
 			var alpha: float = p["fade_timer"] / 0.8
 			var height := map_bottom - map_top
-
-			# Fading afterglow — thin line
-			draw_rect(Rect2(px - 2, map_top, 4, height),
-				Color(1.0, 0.95, 0.85, 0.15 * alpha))
-			# Scattered light particles floating up
+			var display_w: float = pw * 1.0
+			if tex != null:
+				draw_texture_rect(tex,
+					Rect2(px - display_w * 0.5, map_top,
+						display_w, height),
+					false, Color(1, 1, 1, 0.25 * alpha))
+			# Scattered light motes floating up
 			var t := time_alive * 2.0
 			for i in range(3):
 				var fy := map_bottom - fmod(t * 100 + i * 200, height)
 				draw_circle(Vector2(px + sin(t + i) * 15.0, fy),
 					3.0 * alpha,
-					Color(1.0, 0.95, 0.8, 0.2 * alpha))
+					Color(1.0, 0.95, 0.8, 0.3 * alpha))

@@ -478,9 +478,13 @@ func _ab_swap() -> bool:
 	best.danger_timer = 0.0
 
 	player._spawn_dust(5)
-	player._add_vfx("swap_line", 0.4, {"target": my_pos})
 	if best.has_method("_spawn_dust"):
 		best._spawn_dust(5)
+	# Swap burst VFX anchored at BOTH world positions — doesn't follow
+	# either player after the teleport, stays at the two endpoints.
+	var swap_fx: GDScript = load("res://scripts/effects/swap_effect.gd")
+	swap_fx.spawn(get_tree().current_scene, my_pos)
+	swap_fx.spawn(get_tree().current_scene, their_pos)
 	return true
 
 
@@ -764,6 +768,9 @@ func _ab_portal_gate() -> bool:
 		# First press — place portal A
 		player.portal_gate_pos = player.global_position
 		player.has_portal_gate = true
+		# Stamp when the portal was placed so the marker plays the opening
+		# animation (frames 0..4) then holds frame 4.
+		player.portal_gate_placed_time = float(Time.get_ticks_msec()) / 1000.0
 		SoundManager.play_blink()
 		player._add_vfx("shield_flash", 0.2)
 		return false  # no cooldown yet
@@ -802,9 +809,14 @@ func _ab_portal_gate() -> bool:
 		elif proj.global_position.distance_to(pos_b) < portal_r:
 			proj.global_position -= offset
 
-	player._add_vfx("swap_line", 0.4, {"target": pos_a})
+	# Portal-open burst at both portal endpoints (world-anchored, not
+	# attached to any player — so both sides of the swap see the flash).
+	var swap_fx: GDScript = load("res://scripts/effects/swap_effect.gd")
+	swap_fx.spawn(get_tree().current_scene, pos_a)
+	swap_fx.spawn(get_tree().current_scene, pos_b)
 	player.has_portal_gate = false
 	player.portal_gate_pos = Vector2.ZERO
+	player.portal_gate_placed_time = -1.0
 	return true
 
 

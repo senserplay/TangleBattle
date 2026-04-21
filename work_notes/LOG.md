@@ -1,5 +1,1067 @@
 # TangleBattle — Рабочий лог
 
+## 2026-04-21 — tweak(vfx): прозрачность stink_cloud + fade in/out
+
+### Запрос
+"Добавь прозрачность на эту анимацию."
+
+### Фикс
+В `stink_cloud.gd::_draw`:
+```
+const BASE_ALPHA := 0.75
+var alpha_mul := 1.0
+if time_alive < grow_time:
+    alpha_mul = time_alive / grow_time
+elif time_alive >= shrink_start:
+    alpha_mul = 1.0 - (time_alive - shrink_start) / shrink_time
+fade = BASE_ALPHA * clamp(alpha_mul, 0..1)
+```
+Применяется и к основному sprite `draw_single(..., Color(1,1,1,fade))`,
+и к toxin-motes (`alpha = 0.28 * fade`). На hold-фазе облако 75% opaque
+— сквозь него видны платформы и игроки. Grow/shrink плавно fade-in и
+fade-out.
+
+### Файлы
+- `scripts/characters/stink_cloud.gd` (+9 строк)
+
+### Тест
+- `mcp__godot__run_project` — runtime чисто.
+
+---
+
+## 2026-04-21 — feat(vfx): stink_cloud 6-frame 3-phase (grow → hold → shrink)
+
+### Запрос
+"Stink_cloud: вырезать из **красного** фона, 6 тайлов, сохранить пропорции,
+при активации — анимация вперёд (финал статично), при окончании —
+в обратном порядке (как у чёрной дыры)."
+
+### Экстракция
+Source: `my_assets/Анимации снарядов/Stink_cloud_red_background.png`
+(2549×416). **Красный** BG (~254, 36, 30), поэтому chroma-key формула
+перевёрнута: `bg_score = (R - max(G, B)) / 100`.
+
+Тот же peak-detection подход: облако **зелёно-доминантное**, считаем по
+столбцам пиксели где `g > 80 and g > r and g > b`. Обнаруженные центры:
+`[318, 607, 994, 1586, 1793, 2500]`. Midpoint-границы + расширение
+крайних до источника.
+
+Результаты:
+- `0: 58×63` (малая точка)
+- `1: 194×176`, `2: 219×283`, `3: 278×321`
+- `4: 339×371`, `5: 377×393` (полное облако с бликами)
+
+### Анимация
+Переписана `stink_cloud.gd::_draw` по образцу `black_hole.gd`:
+```
+grow_time   = min(0.6, cloud_duration * 0.3)
+shrink_time = min(0.6, cloud_duration * 0.3)
+```
+- `time_alive < grow_time`: `size_k = t²` (ease-in), `frame = int(t*6)` → 0..5
+- mid-hold: `size_k = 1`, `frame = 5`
+- `time_alive >= cloud_duration - shrink_time`:
+  `size_k = (1-t)²` (ease-out), `frame = 5 - int(t*6)` → 5..0
+
+Размер применяется к `display_w = cloud_radius * 2.1 * size_k * pulse` —
+облако физически **растёт и усыхает** вместе со сменой кадров, не только
+меняет картинку. Floating toxin motes тоже масштабируются по `size_k`.
+
+Удалён старый `fade = lifetime / 0.5` (линейный alpha на последнюю 0.5с)
+— теперь сама фаза shrink плавно уменьшает облако.
+
+### Файлы
+- `assets/textures/effects/projectiles/stink_cloud_{0..5}.png` (6 новых)
+- `scripts/characters/stink_cloud.gd` (_draw переписан)
+
+### Тест
+- `mcp__godot__run_project` — runtime чисто.
+
+---
+
+## 2026-04-21 — fix(vfx): portal marker застревал в игроке — не уважал внешний transform
+
+### Жалоба
+"Анимация портала не остаётся на том месте, где его поставили, она
+проигрывается в игроке и остаётся в нём. Партиклы при этом в нужном
+месте."
+
+### Причина
+`ProjectileSprites.draw_single` внутри выполняет:
+```
+ci.draw_set_transform(Vector2.ZERO, rotation, scale)
+```
+что **перезаписывает** любой внешний `draw_set_transform(pg, ...)`, который
+я ставил в player.gd. В итоге портал рисовался в (0,0) локальных
+координат = **позиции игрока**. Частицы рисовались через обычный
+`draw_circle(pg + offset, ...)` — без transform'а — поэтому были на
+правильном месте.
+
+### Фикс
+Добавил параметр `offset: Vector2 = Vector2.ZERO` в `draw_single`:
+```gdscript
+static func draw_single(
+    ci, tex_name, display_w,
+    rotation = 0.0, modulate = Color.WHITE,
+    flip_h = false, offset: Vector2 = Vector2.ZERO
+):
+    ...
+    ci.draw_set_transform(offset, rotation, scale)
+```
+В `player.gd` portal marker:
+```gdscript
+ProjectileSprites.draw_single(self, tex_name,
+    display_w, 0.0, Color(1, 1, 1, 0.95), false, pg)  # ← offset=pg
+```
+Внешний `draw_set_transform(pg, ...)` + reset в конце убраны — они
+больше не нужны.
+
+Default `offset = Vector2.ZERO` сохраняет обратную совместимость со
+всеми другими callsite'ами (yarn_projectile, grenade, boomerang,
+black_hole, stink_cloud, swap_effect — всем они рисуют на собственной
+ноде в (0,0)).
+
+### Файлы
+- `scripts/characters/projectile_sprites.gd` — новый `offset` параметр
+- `scripts/characters/player.gd` — portal marker использует `offset=pg`
+
+### Тест
+- `mcp__godot__run_project` — runtime чисто.
+
+---
+
+## 2026-04-21 — feat(vfx): portal gate opening anim + purple particles
+
+### Запрос
+"Портал: на картинке 5 тайлов, сохранить пропорции, при использовании
+способности portal gate на месте использования начать проигрывать
+анимацию, завершающий тайл должен остаться до повторного использования
+(телепорт назад). Пока стоит — добавить фиолетовые партиклы, вылетающие
+из него."
+
+### Реализация
+
+**1. Экстракция** `my_assets/Анимации снарядов/portal_gate_green_background.png`
+(2320×464) — peak-detection по «чёрным центрам» (`R+G+B<90` opaque) с
+fallback на номинальный центр для кадра 0 (белая вспышка, нет чёрного).
+Обнаруженные центры: `[232, 696, 1160, 1609, 2092]` — после fallback на
+frame 0. Границы band'ов = midpoint между соседними центрами; крайние
+расширены до 0..w источника.
+
+Результаты (пропорции сохранены):
+- `0: 97×115` (вспышка-звезда)
+- `1: 143×312` (вертикальный разрез)
+- `2: 319×325` (портал открывается с розовой вспышкой внутри)
+- `3: 290×354` (портал широко открыт)
+- `4: 273×358` (чистый фиолетовый овал — финальное состояние)
+
+**2. Логика в `player.gd`**
+- Добавлено поле `portal_gate_placed_time: float = -1.0`.
+- В `player_abilities.gd::_ab_portal_gate()`: при первом нажатии
+  `placed_time = Time.get_ticks_msec() / 1000.0`, при втором нажатии
+  (телепорт) сбрасывается в `-1.0` + swap-effect на обоих концах.
+- Цикл respawn в `player.gd` тоже сбрасывает поле.
+- В `player.gd::_draw` portal marker блок:
+  - `elapsed = now - placed_time`
+  - `elapsed < 0.55s`: frame = `int(t * 5)` → **0..4** (opening)
+  - `>= 0.55s`: frame = **4** (hold, до телепорта)
+  - `draw_single` центрирует каждый PNG на `pg` местом портала —
+    размеры всех кадров пропорциональны реальному содержимому.
+
+**3. Purple particles**
+Пока портал в hold-фазе (frame 4), в том же draw-блоке:
+- 12 частиц с stagger'енной lifetime (`life_t = fmod(now*1.3 + i/N, 1)`)
+- Angle = `i * TAU/N + now * 0.4` (медленный орбитальный drift)
+- Radius: `lerp(35, 150, life_t)` — вылетают от центра портала наружу
+- Alpha: `(1-life_t) * 0.85`, size `2.5..6.0` (уменьшается к концу)
+- Core: `draw_circle(pos, size, Color(0.72, 0.35, 1.0, alpha))`
+- Inner: `draw_circle(pos, size*0.4, Color(0.95, 0.75, 1.0, alpha*0.9))`
+
+Без stateful массивов — полностью детерминированная процедурная генерация
+на основе `Time.get_ticks_msec()`, каждый кадр считает позиции заново.
+
+### Файлы
+- `assets/textures/effects/projectiles/portal_gate_{0..4}.png`
+- `scripts/characters/player.gd` (portal marker ~+30 строк, reset)
+- `scripts/characters/player_abilities.gd` (+2 строки — stamp/clear)
+
+### Тест
+- `mcp__godot__run_project` — runtime чисто.
+
+---
+
+## 2026-04-21 — tweak(vfx): чёрная дыра теперь полупрозрачная + fade in/out
+
+### Запрос
+"Теперь добавь прозрачность чёрной дыре."
+
+### Фикс
+В `black_hole.gd::_draw`:
+```
+const BASE_ALPHA := 0.70
+var alpha_mul := 1.0
+if time_alive < expand_time:
+    alpha_mul = time_alive / expand_time        # fade in
+elif time_alive >= shrink_start:
+    alpha_mul = 1.0 - (time_alive - shrink_start) / shrink_time  # fade out
+fade = BASE_ALPHA * clamp(alpha_mul, 0..1)
+```
+- На hold-фазе альфа = 0.70 — через дыру видны платформы и игроки.
+- На grow (первые ~2с) плавно поднимается от 0 → 0.70.
+- На shrink (последняя 1.2с) плавно опускается 0.70 → 0.
+- Дубликат `shrink_start` удалён (он теперь объявлен один раз
+  в alpha-блоке).
+
+### Файлы
+- `scripts/characters/black_hole.gd` (+8 строк)
+
+### Тест
+- `mcp__godot__run_project` — runtime чисто.
+
+---
+
+## 2026-04-21 — fix(vfx): black_hole_6 — убрана искусственная обрезка halo
+
+### Жалоба
+Последний кадр `black_hole_6` был обрезан справа — glow-кольцо halo
+упирается в артефакт и часть обрезается.
+
+### Причина
+В предыдущем extract-скрипте `right = min(w, c + cell_w*0.5)` для
+последнего кадра. Для c=2282, cell_w=355, half=177 → right=2459,
+тогда как w=2488. На 29 пикселей не дотянули до источника, halo
+vortex'а обрезался.
+
+### Фикс
+Для крайних кадров (i=0, i=count-1) теперь используется реальная
+граница источника:
+```
+if i == 0:            left  = 0
+elif ...:             left  = midpoint(prev, cur) + 1
+if i == count-1:      right = w
+elif ...:             right = midpoint(cur, next) - 1
+```
+Середины кадров не изменились (margin между центрами), изменился
+только крайний right для i=6.
+
+### Результат
+- `black_hole_6`: 361×414 → **390×414** (полный halo).
+- Остальные 6 кадров идентичны предыдущему extraction.
+
+### Файлы
+- `assets/textures/effects/projectiles/black_hole_6.png` — перезаписан.
+
+### Тест
+- `godot --import` — чисто.
+
+---
+
+## 2026-04-21 — fix(vfx): black_hole кадры — один вихрь на кадр (peak-detection)
+
+### Проблема
+Предыдущий extraction черной дыры с `inner_margin=25` всё равно давал
+перекрытие между кадрами — на каждом PNG было видно **два вихря** (цель
++ фрагмент соседа). Причина: в исходнике 2488×416 / 7 = ~355px per cell,
+но glow-кольцо каждого вихря больше ~400px → простое cell-based slicing
+не работает.
+
+### Фикс — peak-detection по «чёрным центрам»
+Python скрипт:
+1. Chroma-key (то же что раньше).
+2. Для каждого столбца посчитать кол-во «чёрных» непрозрачных пикселей
+   (внутренность вихря): `alpha>100 and R+G+B<60`.
+3. Для каждого из 7 номинальных центров `(i+0.5)·w/7` ищем ARGMAX в
+   окне ±45% ширины ячейки — это реальный X-центр вихря.
+4. Границы каждого кадра = **midpoint между соседними центрами**:
+   - `left = (center[i-1] + center[i]) / 2 + 1`
+   - `right = (center[i] + center[i+1]) / 2 - 1`
+5. Crop до bbox + 2px inflate.
+
+Обнаруженные центры: `[45, 422, 730, 1085, 1478, 1878, 2282]` — видно,
+что шаг НЕ равномерный (напр. 422→730 = 308, но 1478→1878 = 400),
+потому что художник размещал вихри с разным интервалом. Peak-detection
+находит **реальный** центр каждого.
+
+### Результат
+Каждый PNG содержит **ровно один вихрь**:
+- `0: 50×51`, `1: 176×191`, `2: 224×245`, `3: 297×308`
+- `4: 361×382`, `5: 395×413`, `6: 361×414`
+
+Контент естественно центрирован в bbox, игра рисует через
+`draw_single` (центр PNG в `(0,0)` local), вихрь на своём месте.
+
+### Файлы
+- `assets/textures/effects/projectiles/black_hole_{0..6}.png` — все
+  перезаписаны новым алгоритмом.
+
+### Тест
+- `mcp__godot__run_project` — runtime чисто.
+
+---
+
+## 2026-04-21 — feat(vfx): black_hole 7-frame 3-phase анимация (grow → hold → shrink)
+
+### Запрос
+"Black hole — анимация появления, тут 7 этапов, нужно вырезать зелёный
+фон и начиная с первой (размер должен быть пропорционален тому, что на
+изображении) до последней прокрутить анимацию, а потом последнюю картинку
+крутить до тех пор, пока способность не закончится, затем проиграть
+анимацию в обратном направлении."
+
+### Ассеты
+`my_assets/Анимации снарядов/black_hole_green_background.png` (2488×416)
+— 7 стадий роста вихря от точки до полного портала.
+
+### Реализация
+
+**1. Экстракция** Python/PIL:
+- Chroma-key: `bg_score = (G - max(R,B))/100` → `≥0.60` transparent,
+  `0.15..0.60` feathered + hard despill `G = min(G, max(R,B))`,
+  `<0.15` content + gentle despill.
+- Inner margin 25px между кадрами (изначально 4 давал bleed frame 1 в
+  frame 0).
+- Каждый кадр crop до bbox + 2px inflate.
+
+Старые `black_hole_{0..5}.png` (6 frames) удалены. Новые
+`black_hole_{0..6}.png` имеют размеры пропорциональные содержимому:
+- `0: 47×51` (крошечная точка)
+- `1: 305×222`, `2: 305×304`, `3: 305×324`, `4: 305×382`
+- `5: 305×413`, `6: 305×414` (полный вихрь с ring glow)
+
+**2. 3-phase анимация** в `black_hole.gd`:
+- Новая переменная `shrink_time: float = 1.2` (cfg-overrideable).
+- `total_lifetime = expand_time + active_duration + shrink_time`.
+- В `_physics_process`:
+  - `time_alive < expand_time` → `radius = max * t²` (grow ease-in)
+  - `time_alive < total - shrink_time` → `radius = max` (hold)
+  - else → `radius = max * (1-t)²` (shrink ease-out)
+- В `_draw` выбор frame:
+  ```
+  if time < expand_time:      frame = int(t * 7)          # 0..6
+  elif time < shrink_start:   frame = 6                   # hold
+  else:                       frame = 6 - int(t * 7)      # 6..0
+  ```
+- Continuous rotation `time_alive * 0.9` на всех трёх фазах.
+- Fade-out по `remaining` убран — теперь shrink сам ведёт к нулю.
+
+### Файлы
+- `assets/textures/effects/projectiles/black_hole_0..6.png` (7 новых,
+  + imports)
+- `assets/textures/effects/projectiles/black_hole_{0..5}.png` (старые 6
+  перезаписаны первыми 6 из новых — 7-й — новый файл; old 0..5 больше
+  не актуальны по размерам, заменены)
+- `scripts/characters/black_hole.gd` — shrink phase + 7-frame indexing
+
+### Тест
+- `mcp__godot__run_project` — runtime чисто.
+
+---
+
+## 2026-04-21 — feat(vfx): текстурная верёвка грэппла вместо draw_line
+
+### Запрос
+"Теперь верёвка, которую выпускает игрок: она должна иметь такую
+текстуру. Убери зелёный фон также и попробуй наложить текстуру на
+верёвку. Толщину верёвки можно сделать побольше, чем сейчас, чтобы
+было видно текстуру."
+
+### Реализация
+
+**1. Вырезка** (`my_assets/Анимации снарядов/Thread_pull_green_background.png`,
+1408×768): hue-based chroma-key + десатурация (rope будет модулироваться
+цветом игрока). Crop до 1111×32 — длинная горизонтальная верёвка.
+Сохранено в `assets/textures/effects/projectiles/rope.png`.
+
+**2. Рендеринг** в `scripts/characters/player.gd` для обоих состояний
+(`is_grappling` и `grapple_shooting/retracting`):
+```
+var rope_len = rope_end.length()
+var angle = rope_end.angle()
+draw_set_transform(Vector2.ZERO, angle, Vector2.ONE)
+draw_texture_rect(rope_tex,
+    Rect2(0, -rope_thickness*0.5, rope_len, rope_thickness),
+    false, rope_col)
+draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
+```
+- `draw_set_transform` поворачивает локальную систему координат по
+  направлению выстрела — текстура растягивается вдоль верёвки.
+- `rope_thickness = 12.0` (было `draw_line` width 2.5) — теперь
+  хорошо видна текстура.
+- `rope_col = player_color.lerp(WHITE, 0.25)` — светлее цвета игрока
+  для чёткого текстурного contrast'а.
+- Fallback на `draw_line` если текстура не нашлась.
+- Hook tip (круглый наконечник) увеличен 5→6, inner 3→4.
+
+### Файлы
+- `assets/textures/effects/projectiles/rope.png` (новый).
+- `scripts/characters/player.gd` — rope drawing блок переписан.
+
+### Тест
+- `mcp__godot__run_project` — runtime чисто.
+
+---
+
+## 2026-04-21 — fix(vfx): yarn_toss вырезан + десатурирован под player-color tint
+
+### Запрос
+"Теперь yarn toss, также нужно убрать зелёный фон, добавь это в картинку снаряда."
+
+### Фикс
+`my_assets/Анимации снарядов/yarn_toss_green_background.png` — розовый
+клубок с motion-blur trail на lime-green. Chroma-key с
+десатурацией (как у бумеранга), потому что в [yarn_projectile.gd](scripts/characters/yarn_projectile.gd)
+текстура уже модулируется `color = player_color`:
+```
+ProjectileSprites.draw_single(self, "yarn_toss.png", 48.0, ang, color)
+```
+Поэтому pink тинтуется с color даёт грязь — нужен grayscale base.
+
+Фильтр:
+- `bg_score >= 0.75` → alpha=0
+- `0.25..0.75` → feathered alpha + grayscale (Rec.709 luminance,
+  brightness remapped в [60..255])
+- `< 0.25` → keep + grayscale тоже
+
+Motion-blur trail (bg_score ≈ -0.1..0.1) сохранён и тоже обесцвечен —
+теперь тинтуется цветом игрока.
+
+Результат: нейтральный серо-белый клубок с сохранёнными тенями и
+highlights. Crop: 762×515. В игре P1 (red) → красный клубок,
+P2 (blue) → синий и т.д. — **чисто**, без pink cast.
+
+### Файлы
+- `assets/textures/effects/projectiles/yarn_toss.png` — перезаписан.
+
+### Тест
+- `mcp__godot__run_project` — runtime чисто.
+
+---
+
+## 2026-04-21 — fix(vfx): heavens_wrath beam вырезан + agressive despill
+
+### Запрос
+Каждый световой столб Heavens Wrath должен использовать эту текстуру,
+вырезать зелёный фон.
+
+### Фикс
+`my_assets/Анимации снарядов/heawens_wrath_green_background.png` (528×1984)
+— вертикальный белый/жёлтый beam на lime-green фоне. Chroma-key в
+Python/PIL:
+- `bg_score = (G - max(R,B)) / 100`
+- `≥ 0.60` → alpha=0 (чистый фон)
+- `0.10..0.60` → feathered + **hard despill** `G = min(G, max(R,B))`
+- `< 0.10` → content, но + **gentle despill** `G = min(G, max(R,B) + 8)`
+  (убирает residual зелёный cast даже на beam'е)
+
+Результат: чистый бело-золотой beam без fringing. После crop: 397×1728.
+В `heavens_wrath.gd` уже используется `draw_texture_rect` с этой
+текстурой — код не меняется, просто подменяется PNG.
+
+### Файлы
+- `assets/textures/effects/projectiles/heavens_wrath.png` — перезаписан.
+
+### Тест
+- `mcp__godot__run_project` — runtime чисто.
+
+---
+
+## 2026-04-21 — fix(vfx): grenade вырезан из зелёного фона + velocity-based spin
+
+### Запрос
+"Теперь граната — то же самое, вырежи зелёный фон и придай лёгкое
+кручение снаряду, зависящее от скорости полёта. И направление кручения
+зависит от направления полёта."
+
+### Реализация
+
+**1. Chroma-key в Python/PIL**
+Hue-based фильтр (стабильнее distance для ассета с яркой orange-glow
+оправой, которая фейдит в BG):
+```
+bg_score = (G - max(R, B)) / 100.0
+  >= 0.8  → alpha = 0          (pure BG)
+  0.3..0.8 → alpha = lerp(255→0) + green-despill (G → avg(R,B))
+  < 0.3   → keep (grenade body / orange glow)
+```
+Orange halo (214, 174, 16) имеет `(G - max(R,B))/100 = -0.4` — далеко
+от порога, сохраняется полностью. После crop → 601×743.
+
+**2. Velocity-based spin**
+В `grenade.gd`:
+- Добавлен `var spin_angle: float = 0.0`
+- В `_physics_process` до bounce:
+  ```
+  horiz = velocity.x
+  vert_bias = |velocity.y| * 0.15 * sign(velocity.x)
+  spin_speed = (horiz + vert_bias) * 0.0045
+  spin_angle += spin_speed * delta
+  ```
+  - При `velocity.x > 0` → `spin_speed > 0` → **CW**
+  - При `velocity.x < 0` → `spin_speed < 0` → **CCW**
+  - Магнитуда растёт со скоростью (быстрый бросок = быстрее крутится)
+  - Vertical-bias добавляет небольшой wobble на вертикальных дугах
+- В `_draw`: `draw_single(..., spin_angle, mod)` вместо `timer * 4.0`
+- Размер бамперa 40 → 44 (текстура физически больше из-за glow)
+
+### Файлы
+- `assets/textures/effects/projectiles/grenade.png` — перезаписан
+- `scripts/characters/grenade.gd` — spin_angle + velocity-driven update
+
+### Тест
+- `mcp__godot__run_project` — runtime чисто.
+
+---
+
+## 2026-04-21 — tweak(vfx): бумеранг в grayscale — чистый tint под цвет игрока
+
+### Запрос
+"Цвет бумеранга слишком тёмный. Сделай стандартный цвет снаряда белым,
+а уже в зависимости от игрока, добавляй туда цвет."
+
+### Причина
+В `boomerang.gd` используется `draw_single(self, "boomerang.png",
+... color)` где `color` — цвет владельца. Modulate перемножает RGB
+текстуры на RGB цвета. Исходная текстура была teal/cyan (низкий R,
+высокий G/B) → teal × red = тусклый muddy-цвет.
+
+### Фикс
+В Python-скрипте chroma-key'а (запустил снова на том же исходнике
+`boomerang_green_background.png`) после проверки дистанции каждый
+non-background пиксель конвертируется в grayscale по Rec.709:
+```
+lum = 0.2126*R + 0.7152*G + 0.0722*B
+lum = min(255, 60 + lum * 0.95)   # brighten range to [60..255]
+output = (lum, lum, lum, alpha)
+```
+Brightness-range shift 60..255 гарантирует, что самые тёмные участки
+(ниточные тени) не уйдут в pure-black — modulate цветом даст читаемые
+оттенки. Светлые блики близки к белому → modulate даёт насыщенный
+player-color на bright зонах.
+
+### Результат
+Нейтральный серо-белый бумеранг. В игре:
+- Player 1 (red) → красный бумеранг с нормальными тенями
+- Player 2 (blue) → синий и т.д.
+Motion-blur streaks сохранены, обесцвечены тоже.
+
+### Файлы
+- `assets/textures/effects/projectiles/boomerang.png` — перезаписан.
+
+### Тест
+- `mcp__godot__run_project` — runtime чисто.
+
+### Что дальше
+Пользователь хочет по очереди "починить" остальные снаряды. Стандарт:
+белый/grayscale base + player-color modulate.
+
+---
+
+## 2026-04-21 — fix(vfx): чистая вырезка boomerang из зелёного фона
+
+### Запрос
+Пользователь добавил в `my_assets/Анимации снарядов/boomerang_green_background.png`
+новую картинку бумеранга на сплошном ярко-зелёном фоне. Попросил вырезать
+бумеранг чисто и заменить текущую текстуру.
+
+### Реализация
+Python/PIL chroma-key:
+- Reference BG color: `(141, 251, 2)` (проверено через color histogram —
+  dominant цвет, 60K из 260K отсэмплированных пикселей)
+- Distance-based threshold:
+  - `dist <= 70`  — fully transparent (чистый фон)
+  - `dist 70..110` — feathered alpha (анти-алиас-кромка)
+  - `dist > 110` — keep fully (контент бумеранга)
+- Motion-blur teal/cyan streaks (sampled `(39, 159, 181)`) сохранены —
+  distance от BG > 350, далеко за порогом.
+- After chroma-key: `getbbox()` → crop до 865×870.
+- Saved as `assets/textures/effects/projectiles/boomerang.png`,
+  перезаписал старый.
+
+### Файлы
+- `assets/textures/effects/projectiles/boomerang.png` (перезаписан)
+
+### Тест
+- `godot --import` — boomerang переимпортирован без ошибок.
+- `mcp__godot__run_project` — runtime чисто, все warnings pre-existing.
+
+---
+
+## 2026-04-20 — fix(vfx): per-frame PNG + центровка + телепорт в world-space
+
+### Жалобы пользователя
+1. Исходные sprite-sheet'ы — не чистые PNG: в них **painted checkerboard**
+   (painted, не alpha=0). Нужно физически вырезать кадры, очистить фон
+   и сохранить как отдельные PNG-и.
+2. black_hole / stink_cloud (и всё animated) — центр контента НЕ
+   совпадал с центром cell'а → ядро было смещено.
+3. Анимация телепорта (swap/portal_gate) **следовала за игроком**, а
+   должна оставаться в точке телепорта.
+
+### Причина (центровка)
+Мой `draw_frame` брал cell `(frame_w*i, 0, frame_w*(i+1), h)` из атласа.
+Внутри cell'а контент был сдвинут к одной стороне (мелкие кадры стояли
+слева), и `draw_texture_rect_region` с центрированием рисовал cell-rect
+центрированным — но КОНТЕНТ внутри оказывался off-center.
+
+### Причина (teleport follow)
+`player._add_vfx("swap_line", 0.4, ...)` добавлял VFX в массив эффектов
+**игрока**. Когда игрок двигался после swap'а, `_draw_vfx` рисовал с
+локальных координат = player's current position. Эффект "ехал" с игроком.
+
+### Фиксы
+
+#### 1. Python-скрипт: extract + clean + trim
+Python/PIL скрипт:
+- Убирает painted checkerboard chroma-key'ом (grey с `max-min <= 14` в
+  brightness range `[45, 175]`) → эти пиксели становятся `alpha=0`.
+- Вырезает каждый frame cell с **inner margin=4** (предотвращает
+  frame-to-frame bleed).
+- Каждую ячейку обрезает до bbox непрозрачного контента + `inflate=2`
+  (сохраняет AA-кромку).
+- Trim_bottom=50 на portal_gate (обрезает "30px/50px" labels).
+
+Итоговые размеры: `stink_cloud_0=60×62` (тиx2) → `stink_cloud_5=375×389`;
+`portal_gate_0=161×164` → `portal_gate_2=330×356` (без labels); и т.д.
+Каждый PNG теперь имеет контент **по центру своего изображения**.
+
+Старые монолитные `black_hole.png`, `stink_cloud.png`, `portal_gate.png`,
+`swap.png` удалены.
+
+#### 2. Код перешёл с `draw_frame` на `draw_single`
+В `black_hole.gd` / `stink_cloud.gd` / `player.gd::portal_gate marker`:
+```
+var tex_name: String = "black_hole_%d.png" % frame
+ProjectileSprites.draw_single(self, tex_name, display_w, rot, modulate)
+```
+`draw_single` центрирует изображение на `(0,0)` локальной системы,
+что теперь ГАРАНТИРУЕТ центровку контента.
+
+#### 3. `scripts/effects/swap_effect.gd` — standalone Node2D
+Отдельный `Node2D` со скриптом. Static-метод `spawn(parent, world_pos)`
+создаёт ноду в сцене на фиксированной мировой позиции. Внутренне
+проигрывает 5-frame swap-анимацию (`swap_0..4.png`) за `DURATION=0.45s`
+с fade, затем `queue_free()`.
+
+`_ab_swap()`:
+```
+SwapEffect.spawn(current_scene, my_pos)
+SwapEffect.spawn(current_scene, their_pos)
+```
+— burst спавнится в ОБЕИХ исходных позициях. Игроки swap'ятся, эффект
+остаётся на месте.
+
+`_ab_portal_gate()`: аналогично spawn в `pos_a` и `pos_b`.
+
+Оба удалили зависимость от `player._add_vfx("swap_line", ...)`.
+`_vfx_swap_line` остался как dead code (безопаснее не трогать).
+
+### Файлы
+- `assets/textures/effects/projectiles/*_N.png` — 22 новых per-frame
+  PNG (+ удалены 4 монолитных sheet'а + imports)
+- `scripts/effects/swap_effect.gd` — новый, ~35 строк
+- `scripts/characters/black_hole.gd`, `stink_cloud.gd`, `player.gd`
+  (portal marker) — на `draw_single` с индексированным именем
+- `scripts/characters/player_abilities.gd` — swap/portal spawn через
+  SwapEffect в world-пространстве
+
+### Тест
+- `mcp__godot__run_project` — без ошибок. Все warnings pre-existing.
+
+---
+
+## 2026-04-20 — fix(vfx): переименование projectile_sprites._get → _get_tex
+
+### Проблема
+Парсер GDScript 4.6 жаловался:
+`Parser Error: The function signature doesn't match the parent. Parent signature is "_get(StringName) -> Variant".`
+
+Метод `_get` — зарезервированное виртуальное имя на `Object` (Godot ожидает
+`_get(property: StringName) -> Variant` для property-lookup). Мой
+`static func _get(name: String) -> Texture2D` в `projectile_sprites.gd`
+конфликтовал по сигнатуре, хотя static. Даже если бы пропарсилось, было
+бы опасно переопределять зарезервированное имя.
+
+### Фикс
+`projectile_sprites.gd::_get` → `_get_tex`, параметр `name` → `tex_name`
+(избегаем также шэдовинга `Node.name`). Единственный внешний caller —
+`heavens_wrath.gd::ProjectileSprites._get(...)` — тоже обновлён.
+
+Cleanup: удалена unused `var size: Vector2` в `draw_single`.
+
+### Файлы
+- `scripts/characters/projectile_sprites.gd` (3 rename + 1 cleanup)
+- `scripts/characters/heavens_wrath.gd` (1 call-site rename)
+
+### Тест
+- `mcp__godot__run_project` — без parser error, без новых warnings
+  (все оставшиеся — pre-existing shadow warnings).
+
+---
+
+## 2026-04-20 — feat(vfx): текстурные снаряды и VFX для 8 способностей
+
+### Запрос
+Пользователь положил в `my_assets/Анимации снарядов/` папку с текстурами
+для снарядов и эффектов. Задача — интегрировать их "по красоте".
+
+### Ассеты (9 PNG)
+| Файл                   | Размер     | Тип                          |
+|------------------------|------------|------------------------------|
+| yarn toss.png          | 1024×1024  | single — катящийся клубок    |
+| grenade.png            | 1024×1024  | single — клубок-граната      |
+| boomerang.png          | 1024×1024  | single — вращающийся X       |
+| heavens_wrath.png      | 528×1984   | single — вертикальный луч    |
+| black hole.png         | 2544×416   | 6-frame — растущая воронка   |
+| Stink cloud.png        | 2549×416   | 6-frame — облако газа растёт |
+| portal gate.png        | 2320×464   | 5-frame — открытие портала   |
+| Swap(pers).png         | 2320×464   | 5-frame — звёздная вспышка   |
+| Thread Pull.png        | 1408×768   | атлас канатов (пока не вшит) |
+
+### Компоненты
+
+#### 1. `scripts/characters/projectile_sprites.gd` — helper
+Ленивый кэш текстур + три API:
+- `draw_single(ci, name, display_w, rotation, modulate, flip_h)` — одно
+  изображение центрировано на (0,0)
+- `draw_frame(ci, name, frame_count, frame, display_w, rotation, modulate)`
+  — кадр из горизонтального sprite sheet'а
+- `draw_vframe(...)` — кадр из вертикального sprite sheet'а (задел)
+
+#### 2. Интеграция
+
+**`yarn_projectile.gd`** — clubок-текстура 48px, вращается по `direction.angle()`,
+трейл из 14px orbs (было 10px).
+
+**`grenade.gd`** — граната-текстура 40px, slow-spin по `timer * 4`,
+flash-модуляция цвета перед взрывом.
+
+**`boomerang.gd`** — вращается по `spin`, тинтуется под цвет владельца,
+трейл 10px.
+
+**`heavens_wrath.gd`** — заменены три `draw_rect` (core/glow/outer) на
+`draw_texture_rect` с heavens_wrath.png; beam_width = `pw * 1.8`,
+сохранены leading-edge flash и impact ring. Для impact-phase та же
+текстура с `alpha`-модуляцией, для fading-phase — тонкий 1.0*pw с
+мягким alpha.
+
+**`black_hole.gd`** — 6-frame sprite sheet, frame = `growth * 6`,
+поверх rotate 0.9 rad/s для лишней динамики. Убраны core/dark_fill/
+accretion_disk rects (текстура их заменяет). Оставлены:
+- 14 частиц, затягиваемых в центр (motion juice)
+- warning ring во время expand phase
+
+**`stink_cloud.gd`** — 6-frame sprite sheet, growth progress over 0.8s,
+display_w растёт с `pulse`. Убраны 4 concentric circle fills. Оставлены
+10 летающих toxin-motes поверх.
+
+**`player.gd::has_portal_gate marker`** — вместо procedural circle+arcs
+показывается frame 2..4 из portal_gate.png, циклически пульсируя
+между формированиями портала. Сохранены 6 sparkle-частиц вокруг.
+
+**`player.gd::_vfx_swap_line`** — swap.png 5-frame на ОБЕИХ концах
+(player + target), frame = `(1-t) * 5` (звезда → открытое кольцо).
+Сохранён zigzag-trail между ними.
+
+### Файлы
+- `assets/textures/effects/projectiles/*.png` (новые, 9 штук + imports)
+- `scripts/characters/projectile_sprites.gd` (новый, ~90 строк)
+- `scripts/characters/yarn_projectile.gd`, `grenade.gd`, `boomerang.gd`,
+  `heavens_wrath.gd`, `black_hole.gd`, `stink_cloud.gd`, `player.gd`
+  (применён helper)
+
+### Тест
+- `mcp__godot__run_project` — без ошибок.
+
+### Что дальше (nice-to-have)
+- `thread_pull.png` атлас — обрезать подписи-labels, вшить в grapple
+  rope для грэппла (сейчас draw_line).
+- Добавить impact-explosion текстуру для гранаты (нужен отдельный ассет).
+
+---
+
+## 2026-04-20 — tweak(ui): увеличены иконки способностей над персонажем
+
+### Запрос
+"Сделай иконки способностей которые есть у персонажа, побольше, а то их плохо видно."
+
+### Изменение
+В `scripts/characters/player.gd`:
+- `ICON_RADIUS`  18.0 → **26.0** (+44% диаметр)
+- `ICON_SPACING` 42.0 → **62.0** (пропорционально, чтобы значки не слиплись)
+- `_draw_ability_icons`: отступ от головы 40 → **54** px — чтобы бОльшие
+  иконки не наезжали на лицо
+- `draw_arc` outline: сегментов 24 → 28, толщина 1.5 → 2.0 для чёткости
+
+### Файлы
+- `scripts/characters/player.gd` (3 constant/number tweaks)
+
+### Тест
+- `mcp__godot__run_project` — без новых ошибок (все warnings pre-existing).
+
+---
+
+## 2026-04-20 — feat(events): visible meteor/lightning/wind VFX + canvas clip
+
+### Жалобы
+1. Сами ивенты запускаются (баннер показывается), но **ничего не происходит
+   визуально** — только плашка. Метеор попадал в узкий столб (±80px) и часто
+   промахивался мимо игрока, молния и ветер не имели визуала вообще.
+2. В map_editor при **увеличении карты** её рисование **перекрывает**
+   properties-панель и toolbar (Canvas не клипуется к своему rect).
+
+### Фиксы
+
+#### 1. Canvas.clip_contents = true
+В `scenes/main/map_editor.tscn` добавлено `clip_contents = true` на ноду
+Canvas. Теперь все `_draw` команды редактора обрезаются ровно по его
+границам и не вылезают на properties-панель даже при zoom > 1.
+
+#### 2. Meteor VFX — падающий болид + взрыв
+Добавлено state `_meteor_start_t/_x/_y_spawn/_y_impact` +
+`METEOR_FALL_DUR=1.0`, `METEOR_EXPLODE_DUR=0.5`. В `_event_meteor()` теперь:
+- точка падения фиксируется (столб чуть шире: ±140px вместо ±80)
+- камера shake 8.0 (было 6.0)
+
+В `_draw_event_vfx()`:
+- **Фаза падения** (0..1s): ease-in трейл из 10 огненных шаров
+  постепенно уменьшается, в head — тёмный камень с оранжевым ореолом
+- **Фаза взрыва** (1..1.5s): расширяющийся fireball, shockwave ring,
+  14 осколков разлетаются вовне с притяжением вверх
+
+#### 3. Lightning VFX — зигзаг-молния + вспышка
+State `_lightning_start_t/_target/_origin`, `LIGHTNING_DUR=0.8s`.
+
+В `_draw_event_vfx()`: 14 сегментов зигзага от top-of-map до игрока,
+X-wobble детерминистичный (sin-based seed с `_lightning_start_t`),
+outer glow 14px + inner core 5px белого, расширяющийся ring у точки
+попадания, fade over 0.8s.
+
+#### 4. Wind VFX — streak-линии
+State `_wind_start_t/_dir`, `WIND_DUR=1.0s`.
+
+20 горизонтальных streak-линий двигаются в `wind_dir` со скоростью
+900-1300 px/s, длина 150-270px, распределены по высоте экрана
+детерминистичным sin-seed. Fade over 1s. Рисуются относительно
+`camera.position` + размер viewport'а.
+
+#### 5. Helper `_event_time()`
+Возвращает `Time.get_ticks_msec() / 1000.0` — единый source of truth
+для VFX-таймингов (не зависит от `delta` + независим от pause).
+
+### Файлы
+- `scripts/maps/map_base.gd` (+130 строк: state, `_draw_event_vfx`, хэлперы)
+- `scenes/main/map_editor.tscn` (+1 строка `clip_contents`)
+
+### Тест
+- `mcp__godot__run_project` — runtime чисто.
+
+---
+
+## 2026-04-20 — feat(editor): events dropdown + banners + water slippery + default one-way
+
+### Жалобы пользователя
+1. Map Events должен быть **dropdown**, не чекбокс — выбирать конкретный.
+2. Events **не работают** (не видно в игре).
+3. Water-палитра выглядит как лёд — платформы должны **скользить всегда**.
+4. **One-way не работает** — любая платформа блокирует снизу.
+
+### Фиксы
+
+#### 1. Events — dropdown c выбором типа
+`map_base.gd`: добавлено поле `event_type: String` со значениями
+`"none" | "all" | "wind" | "meteor" | "lightning"`. В `_process`:
+```
+match event_type:
+    "wind":      _event_wave()
+    "meteor":    _event_meteor()
+    "lightning": _event_lightning()
+    _:           _trigger_random_event()
+```
+Back-compat: legacy `events_enabled=true` без `event_type` автоматически
+эскалируется в `"all"`.
+
+В редакторе `CheckBox` заменён на `OptionButton` с 5 пунктами. Поле
+`map_data["event_type"]` сохраняется в JSON (+ `events_enabled` = `!= "none"`
+для обратной совместимости).
+
+#### 2. On-screen warning banners
+Раньше events работали, но не имели визуала: метеор → `await 1s` → урон,
+молния → `await 0.5s` → урон. Пользователь не понимал что произошло.
+
+Добавлены поля `event_banner_text/timer/color` + метод `_show_event_banner`.
+Каждое событие перед уроном показывает большой баннер в центре экрана
+(world-space, привязан к камере):
+- `☄ METEOR INCOMING ☄` (оранжевый)
+- `⚡ LIGHTNING STRIKE ⚡` (жёлтый)
+- `💨 STRONG WIND →→→` (голубой, со стрелкой направления)
+
+Baner fades over 1.2-1.8s. `_draw_event_banner()` рисует plate + edge +
+текст. Таймер декрементится в `_process`.
+
+#### 3. Water palette = slippery
+`custom_map.load_from_dict`:
+```
+if platform_palette == "water":
+    floor_friction_mult = 0.15
+```
+Безусловно (перекрывает значение из JSON) — water-карты всегда скользят.
+
+#### 4. One-way default
+В редакторе новые платформы **всегда** получают `one_way = true`
+(раньше было `size.y < 50`, толстые платформы были solid). Юзер может
+снять галку в properties-панели если нужна solid-стена.
+
+### Файлы
+- `scripts/maps/map_base.gd` (+70 строк: event_type, banner, draw)
+- `scripts/maps/custom_map.gd` (+4 строки: slippery water, event_type)
+- `scripts/main/map_editor.gd` (+25 строк: OptionButton, EVENT_IDS, default one_way)
+- `scenes/main/map_editor.tscn` (PropEvents → PropEvent OptionButton)
+
+### Тест
+- `mcp__godot__run_project` на `map_editor.tscn` — без ошибок / warnings.
+
+---
+
+## 2026-04-20 — fix(editor): коллизии custom_map, import встроенных карт, events clarify
+
+### Жалобы пользователя
+1. Не могу выбрать и отредактировать существующие карты (мои 6 built-in).
+2. Платформы/шипы/порталы в Test Play **без коллизий** — можно пролететь насквозь.
+3. "Map Events" — это старое: медленное сужение зоны + ветер каждые 20с.
+
+### Фиксы
+
+#### 1. Коллизии custom_map — порядок вызовов
+`game.gd::_load_random_map`: раньше было
+```
+current_map = custom_scn.instantiate()
+map_container.add_child(current_map)       # ← _ready() здесь
+current_map.load_from_dict(...)            # ← data заполняется ПОСЛЕ
+```
+`map_base._ready()` итерирует `platforms/hazards/teleports`, которые ещё
+пусты, и создаёт **ноль** StaticBody2D/Area2D. Теперь:
+```
+current_map.load_from_dict(...)  # сначала заполняем data
+map_container.add_child(current_map)  # потом _ready создаёт физ-тела
+```
+
+#### 2. Import built-in maps
+Новая dropdown `Import built-in...` в toolbar с 6 пунктами (Forest Glade,
+Desert Dunes, Iceberg Bay, Ocean Shore, Winter Night, Haunted Castle).
+`_on_import_selected` инстанцирует сцену (БЕЗ добавления в tree, чтобы
+`_init()` прогнал конфиг но `_ready()` не создавал физику), читает поля
+ноды через `_builtin_to_dict()`, конвертит в editor-формат:
+- определяет theme по пути первого bg-слоя (содержит `/theme_name/`)
+- сериализует `platforms[]`/`hazards[]`/`teleports[]`/`spawn_points[]`/`item_spawns[]`
+- имя = `map_name + " (copy)"`, `current_file = ""` — "Save As" чтобы сохранить
+  как отдельный custom-файл (не перезаписать оригинал)
+
+#### 3. Map Events — уточнение
+- Чекбокс переименован: `"Map Events (wind/meteor every 20s)"`.
+- Под ним label: `"Note: danger zone starts shrinking after 120s (always on)."`
+- Default `events_enabled = true` в `_default_map()` — новые карты сразу
+  получают wind/meteor/lightning.
+- Zone shrink код в `map_base._process()` уже работает для custom_map через
+  наследование (SHRINK_GLOBAL_DELAY=120s, SHRINK_GLOBAL_SPEED=20).
+
+### Файлы
+- `scripts/main/game.gd` (+4 строки комментарий, перестановка 2 строк)
+- `scripts/main/map_editor.gd` (+~80 строк — import, _builtin_to_dict)
+- `scenes/main/map_editor.tscn` (+ImportMenu, +ShrinkNote label)
+
+### Тест
+- `mcp__godot__run_project` на `map_editor.tscn` — без ошибок и warnings.
+
+---
+
+## 2026-04-20 — feat(editor): редактор карт + Test Play + custom_map loader
+
+### Запрос пользователя
+Добавить редактор карт в главное меню: создание, редактирование, удаление,
+выбор существующих. Размещение платформ/порталов/шипов с изменением размера,
+смена фона, гравитации, событий, запуск для проверки.
+
+### Компоненты
+
+#### 1. `scripts/maps/bg_presets.gd` — preset bg_layers по имени темы
+Статический helper: `get_layers(theme)` → Array конфигов слоёв. Константы:
+- `THEMES`: `forest_blue`, `desert`, `iceberg`, `ocean`, `winter_night`, `halloween`
+- `PALETTES`: `stone`, `wood`, `sand`, `water`, `lava_ice`
+
+Переиспользуется и редактором (dropdown + preview), и custom_map.gd
+(runtime build).
+
+#### 2. `scripts/maps/custom_map.gd` + `scenes/maps/custom_map.tscn`
+Extends `map_base.gd`. Методы:
+- `load_from_dict(d: Dictionary)` — заполняет `bg_layers` через BgPresets,
+  parse `platforms/hazards/teleports/spawn_points/item_spawns`, гравитация,
+  friction, события, map_rect, danger zones.
+- `to_dict()` — обратный сериализатор для save.
+
+#### 3. `scripts/main/map_editor.gd` + `scenes/main/map_editor.tscn`
+Большой UI редактора (~800 строк). Layout:
+- **Toolbar** сверху: `New` `Load...▼` `Save` `Save As...` `Delete` `▶ Test Play` `Back`
+- **Tool palette** слева: `Select/Move`, `Platform`, `Spike`, `Teleport Pair`, `Spawn Point`
+- **Canvas** по центру: world-space preview с zoomable камерой, grid, drag-rect ghost
+- **Properties panel** справа: Name, BG theme, Platform palette, Map Size,
+  Danger zones (L/R/B), Gravity ×, Floor Friction ×, Map Events checkbox
+- **Selected panel** (появляется при выборе): X/Y/W/H, One-Way (для платформ), Delete
+
+**Tools**:
+- Select/Move: клик по объекту выбирает, drag двигает, Del удаляет
+- Platform: drag rectangle → `{x, y, w, h, one_way}` (one_way=true если h<50)
+- Spike: drag rectangle → hazard "spikes"
+- Teleport Pair: два клика — A и B точки
+- Spawn Point: клик ставит (max 4, пятый заменяет ближайший)
+
+**Canvas controls**: MMB drag = pan, wheel = zoom, снаппинг к 40-pixel grid.
+
+**Save/Load**: JSON в `user://custom_maps/<name>.json`. `AcceptDialog` для
+ввода имени, `ConfirmationDialog` для удаления. Load-dropdown обновляется
+при save/delete.
+
+**Test Play**: `GameManager.pending_custom_map = map_data.duplicate(true)` →
+`change_scene_to_file("lobby.tscn")`. `game.gd::_load_random_map` читает
+`pending_custom_map` — если не пустой, инстанцирует `custom_map.tscn` и
+вызывает `load_from_dict`.
+
+#### 4. `scripts/managers/game_manager.gd`
+Добавлены поля:
+- `var pending_custom_map: Dictionary = {}` — карта для Test Play
+- `var returning_to_editor: bool = false` — флаг возврата в редактор
+
+#### 5. `scripts/main/game.gd`
+Развилка в `_load_random_map`: если `pending_custom_map` не пуст, грузим
+custom_map.tscn + `load_from_dict`. Иначе — обычная ротация из MAP_SCENES.
+
+#### 6. `scripts/ui/title_menu.gd`
+`TITLE_ITEMS`: добавлен пункт `"MAP EDITOR"` между `PLAY` и `SETTINGS`.
+`_select_title()::case 1` → `change_scene_to_file("map_editor.tscn")`.
+`case 2` → Settings, `case 3` → Quit.
+В PLAY-случае сбрасывается `pending_custom_map = {}` — чтобы старый
+test-play не попал в обычную игру.
+
+### Файлы
+- `scripts/maps/bg_presets.gd` (новый, 115 строк)
+- `scripts/maps/custom_map.gd` (новый, ~150 строк)
+- `scenes/maps/custom_map.tscn` (новый)
+- `scripts/main/map_editor.gd` (новый, ~780 строк)
+- `scenes/main/map_editor.tscn` (новый)
+- `scripts/managers/game_manager.gd` (+4 строки)
+- `scripts/main/game.gd` (+10 строк в _load_random_map)
+- `scripts/ui/title_menu.gd` (+2 строки)
+
+### Тест
+- `mcp__godot__run_project` с main scene — без ошибок.
+- `mcp__godot__run_project` прямо на `map_editor.tscn` — UI инициализируется
+  без runtime errors или warnings.
+
+### Что дальше (nice-to-have)
+- Drag-corner resize вместо только числовых инпутов.
+- Import existing built-in maps в формат custom_map (через `scripts/maps/*.gd`).
+- Возврат из Test Play обратно в редактор через `returning_to_editor`.
+
+---
+
 ## 2026-04-20 — fix(maps): найдена реальная причина зазоров — 56px alpha=0 padding в PNG'ах
 
 ### Разбор

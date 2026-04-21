@@ -22,10 +22,36 @@ var teleports: Array = []
 var destructibles: Array = []
 ## Item spawn points: [x, y] — items spawn randomly at these positions
 var item_spawns: Array = []
-## Map events enabled
-var events_enabled: bool = false
+## Map events: which random hazard fires every EVENT_INTERVAL seconds.
+## "none"      — no periodic events
+## "wind"      — horizontal gust knockback
+## "meteor"    — falling meteor damage in a random column
+## "lightning" — strike a random player (damage + stun)
+## "all"       — pick one of the three at random each interval
+var event_type: String = "none"
+var events_enabled: bool = false  # legacy flag, kept in sync with event_type
 var event_timer: float = 0.0
 const EVENT_INTERVAL := 20.0
+# Event warning banner — big text on screen when an event fires.
+var event_banner_text: String = ""
+var event_banner_timer: float = 0.0
+var event_banner_color: Color = Color(1, 0.85, 0.3)
+
+# Event visuals — start time in seconds (-1 = inactive). _draw reads
+# these to render the falling meteor / zigzag bolt / wind streaks.
+var _meteor_start_t: float = -1.0
+var _meteor_x: float = 0.0
+var _meteor_y_spawn: float = 0.0
+var _meteor_y_impact: float = 0.0
+const METEOR_FALL_DUR: float = 1.0
+const METEOR_EXPLODE_DUR: float = 0.5
+var _lightning_start_t: float = -1.0
+var _lightning_target: Vector2 = Vector2.ZERO
+var _lightning_origin: Vector2 = Vector2.ZERO
+const LIGHTNING_DUR: float = 0.8
+var _wind_start_t: float = -1.0
+var _wind_dir: float = 1.0
+const WIND_DUR: float = 1.0
 
 ## Parallax layers: [{color, elements: [{x, y, size, shape}], scroll_factor}]
 ## scroll_factor: 0.0 = static, 1.0 = moves with camera
@@ -238,6 +264,165 @@ func _draw() -> void:
 	_draw_water_floor()
 	_draw_side_vignette()
 	_draw_walls()
+	_draw_event_vfx()
+	_draw_event_banner()
+
+
+func _draw_event_vfx() -> void:
+	var now: float = _event_time()
+	# ───── Meteor ─────
+	if _meteor_start_t >= 0.0:
+		var el: float = now - _meteor_start_t
+		if el < METEOR_FALL_DUR + METEOR_EXPLODE_DUR:
+			if el < METEOR_FALL_DUR:
+				var k: float = el / METEOR_FALL_DUR
+				# Ease-in: fast near impact
+				var y: float = lerpf(_meteor_y_spawn, _meteor_y_impact, k * k)
+				# Trailing fire
+				for i in range(10):
+					var tk: float = k - i * 0.025
+					if tk < 0.0:
+						continue
+					var yi: float = lerpf(_meteor_y_spawn, _meteor_y_impact, tk * tk)
+					var r: float = 18.0 - i * 1.3
+					var col := Color(1.0, 0.5 + i * 0.04, 0.1, 0.9 - i * 0.08)
+					draw_circle(Vector2(_meteor_x, yi), maxf(r, 3.0), col)
+				# Main rock
+				draw_circle(Vector2(_meteor_x, y), 22.0, Color(0.25, 0.15, 0.08))
+				draw_circle(Vector2(_meteor_x, y), 18.0, Color(0.45, 0.25, 0.12))
+				draw_arc(Vector2(_meteor_x, y), 24.0, 0, TAU, 16,
+					Color(1.0, 0.6, 0.1, 0.8), 3.0)
+			else:
+				# Explosion — expanding fireball + shockwave ring
+				var ek: float = (el - METEOR_FALL_DUR) / METEOR_EXPLODE_DUR
+				var fade: float = 1.0 - ek
+				var radius: float = 30.0 + ek * 200.0
+				# Fireball layers
+				draw_circle(Vector2(_meteor_x, _meteor_y_impact),
+					radius * 0.7, Color(1.0, 0.4, 0.1, 0.7 * fade))
+				draw_circle(Vector2(_meteor_x, _meteor_y_impact),
+					radius * 0.4, Color(1.0, 0.9, 0.3, 0.85 * fade))
+				# Shockwave ring
+				draw_arc(Vector2(_meteor_x, _meteor_y_impact),
+					radius, 0, TAU, 32,
+					Color(1.0, 0.7, 0.3, fade), 4.0)
+				# Bits of debris
+				for i in range(14):
+					var ang: float = float(i) * TAU / 14.0
+					var dx: float = cos(ang) * radius * 0.9
+					var dy: float = sin(ang) * radius * 0.9 - ek * 100.0
+					draw_circle(
+						Vector2(_meteor_x + dx, _meteor_y_impact + dy),
+						4.0 + ek * 6.0,
+						Color(0.6, 0.3, 0.15, fade))
+		else:
+			_meteor_start_t = -1.0
+	# ───── Lightning ─────
+	if _lightning_start_t >= 0.0:
+		var el: float = now - _lightning_start_t
+		if el < LIGHTNING_DUR:
+			var k: float = el / LIGHTNING_DUR
+			var fade: float = 1.0 - k
+			# Pre-strike (first 0.5s) = warning zap chain
+			# Post-strike (after 0.5s) = fading blast
+			var n_segs := 14
+			var origin := _lightning_origin
+			var target := _lightning_target
+			var pts: PackedVector2Array = []
+			pts.append(origin)
+			for i in range(1, n_segs):
+				var ti: float = float(i) / n_segs
+				var lp: Vector2 = origin.lerp(target, ti)
+				# Deterministic wobble on the X so the bolt keeps its shape
+				var seed_x: float = sin(float(i) * 17.3
+					+ _lightning_start_t * 9.1) * 43758.5453
+				var r: float = seed_x - floor(seed_x)
+				lp.x += (r - 0.5) * 80.0
+				pts.append(lp)
+			pts.append(target)
+			# Outer glow
+			for j in range(pts.size() - 1):
+				draw_line(pts[j], pts[j + 1],
+					Color(0.8, 0.95, 1.0, 0.35 * fade), 14.0)
+			# Inner core — bright white
+			for j in range(pts.size() - 1):
+				draw_line(pts[j], pts[j + 1],
+					Color(1.0, 1.0, 1.0, 0.95 * fade), 5.0)
+			# Impact ring
+			var ring_r: float = 12.0 + k * 60.0
+			draw_arc(target, ring_r, 0, TAU, 24,
+				Color(1.0, 1.0, 0.4, 0.8 * fade), 3.0)
+			draw_circle(target, 20.0 * fade,
+				Color(1.0, 1.0, 0.9, 0.6 * fade))
+		else:
+			_lightning_start_t = -1.0
+	# ───── Wind ─────
+	if _wind_start_t >= 0.0:
+		var el: float = now - _wind_start_t
+		if el < WIND_DUR:
+			var cam := get_viewport().get_camera_2d()
+			if cam != null:
+				var vp: Vector2 = get_viewport().get_visible_rect().size
+				var cam_pos: Vector2 = cam.position
+				var k: float = el / WIND_DUR
+				var fade: float = 1.0 - k
+				# 20 horizontal streak lines moving in wind direction
+				for i in range(20):
+					var seed_y: float = sin(float(i) * 29.7) * 43758.5453
+					var ry: float = seed_y - floor(seed_y)
+					var yy: float = cam_pos.y - vp.y * 0.5 + ry * vp.y
+					var seed_w: float = sin(float(i) * 13.1) * 43758.5453
+					var rw: float = seed_w - floor(seed_w)
+					var streak_len: float = 150.0 + rw * 120.0
+					var speed: float = 900.0 + rw * 400.0
+					# Position of streak center — moves in wind_dir
+					var offset: float = (el * speed) * _wind_dir
+					var x_center: float = cam_pos.x \
+						- vp.x * 0.5 + ((float(i) * 173.7) + offset)
+					# Wrap horizontally across visible area + buffer
+					var wrap_w: float = vp.x + streak_len * 2.0
+					x_center = cam_pos.x - vp.x * 0.5 \
+						+ fposmod(x_center - (cam_pos.x - vp.x * 0.5), wrap_w)
+					var p1 := Vector2(x_center, yy)
+					var p2 := Vector2(x_center + streak_len * _wind_dir, yy)
+					var col := Color(1.0, 1.0, 1.0, 0.35 * fade)
+					draw_line(p1, p2, col, 2.0)
+		else:
+			_wind_start_t = -1.0
+
+
+func _draw_event_banner() -> void:
+	if event_banner_timer <= 0.0 or event_banner_text == "":
+		return
+	var cam := get_viewport().get_camera_2d()
+	if cam == null:
+		return
+	var vp: Vector2 = get_viewport().get_visible_rect().size
+	# Banner anchored near top of screen, in world space via camera pos.
+	var cx: float = cam.position.x
+	var cy: float = cam.position.y - vp.y * 0.35
+	var fade: float = clampf(event_banner_timer * 1.5, 0.0, 1.0)
+	var font := ThemeDB.fallback_font
+	var fs := 58
+	var text_sz := font.get_string_size(event_banner_text,
+		HORIZONTAL_ALIGNMENT_LEFT, -1, fs)
+	var box_w: float = text_sz.x + 80.0
+	var box_h: float = text_sz.y + 30.0
+	# Background plate (world-space coords scaled by camera zoom)
+	var bg_col := Color(0.08, 0.05, 0.12, 0.80 * fade)
+	draw_rect(Rect2(
+		cx - box_w * 0.5, cy - box_h * 0.5,
+		box_w, box_h), bg_col)
+	var edge := event_banner_color
+	edge.a = 0.95 * fade
+	draw_rect(Rect2(
+		cx - box_w * 0.5, cy - box_h * 0.5,
+		box_w, box_h), edge, false, 3.0)
+	var text_col := event_banner_color
+	text_col.a = fade
+	draw_string(font,
+		Vector2(cx - text_sz.x * 0.5, cy + text_sz.y * 0.25),
+		event_banner_text, HORIZONTAL_ALIGNMENT_LEFT, -1, fs, text_col)
 
 
 func _draw_parallax() -> void:
@@ -958,12 +1143,21 @@ func _process(delta: float) -> void:
 				p.global_position.y = map_rect.end.y - r_val
 				p.velocity.y = -absf(p.velocity.y) * 1.0 - 150.0
 
-	# Map events
-	if events_enabled:
+	# Decay event banner display timer
+	if event_banner_timer > 0.0:
+		event_banner_timer -= delta
+	# Map events (legacy events_enabled flag implies "all")
+	if event_type == "none" and events_enabled:
+		event_type = "all"
+	if event_type != "" and event_type != "none":
 		event_timer += delta
 		if event_timer >= EVENT_INTERVAL:
 			event_timer = 0.0
-			_trigger_random_event()
+			match event_type:
+				"wind":      _event_wave()
+				"meteor":    _event_meteor()
+				"lightning": _event_lightning()
+				_:           _trigger_random_event()
 
 	# Item spawning
 	if item_spawns.size() > 0 and Engine.get_physics_frames() % 900 == 0:
@@ -1314,18 +1508,24 @@ func _event_meteor() -> void:
 		map_rect.position.x + danger_left + 200,
 		map_rect.end.x - danger_right - 200
 	)
+	_show_event_banner("☄ METEOR INCOMING ☄", Color(1.0, 0.45, 0.2), 1.8)
+	# Kick off falling meteor visual — _draw reads these.
+	_meteor_x = x
+	_meteor_y_impact = map_rect.end.y - danger_bottom - 20.0
+	_meteor_y_spawn = map_rect.position.y - 200.0
+	_meteor_start_t = _event_time()
 	# Damage all players near impact line
-	await get_tree().create_timer(1.0).timeout  # warning delay
+	await get_tree().create_timer(METEOR_FALL_DUR).timeout
 	for p in get_tree().get_nodes_in_group("players"):
 		if not p.is_alive:
 			continue
-		if absf(p.global_position.x - x) < 80.0:
+		if absf(p.global_position.x - x) < 140.0:
 			p.take_damage(40.0)
 			p.apply_knockback(Vector2(0, -500))
 	SoundManager.play_explosion()
 	var cam := get_viewport().get_camera_2d()
 	if cam != null and cam.has_method("add_shake"):
-		cam.add_shake(6.0)
+		cam.add_shake(8.0)
 
 
 func _event_lightning() -> void:
@@ -1338,6 +1538,11 @@ func _event_lightning() -> void:
 	if alive.is_empty():
 		return
 	var target: CharacterBody2D = alive[randi_range(0, alive.size() - 1)]
+	_show_event_banner("⚡ LIGHTNING STRIKE ⚡", Color(1.0, 0.95, 0.5), 1.2)
+	_lightning_target = target.global_position
+	_lightning_origin = Vector2(_lightning_target.x,
+		map_rect.position.y - 200.0)
+	_lightning_start_t = _event_time()
 	await get_tree().create_timer(0.5).timeout
 	if is_instance_valid(target) and target.is_alive:
 		target.take_damage(30.0)
@@ -1348,10 +1553,24 @@ func _event_lightning() -> void:
 func _event_wave() -> void:
 	# Horizontal wind pushes all players
 	var dir := 1.0 if randf() > 0.5 else -1.0
+	var arrow: String = "→→→" if dir > 0 else "←←←"
+	_show_event_banner("💨 STRONG WIND  " + arrow, Color(0.6, 0.9, 1.0), 1.2)
+	_wind_dir = dir
+	_wind_start_t = _event_time()
 	for p in get_tree().get_nodes_in_group("players"):
 		if p.is_alive:
 			p.apply_knockback(Vector2(dir * 400.0, -100.0))
 	SoundManager.play_dash()
+
+
+func _show_event_banner(text: String, color: Color, dur: float) -> void:
+	event_banner_text = text
+	event_banner_color = color
+	event_banner_timer = dur
+
+
+func _event_time() -> float:
+	return float(Time.get_ticks_msec()) / 1000.0
 
 
 func _draw_decorations() -> void:

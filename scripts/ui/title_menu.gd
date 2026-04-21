@@ -22,7 +22,7 @@ var vsync: bool = true
 var show_fps: bool = false
 var screen_shake: bool = true
 
-const TITLE_ITEMS: Array[String] = ["PLAY", "SETTINGS", "QUIT"]
+const TITLE_ITEMS: Array[String] = ["PLAY", "MAP EDITOR", "SETTINGS", "QUIT"]
 
 const SETTINGS_ITEMS: Array[String] = [
 	"Master Volume",
@@ -154,11 +154,17 @@ func _select_title() -> void:
 		0:  # Play
 			GameManager.vibration_enabled = vibration_enabled
 			GameManager.screen_shake_enabled = screen_shake
+			# Normal play uses the random map rotation — clear any
+			# editor-test-play custom map left over from a previous session.
+			GameManager.pending_custom_map = {}
+			GameManager.returning_to_editor = false
 			get_tree().change_scene_to_file("res://scenes/main/lobby.tscn")
-		1:  # Settings
+		1:  # Map Editor
+			get_tree().change_scene_to_file("res://scenes/main/map_editor.tscn")
+		2:  # Settings
 			current_screen = Screen.SETTINGS
 			settings_focus = 0
-		2:  # Quit
+		3:  # Quit
 			get_tree().quit()
 
 

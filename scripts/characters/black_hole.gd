@@ -1,4 +1,6 @@
 extends Node2D
+
+const ProjectileSprites := preload("res://scripts/characters/projectile_sprites.gd")
 ## Black Hole — expands over 2.5s while pulling, then drains for 8s.
 ## Drains HP from enemies and heals the owner (lifesteal).
 
@@ -13,6 +15,9 @@ var drain_per_sec: float = 5.0
 var time_alive: float = 0.0
 var total_lifetime: float = 10.5
 var current_radius: float = 0.0
+# Shrink back to a dot in the last `shrink_time` seconds — the 7-frame
+# sprite replays in reverse while radius decays. Included in total_lifetime.
+var shrink_time: float = 1.2
 
 
 func setup_from_config(id: int, cfg: Dictionary) -> void:
@@ -22,7 +27,9 @@ func setup_from_config(id: int, cfg: Dictionary) -> void:
 	active_duration = cfg.get("active_duration", 8.0)
 	pull_force = cfg.get("pull_force", 350.0)
 	drain_per_sec = cfg.get("drain_per_sec", 5.0)
-	total_lifetime = expand_time + active_duration
+	shrink_time = cfg.get("shrink_time", 1.2)
+	# Lifetime covers growth, active, and shrink phases in that order.
+	total_lifetime = expand_time + active_duration + shrink_time
 
 
 func _ready() -> void:
@@ -56,12 +63,19 @@ func _physics_process(delta: float) -> void:
 			global_position, 0.6, sc, randf() * TAU,
 			Color(0.6, 0.3, 0.9, 0.9), 4.0)
 
+	# Three phases: grow (0..expand_time), hold (..total-shrink), shrink (last shrink_time).
+	var shrink_start: float = total_lifetime - shrink_time
 	if time_alive < expand_time:
 		# Expanding phase — grow radius, pull starts immediately but weaker
 		var t := time_alive / expand_time
 		current_radius = max_radius * t * t  # ease-in
-	else:
+	elif time_alive < shrink_start:
 		current_radius = max_radius
+	else:
+		# Shrink phase — ease-out back to zero
+		var t := (time_alive - shrink_start) / shrink_time
+		var k := 1.0 - t
+		current_radius = max_radius * k * k
 
 	# Pull and drain during ALL phases (not just active)
 	_pull_and_drain(delta)
@@ -98,59 +112,52 @@ func _draw() -> void:
 	if current_radius < 1.0:
 		return
 
-	var fade := 1.0
-	var remaining := total_lifetime - time_alive
-	if remaining < 1.0:
-		fade = remaining
+	# Base transparency — the hole is partially see-through so the
+	# background/players behind it still read. Lower on the tiny grow
+	# frames (they'd otherwise look like solid disks) and on shrink.
+	const BASE_ALPHA := 0.70
+	var alpha_mul: float = 1.0
+	var shrink_start: float = total_lifetime - shrink_time
+	if time_alive < expand_time:
+		alpha_mul = time_alive / expand_time      # fade in
+	elif time_alive >= shrink_start:
+		alpha_mul = 1.0 - (time_alive - shrink_start) / shrink_time  # fade out
+	var fade: float = BASE_ALPHA * clampf(alpha_mul, 0.0, 1.0)
 
 	var time_val := time_alive * 2.0
 
-	# Black core
-	var core_r := current_radius * 0.3
-	draw_circle(Vector2.ZERO, core_r,
-		Color(0.02, 0.0, 0.05, 0.9 * fade))
+	# Animated vortex — 7 per-frame PNGs, content-centered.
+	# Phase-based frame index:
+	#   grow  : frames 0..6 over expand_time
+	#   hold  : frame 6 (rotating)
+	#   shrink: frames 6..0 over shrink_time (reverse)
+	var frame: int = 6
+	if time_alive < expand_time:
+		var t: float = time_alive / expand_time
+		frame = clampi(int(t * 7.0), 0, 6)
+	elif time_alive >= shrink_start:
+		var t: float = (time_alive - shrink_start) / shrink_time
+		frame = clampi(6 - int(t * 7.0), 0, 6)
+	var rot: float = time_alive * 0.9
+	var tex_name: String = "black_hole_%d.png" % frame
+	ProjectileSprites.draw_single(self, tex_name,
+		current_radius * 2.4, rot, Color(1, 1, 1, fade))
 
-	# Dark fill
-	draw_circle(Vector2.ZERO, current_radius * 0.6,
-		Color(0.05, 0.0, 0.1, 0.4 * fade))
-
-	# Accretion disk — rotating arcs
-	var disk_count := 3
-	for i in range(disk_count):
-		var arc_start := time_val * (1.5 + i * 0.3) + i * TAU / disk_count
-		var arc_span := PI * 0.6
-		var arc_r := current_radius * (0.5 + i * 0.15)
-		var arc_col := Color(0.6, 0.2, 0.8, 0.3 * fade) if i % 2 == 0 \
-			else Color(0.9, 0.4, 0.1, 0.25 * fade)
-		draw_arc(Vector2.ZERO, arc_r, arc_start, arc_start + arc_span,
-			12, arc_col, 3.0 - i * 0.5)
-
-	# Outer ring — pulsing
-	var pulse := 0.7 + sin(time_val * 3.0) * 0.15
-	draw_arc(Vector2.ZERO, current_radius * pulse, 0.0, TAU, 24,
-		Color(0.4, 0.1, 0.6, 0.25 * fade), 2.0)
-	draw_arc(Vector2.ZERO, current_radius, 0.0, TAU, 24,
-		Color(0.3, 0.05, 0.5, 0.15 * fade), 1.5)
-
-	# Particles being sucked in
-	for i in range(16):
+	# Extra particle pulls for motion juice (on top of the sprite).
+	for i in range(14):
 		var angle := time_val * (0.8 + fmod(i * 0.13, 0.6)) \
-			+ i * TAU / 16.0
+			+ i * TAU / 14.0
 		var t := fmod(time_alive * 0.5 + i * 0.12, 1.0)
 		var dist := current_radius * (1.0 - t)
 		var px := cos(angle) * dist
 		var py := sin(angle) * dist
-		var ps := 2.0 + t * 2.0
-		var alpha := (1.0 - t) * 0.4 * fade
+		var ps := 2.0 + t * 2.2
+		var alpha := (1.0 - t) * 0.45 * fade
 		draw_circle(Vector2(px, py), ps,
-			Color(0.5, 0.2, 0.8, alpha))
+			Color(0.65, 0.3, 0.95, alpha))
 
-	# Warning ring during expand phase
+	# Warning ring during expand phase.
 	if time_alive < expand_time:
 		var warn_pulse := sin(time_val * 5.0) * 0.3 + 0.5
-		draw_arc(Vector2.ZERO, max_radius, 0.0, TAU, 24,
-			Color(0.8, 0.2, 0.2, warn_pulse * 0.3 * fade), 2.0)
-
-	# Center glow
-	draw_circle(Vector2.ZERO, core_r * 0.5,
-		Color(0.4, 0.1, 0.6, 0.3 * fade))
+		draw_arc(Vector2.ZERO, max_radius, 0.0, TAU, 32,
+			Color(0.85, 0.25, 0.25, warn_pulse * 0.35 * fade), 2.0)
