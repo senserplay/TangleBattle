@@ -11,6 +11,13 @@ _–±—É–¥—É—â–∏–µ –∏–∑–º–µ–Ω–µ–Ω–∏—è –∑–¥–µ—Å—å_
 
 ---
 
+## [0.7] ó 2026-04-21
+
+### Changed
+- Merge tweak/stink-cloud-transparency into develop - tweak(vfx): add transparency + fade-in/out to stink cloud - Merge feature/stink-cloud-red-3phase into develop - feat(vfx): stink_cloud Ú¿‘ red-BG extract + 3-phase grow/hold/shrink - Merge fix/portal-marker-follows-player into develop - fix(vfx): portal marker stayed glued to the player after placement - Merge feature/portal-gate-opening-anim into develop - feat(vfx): portal gate opening animation + purple particle emission - Merge tweak/black-hole-transparency into develop - tweak(vfx): make the black hole semi-transparent with fade-in/out - Merge fix/black-hole-6-edge-crop into develop - fix(vfx): let black_hole_6 extend to the source right edge - Merge fix/black-hole-peak-detection into develop - fix(vfx): black_hole extraction Ú¿‘ peak-detect true vortex centers - Merge feature/black-hole-7frame-anim into develop - feat(vfx): 7-frame black hole Ú¿‘ grow Ú∆“ hold Ú∆“ shrink 3-phase animation - Merge feature/grapple-rope-texture into develop - feat(vfx): textured grapple rope Ú¿‘ chroma-keyed PNG stretched along direction - Merge fix/yarn-toss-chromakey into develop - fix(vfx): chroma-key + desaturate yarn_toss for clean player-color tint - Merge fix/heavens-wrath-chromakey into develop - fix(vfx): clean chroma-key heavens_wrath beam with hard despill - Merge feature/grenade-chromakey-spin into develop - feat(vfx): chroma-key grenade + velocity-based spin - Merge tweak/boomerang-grayscale-tint into develop - tweak(vfx): desaturate boomerang to grayscale so player-color tint reads - Merge fix/boomerang-chromakey into develop - fix(vfx): clean chroma-key boomerang from the green reference PNG - Merge fix/per-frame-vfx-center into develop - fix(vfx): per-frame PNG with centered content + world-anchored teleport VFX - Merge fix/projectile-sprites-get-name into develop - fix(vfx): rename projectile_sprites._get Ú∆“ _get_tex (Object._get conflict) - Merge feature/texture-projectiles into develop - feat(vfx): texture-based projectiles & ability effects - Merge tweak/ability-icons-bigger into develop - tweak(ui): bigger ability icons above the player head - Merge feature/event-vfx into develop - feat(events): visible meteor/lightning/wind VFX + editor canvas clipping - Merge feature/editor-events-polish into develop - feat(editor): events dropdown + banners, slippery water, default one-way - Merge fix/editor-collisions-import into develop - fix(editor): custom-map collisions, import built-in maps, clarify events - Merge feature/map-editor into develop - feat(editor): in-game map editor with Test Play + custom_map runtime loader - Merge release/0.6 into develop
+
+---
+
 ## [0.6] ó 2026-04-20
 
 ### Changed
@@ -124,3 +131,5 @@ _–±—É–¥—É—â–∏–µ –∏–∑–º–µ–Ω–µ–Ω–∏—è –∑–¥–µ—Å—å_
 [0.5]: https://github.com/senserplay/TangleBattle/releases/tag/v0.5
 
 [0.6]: https://github.com/senserplay/TangleBattle/releases/tag/v0.6
+
+[0.7]: https://github.com/senserplay/TangleBattle/releases/tag/v0.7
