@@ -112,7 +112,17 @@ func _draw() -> void:
 	if current_radius < 1.0:
 		return
 
-	var fade := 1.0
+	# Base transparency — the hole is partially see-through so the
+	# background/players behind it still read. Lower on the tiny grow
+	# frames (they'd otherwise look like solid disks) and on shrink.
+	const BASE_ALPHA := 0.70
+	var alpha_mul: float = 1.0
+	var shrink_start: float = total_lifetime - shrink_time
+	if time_alive < expand_time:
+		alpha_mul = time_alive / expand_time      # fade in
+	elif time_alive >= shrink_start:
+		alpha_mul = 1.0 - (time_alive - shrink_start) / shrink_time  # fade out
+	var fade: float = BASE_ALPHA * clampf(alpha_mul, 0.0, 1.0)
 
 	var time_val := time_alive * 2.0
 
@@ -121,7 +131,6 @@ func _draw() -> void:
 	#   grow  : frames 0..6 over expand_time
 	#   hold  : frame 6 (rotating)
 	#   shrink: frames 6..0 over shrink_time (reverse)
-	var shrink_start: float = total_lifetime - shrink_time
 	var frame: int = 6
 	if time_alive < expand_time:
 		var t: float = time_alive / expand_time
