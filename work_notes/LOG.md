@@ -1,5 +1,32 @@
 # TangleBattle — Рабочий лог
 
+## 2026-04-22 — chore(balance): потолок damage→size ×5
+
+### Запрос
+"Максимальное влияние урона на размер снарядов — 5× от стандартного."
+
+### Фикс
+`scripts/characters/player_abilities.gd`:
+- `const PROJECTILE_SIZE_MULT_CAP := 5.0` в шапке файла.
+- Все 8 точек присвоения заменены с
+  `entity.size_mult = player.damage_multiplier` на
+  `entity.size_mult = minf(player.damage_multiplier, PROJECTILE_SIZE_MULT_CAP)`.
+
+Покрытие: Yarn Toss (regular + burst), Grenade, Boomerang (regular +
+burst), Rocket Launcher salvo-3, Rocket Launcher burst, Guided Rocket.
+
+Стакание урона выше ×5 по-прежнему увеличивает damage значения (через
+`damage_multiplier`), но визуал/коллизия/explosion_radius/hit_radius
+останавливаются на ×5 базового.
+
+### Файлы
+- `scripts/characters/player_abilities.gd` (+1 const, 8× `minf`-обёртки)
+
+### Тест
+- `mcp__godot__run_project` — runtime чисто (warnings pre-existing).
+
+---
+
 ## 2026-04-22 — feat(gameplay): урон масштабирует размер снарядов (5 способностей)
 
 ### Запрос

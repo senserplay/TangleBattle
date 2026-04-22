@@ -2,6 +2,11 @@ class_name PlayerAbilities
 extends Node
 ## Ability dispatch and individual ability logic extracted from player.gd.
 
+# Hard cap on `damage_multiplier → size_mult` for every spawned projectile.
+# Stacked damage passives can push damage_multiplier high; without a cap
+# a single yarn ball / grenade / rocket would fill a whole screen.
+const PROJECTILE_SIZE_MULT_CAP := 5.0
+
 var player: CharacterBody2D
 
 var _yarn_projectile_scene: PackedScene = preload(
@@ -246,7 +251,7 @@ func _ab_yarn_toss() -> void:
 	proj.speed *= player.projectile_speed_mult
 	proj.homing = player.homing_strength
 	proj.phase = player.phase_shot
-	proj.size_mult = player.damage_multiplier
+	proj.size_mult = minf(player.damage_multiplier, PROJECTILE_SIZE_MULT_CAP)
 	proj.global_position = player.global_position \
 		+ player.aim_direction * (player.get_player_radius() + 8.0)
 	get_tree().current_scene.add_child(proj)
@@ -272,7 +277,7 @@ func _burst_yarn_toss(cfg: Dictionary, count: int) -> void:
 		p2.speed *= player.projectile_speed_mult
 		p2.homing = player.homing_strength
 		p2.phase = player.phase_shot
-		p2.size_mult = player.damage_multiplier
+		p2.size_mult = minf(player.damage_multiplier, PROJECTILE_SIZE_MULT_CAP)
 		p2.global_position = player.global_position \
 			+ dir * (player.get_player_radius() + 8.0)
 		get_tree().current_scene.add_child(p2)
@@ -399,7 +404,7 @@ func _throw_grenade() -> void:
 	gren.owner_ref = player
 	gren.homing = player.homing_strength
 	gren.max_bounces = player.ricochet_bounces
-	gren.size_mult = player.damage_multiplier
+	gren.size_mult = minf(player.damage_multiplier, PROJECTILE_SIZE_MULT_CAP)
 	gren.global_position = player.global_position \
 		+ player.aim_direction * (maxf(player.get_player_radius(), 24.0) + 30.0)
 	get_tree().current_scene.add_child(gren)
@@ -516,7 +521,7 @@ func _ab_boomerang() -> void:
 		player.player_id, player.aim_direction, player.player_color, cfg)
 	boom.owner_ref = player
 	boom.homing = player.homing_strength
-	boom.size_mult = player.damage_multiplier
+	boom.size_mult = minf(player.damage_multiplier, PROJECTILE_SIZE_MULT_CAP)
 	boom.global_position = player.global_position \
 		+ player.aim_direction * (player.get_player_radius() + 10.0)
 	get_tree().current_scene.add_child(boom)
@@ -539,7 +544,7 @@ func _burst_boomerang(cfg: Dictionary, count: int) -> void:
 		b2.setup_from_config(player.player_id, dir, player.player_color, cfg)
 		b2.owner_ref = player
 		b2.homing = player.homing_strength
-		b2.size_mult = player.damage_multiplier
+		b2.size_mult = minf(player.damage_multiplier, PROJECTILE_SIZE_MULT_CAP)
 		b2.global_position = player.global_position \
 			+ dir * (player.get_player_radius() + 10.0)
 		get_tree().current_scene.add_child(b2)
@@ -572,7 +577,7 @@ func _burst_rockets(cfg: Dictionary, count: int) -> void:
 			r2.homing = player.homing_strength
 			r2.phase = player.phase_shot
 			r2.max_bounces = player.ricochet_bounces
-			r2.size_mult = player.damage_multiplier
+			r2.size_mult = minf(player.damage_multiplier, PROJECTILE_SIZE_MULT_CAP)
 			r2.global_position = player.global_position \
 				+ dir * (player.get_player_radius() + 10.0)
 			get_tree().current_scene.add_child(r2)
@@ -596,7 +601,7 @@ func _ab_guided_rocket() -> void:
 	rocket.homing = player.homing_strength
 	rocket.phase = player.phase_shot
 	rocket.max_bounces = player.ricochet_bounces
-	rocket.size_mult = player.damage_multiplier
+	rocket.size_mult = minf(player.damage_multiplier, PROJECTILE_SIZE_MULT_CAP)
 	rocket.global_position = player.global_position \
 		+ player.aim_direction * (player.get_player_radius() + 10.0)
 	get_tree().current_scene.add_child(rocket)
@@ -684,7 +689,7 @@ func _ab_rocket_launcher() -> void:
 		rocket.homing = player.homing_strength
 		rocket.phase = player.phase_shot
 		rocket.max_bounces = player.ricochet_bounces
-		rocket.size_mult = player.damage_multiplier
+		rocket.size_mult = minf(player.damage_multiplier, PROJECTILE_SIZE_MULT_CAP)
 		rocket.global_position = player.global_position \
 			+ dir * (player.get_player_radius() + 10.0)
 		get_tree().current_scene.add_child(rocket)
