@@ -396,6 +396,20 @@ func _throw_grenade() -> void:
 		player.charge_timer = 0.0
 		return
 	SoundManager.play_toss()
+	# Spawn offset has to account for BOTH hitboxes — at high size_mult
+	# the grenade's own collision shape can be as wide as the player,
+	# so the old fixed "player_radius + 30" gap would spawn the grenade
+	# INSIDE the player. Compute each radius explicitly and add an
+	# 8-px safety gap so the hitboxes can't touch at spawn.
+	const GRENADE_BASE_COLLISION_RADIUS := 14.0   # matches grenade.tscn
+	const GRENADE_SPAWN_GAP := 8.0
+	var gren_size_mult: float = minf(player.damage_multiplier,
+		PROJECTILE_SIZE_MULT_CAP)
+	var grenade_collision_radius: float = \
+		GRENADE_BASE_COLLISION_RADIUS * gren_size_mult
+	var spawn_offset: float = player.get_player_radius() \
+		+ grenade_collision_radius + GRENADE_SPAWN_GAP
+
 	var gren: CharacterBody2D = _grenade_scene.instantiate()
 	gren.setup_from_config(
 		player.player_id, player.aim_direction, player.player_color,
@@ -404,9 +418,9 @@ func _throw_grenade() -> void:
 	gren.owner_ref = player
 	gren.homing = player.homing_strength
 	gren.max_bounces = player.ricochet_bounces
-	gren.size_mult = minf(player.damage_multiplier, PROJECTILE_SIZE_MULT_CAP)
+	gren.size_mult = gren_size_mult
 	gren.global_position = player.global_position \
-		+ player.aim_direction * (maxf(player.get_player_radius(), 24.0) + 30.0)
+		+ player.aim_direction * spawn_offset
 	get_tree().current_scene.add_child(gren)
 	_track_entity(gren, AbilityRegistry.GRENADE)
 

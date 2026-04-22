@@ -1,5 +1,57 @@
 # TangleBattle — Рабочий лог
 
+## 2026-04-22 — fix(gameplay): граната не застревает в игроке при выпуске
+
+### Запрос
+"Иногда граната застревает в игроке при выпуске способности. Место
+появления гранаты должно учитывать размер игрока и гранаты, чтобы
+их хитбоксы не пересекались и имели дистанцию."
+
+### Причина
+В `player_abilities.gd::_throw_grenade` спавн вычислялся как
+```
+player.global_position + aim_direction *
+    (maxf(player.get_player_radius(), 24.0) + 30.0)
+```
+— фиксированный запас 30 px от края игрока. Не учитывал собственный
+радиус гранаты. При `size_mult = 5` граната имеет коллайдер
+`14 × 5 = 70 px`. Спавн в `24 + 30 = 54 px` от центра игрока даёт
+центр гранаты при радиусе 70 — **её хитбокс залезает на 16 px
+обратно в игрока**. Грантата застревает на первом кадре, пока физика
+не вытолкнет.
+
+### Фикс
+`scripts/characters/player_abilities.gd::_throw_grenade`:
+```
+const GRENADE_BASE_COLLISION_RADIUS := 14.0  # matches grenade.tscn
+const GRENADE_SPAWN_GAP := 8.0
+var grenade_collision_radius = 14.0 * gren_size_mult
+var spawn_offset = player.get_player_radius()
+              + grenade_collision_radius
+              + GRENADE_SPAWN_GAP
+```
+Теперь оба радиуса учтены явно + 8 px гарантированного зазора.
+
+### Примеры
+| player_radius | size_mult | old offset | new offset |
+|---------------|-----------|-----------|------------|
+| 24 | 1.0 | 54 | 46 |
+| 24 | 5.0 | 54 | **102** |
+| 36 | 1.0 | 66 | 58 |
+| 36 | 5.0 | 66 | **114** |
+
+При `size_mult × 5` new offset > old в 2× — хитбокс теперь не
+пересекается ни в одной конфигурации. Граната всё так же летит в
+направлении `aim_direction` со скоростью зарядки.
+
+### Файлы
+- `scripts/characters/player_abilities.gd::_throw_grenade` (+10 / -3)
+
+### Тест
+- `mcp__godot__run_project` — runtime чисто.
+
+---
+
 ## 2026-04-22 — feat(gameplay): возврат к explosion_radius-логике + MAX_EXPLOSION_RADIUS cap
 
 ### Запрос
