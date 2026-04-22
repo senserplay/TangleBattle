@@ -1,5 +1,61 @@
 # TangleBattle — Рабочий лог
 
+## 2026-04-22 — feat(gameplay): масштабирование knockback по размеру + общий cap
+
+### Запрос
+"Пофиксить отталкивание щитом и от взрывов/снарядов — слишком сильно.
+Силу отталкивания считать в зависимости от размера игрока и установить
+максимальную силу. Пассивки, увеличивающие отталкивание, должны его
+увеличивать, но есть предел."
+
+### Причина
+- `apply_knockback(force)` просто прибавлял `force` к `velocity` без
+  учёта массы и без кап-предела. Взрыв гранаты с buff'ом урона мог
+  сделать скорость неадекватной, а маленький игрок с Glass Cannon
+  получал то же ускорение, что и крупный Tank — физически неверно.
+- `_handle_player_collisions()` умножал `bounce_force` на
+  `collision_force_mult` (Heavy Impact: ×1.5/1.8/2.2/3.0,
+  мультипликативный стак). Два Mythic Heavy Impact = ×9 — отскок
+  превращал столкновение в катапульту.
+
+### Фикс — `scripts/characters/player.gd`
+
+1. **Новая константа:** `MAX_KNOCKBACK_MAGNITUDE = 1800.0`.
+2. **Новый хелпер** `_scale_knockback(force) -> Vector2`:
+   ```
+   scaled = force / max(hp_scale, 0.5)
+   if scaled.length > MAX_KNOCKBACK_MAGNITUDE:
+       scaled = scaled.normalized * MAX_KNOCKBACK_MAGNITUDE
+   ```
+   `hp_scale` ∈ [0.7, 1.8] (от MAX_HP/100). Большой Tank (hp_scale=1.8)
+   получает ×0.56 толчка, мелкий Glass Cannon (0.7) — ×1.43. После
+   скейлинга — абсолютный cap.
+3. **`apply_knockback(force)`** теперь делает:
+   `velocity += _scale_knockback(force)`.
+   Покрывает ВСЕ источники через единую точку: взрывы (граната, yarn
+   bomb, ракета, boomerang), tripwire, spike armor, swap, grab/throw,
+   parry-reflect, heavens wrath, shockwave — всё, что вызывает
+   `apply_knockback`.
+4. **Player-vs-player bounce** в `_handle_player_collisions()` теперь
+   тоже проходит через `_scale_knockback` для каждой стороны отдельно.
+   Heavy Impact усиливает `collision_force_mult` как раньше, но
+   эффективный применяемый импульс ограничен cap'ом.
+
+### Семантика
+- Большой игрок отталкивается меньше — честно.
+- Маленький игрок чуть сильнее — но cap всё равно не даст улететь.
+- Пассивки-бустеры (Heavy Impact + будущие) работают до предела.
+- Shield/invincibility по-прежнему полностью блокируют `apply_knockback`
+  (проверка в начале функции без изменений).
+
+### Файлы
+- `scripts/characters/player.gd` (+22 / -3)
+
+### Тест
+- `mcp__godot__run_project` — runtime чисто.
+
+---
+
 ## 2026-04-22 — chore(ui): счётчик побед перенесён вниз (не перекрывается пассивками)
 
 ### Запрос
