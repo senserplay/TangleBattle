@@ -119,8 +119,13 @@ var ability_cds: Array[float] = [0.0, 0.0]
 # Parry
 var parry_timer: float = 0.0
 var parry_cooldown: float = 0.0
+var shockwave_cooldown: float = 0.0  # ticks down independently of parry_cooldown
 const PARRY_WINDOW := 0.2  # seconds of active parry
 const PARRY_CD := 1.0
+# Hard-coded shockwave cooldown. Intentionally a free-standing const
+# (no multiplier, no passive, no flat modifier touches it) so the
+# mechanic can't be cheesed with spammable parry builds.
+const SHOCKWAVE_CD := 5.0
 var parry_visual: float = 0.0  # for sphere animation
 
 # Custom spawn point — set by parry, one per life
@@ -753,6 +758,7 @@ func _update_timers(delta: float) -> void:
 	parry_timer = maxf(parry_timer - delta, 0.0)
 	parry_cooldown = maxf(parry_cooldown - delta, 0.0)
 	parry_visual = maxf(parry_visual - delta, 0.0)
+	shockwave_cooldown = maxf(shockwave_cooldown - delta, 0.0)
 	spawn_anim_timer = maxf(spawn_anim_timer - delta, 0.0)
 	face_event_timer = maxf(face_event_timer - delta, 0.0)
 	if grab_stun_timer > 0.0:
@@ -1015,16 +1021,15 @@ func take_damage(amount: float, source: Node = null) -> void:
 	if shield_timer > 0.0:
 		shield_timer = 0.0
 		return
-	# Parry — block damage (projectiles are reflected in their own scripts)
+	# Parry — block damage (projectiles are reflected in their own scripts).
+	# Note: shockwave + shield_flash are driven by the parry *press* in
+	# `player_abilities.handle_abilities`, not by the successful block,
+	# so they fire whether or not an incoming attack lands.
 	if parry_timer > 0.0:
 		parry_timer = 0.0
 		SoundManager.play_whip()
-		_add_vfx("shield_flash", 0.3)
 		vibrate(0.5, 0.8, 0.2)
 		_parry_detach_grapples()
-		# Shockwave passive — push nearby enemies on parry
-		if shockwave_radius_mult > 0.0:
-			_do_shockwave()
 		return
 	# Iron Skin damage reduction
 	var actual_amount := amount * (1.0 - damage_reduction)
@@ -1084,13 +1089,12 @@ func is_parrying() -> bool:
 
 func on_parry_reflect() -> void:
 	## Called when a projectile is reflected by parry.
+	## Shockwave + shield_flash already fired on the parry *press* —
+	## this path only handles the successful reflect feedback.
 	parry_timer = 0.0
 	SoundManager.play_whip()
-	_add_vfx("shield_flash", 0.3)
 	vibrate(0.5, 0.8, 0.2)
 	_parry_detach_grapples()
-	if shockwave_radius_mult > 0.0:
-		_do_shockwave()
 
 
 func _parry_detach_grapples() -> void:
@@ -1415,6 +1419,7 @@ func respawn(pos: Vector2) -> void:
 	parry_timer = 0.0
 	parry_cooldown = 0.0
 	parry_visual = 0.0
+	shockwave_cooldown = 0.0
 	has_custom_spawn = false
 	custom_spawn_point = Vector2.ZERO
 	spawn_point_used_this_life = false
