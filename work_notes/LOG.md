@@ -1,5 +1,67 @@
 # TangleBattle — Рабочий лог
 
+## 2026-04-22 — feat(gameplay): Ricochet покрывает гранату и ракеты
+
+### Запрос
+"Пассивка отскока не работает на некоторых снарядах. Граната: после
+взрыва лететь в случайном направлении на быстрой скорости и снова
+взрываться (повторных взрывов = кол-во отскоков). Ракета управляемая:
+то же, но направление как у yarn toss. Тройные ракеты: то же, что и
+управляемая — но 3 ракеты."
+
+### Причина
+Пассивка Ricochet (`ricochet_bounces`) применялась только к
+`yarn_projectile.gd` (строка 49 — `bounces_left = max_bounces`).
+`grenade.gd`, `rocket.gd`, `guided_rocket.gd` игнорировали это поле —
+после единственного взрыва снаряд просто удалялся.
+
+### Фикс
+
+**`scripts/characters/grenade.gd`:**
+- Добавлены `max_bounces`, `bounces_left`. В `_ready` копируем max → left.
+- В `_explode()` после 0.2 с пауза: если `bounces_left > 0`,
+  декрементируем и вызываем `_rebounce_grenade()`.
+- `_rebounce_grenade`: случайное направление (random angle ∈ [0, TAU)),
+  скорость = `max(throw_speed * 1.2, 1500)`, `velocity` и `throw_dir`
+  пересчитаны, `timer = fuse_time`, `exploded = false`,
+  `initialized = true` (чтобы физика не переписывала velocity на
+  следующем тике).
+
+**`scripts/characters/rocket.gd` (тройные ракеты):**
+- Добавлены `max_bounces`, `bounces_left`, `max_lifetime`, `last_hit_body`.
+- В `_on_body_entered`: при попадании в игрока/стену сохраняем
+  `last_hit_body` перед вызовом `_explode()`.
+- В `_explode()` после паузы: если есть отскок — `_rebounce_rocket()`.
+- `_rebounce_rocket`: если последний хит — `StaticBody2D`, используем
+  reflection как в yarn_toss (approx normal от центра тела, `direction.bounce(normal)`);
+  иначе случайное направление. Сбрасываем `lifetime = max_lifetime`,
+  `exploded = false`.
+
+**`scripts/characters/guided_rocket.gd`:**
+- Та же схема: `max_bounces`, `bounces_left`, `max_lifetime`,
+  `last_hit_body`. `_rebounce_guided` гасит `steering`/`boosted`
+  (игрок уже отпустил), homing продолжает действовать.
+
+**`scripts/characters/player_abilities.gd`:**
+- В `_throw_grenade`, `_ab_guided_rocket`, `_ab_rocket_launcher`
+  (все 3 ракеты цикла), `_burst_rockets` (бурст-рокеты) добавлены
+  `<entity>.max_bounces = player.ricochet_bounces` строки.
+
+**`docs/passives/08_ricochet.md`:** описание переписано —
+пассивка теперь покрывает yarn_toss, grenade, rocket и guided_rocket.
+
+### Файлы
+- `scripts/characters/grenade.gd` (+26)
+- `scripts/characters/rocket.gd` (+36)
+- `scripts/characters/guided_rocket.gd` (+37)
+- `scripts/characters/player_abilities.gd` (+4 строки)
+- `docs/passives/08_ricochet.md` (обновлено описание)
+
+### Тест
+- `mcp__godot__run_project` — runtime чисто.
+
+---
+
 ## 2026-04-22 — fix(gameplay): Iron Skin теперь действует и на DoT-тики
 
 ### Запрос

@@ -14,6 +14,14 @@ var explosion_radius: float = 120.0
 var exploded: bool = false
 var homing: float = 0.0  # from Homing Projectiles passive
 var phase: bool = false  # from Phase Shot passive
+# Ricochet passive — additional explosions after the first. On each
+# bounce the rocket re-launches: direction reflects off the last hit
+# surface (yarn-toss style) or, if the explosion was triggered by a
+# player / lifetime expiry, picks a random upward-biased direction.
+var max_bounces: int = 0
+var bounces_left: int = 0
+var max_lifetime: float = 2.5
+var last_hit_body: Node = null
 
 # Trail
 var trail_points: Array[Vector2] = []
@@ -34,11 +42,13 @@ func setup_from_config(
 	knockback_up = cfg.get("knockback_up", 350.0)
 	explosion_radius = cfg.get("explosion_radius", 120.0)
 	lifetime = cfg.get("lifetime", 2.5)
+	max_lifetime = lifetime
 
 
 func _ready() -> void:
 	body_entered.connect(_on_body_entered)
 	add_to_group("ability_entities")
+	bounces_left = max_bounces
 
 
 func _exit_tree() -> void:
@@ -104,9 +114,11 @@ func _on_body_entered(body: Node2D) -> void:
 			body.on_parry_reflect()
 			global_position += direction * 20.0
 			return
+		last_hit_body = body
 		_explode()
 	elif body is StaticBody2D:
 		if not phase:
+			last_hit_body = body
 			_explode()
 
 
@@ -142,7 +154,35 @@ func _explode() -> void:
 
 	queue_redraw()
 	await get_tree().create_timer(0.15).timeout
+	if not is_inside_tree() or not is_instance_valid(self):
+		return
+	if bounces_left > 0:
+		bounces_left -= 1
+		_rebounce_rocket()
+		return
 	queue_free()
+
+
+func _rebounce_rocket() -> void:
+	# yarn-toss-style reflection when a static body caused the blast.
+	# Otherwise fall back to a random direction (player hit, lifetime).
+	var new_dir: Vector2
+	if last_hit_body != null and is_instance_valid(last_hit_body) \
+		and last_hit_body is StaticBody2D:
+		var to_body: Vector2 = last_hit_body.global_position - global_position
+		var normal := -to_body.normalized()
+		if normal.length_squared() < 0.01:
+			normal = Vector2.UP
+		new_dir = direction.bounce(normal).normalized()
+		global_position += new_dir * 20.0
+	else:
+		var ang := randf() * TAU
+		new_dir = Vector2(cos(ang), sin(ang))
+	direction = new_dir
+	lifetime = max_lifetime
+	exploded = false
+	last_hit_body = null
+	queue_redraw()
 
 
 func _draw() -> void:

@@ -396,6 +396,7 @@ func _throw_grenade() -> void:
 	)
 	gren.owner_ref = player
 	gren.homing = player.homing_strength
+	gren.max_bounces = player.ricochet_bounces
 	gren.global_position = player.global_position \
 		+ player.aim_direction * (maxf(player.get_player_radius(), 24.0) + 30.0)
 	get_tree().current_scene.add_child(gren)
@@ -565,6 +566,7 @@ func _burst_rockets(cfg: Dictionary, count: int) -> void:
 			r2.owner_ref = player
 			r2.homing = player.homing_strength
 			r2.phase = player.phase_shot
+			r2.max_bounces = player.ricochet_bounces
 			r2.global_position = player.global_position \
 				+ dir * (player.get_player_radius() + 10.0)
 			get_tree().current_scene.add_child(r2)
@@ -587,6 +589,7 @@ func _ab_guided_rocket() -> void:
 	rocket.owner_ref = player
 	rocket.homing = player.homing_strength
 	rocket.phase = player.phase_shot
+	rocket.max_bounces = player.ricochet_bounces
 	rocket.global_position = player.global_position \
 		+ player.aim_direction * (player.get_player_radius() + 10.0)
 	get_tree().current_scene.add_child(rocket)
@@ -673,6 +676,7 @@ func _ab_rocket_launcher() -> void:
 		rocket.owner_ref = player
 		rocket.homing = player.homing_strength
 		rocket.phase = player.phase_shot
+		rocket.max_bounces = player.ricochet_bounces
 		rocket.global_position = player.global_position \
 			+ dir * (player.get_player_radius() + 10.0)
 		get_tree().current_scene.add_child(rocket)

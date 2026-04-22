@@ -17,6 +17,14 @@ var homing: float = 0.0  # from Homing Projectiles passive
 var phase: bool = false  # from Phase Shot passive
 var steering: bool = true  # true while player holds button
 var boosted: bool = false
+# Ricochet passive — additional explosions after the first. Each bounce
+# re-launches the rocket in a yarn-toss-style reflected direction when
+# it hit a wall, or a random direction otherwise. Steering/boost are
+# cleared on bounce; homing (if active) continues.
+var max_bounces: int = 0
+var bounces_left: int = 0
+var max_lifetime: float = 3.5
+var last_hit_body: Node = null
 
 const BOOST_MULTIPLIER := 3.0
 
@@ -37,11 +45,13 @@ func setup_from_config(
 	knockback_up = cfg.get("knockback_up", 400.0)
 	explosion_radius = cfg.get("explosion_radius", 150.0)
 	lifetime = cfg.get("lifetime", 3.5)
+	max_lifetime = lifetime
 
 
 func _ready() -> void:
 	body_entered.connect(_on_body_entered)
 	add_to_group("ability_entities")
+	bounces_left = max_bounces
 
 
 func _exit_tree() -> void:
@@ -121,9 +131,11 @@ func _on_body_entered(body: Node2D) -> void:
 			body.on_parry_reflect()
 			global_position += direction * 20.0
 			return
+		last_hit_body = body
 		_explode()
 	elif body is StaticBody2D:
 		if not phase:
+			last_hit_body = body
 			_explode()
 
 
@@ -157,7 +169,37 @@ func _explode() -> void:
 			)
 	queue_redraw()
 	await get_tree().create_timer(0.15).timeout
+	if not is_inside_tree() or not is_instance_valid(self):
+		return
+	if bounces_left > 0:
+		bounces_left -= 1
+		_rebounce_guided()
+		return
 	queue_free()
+
+
+func _rebounce_guided() -> void:
+	var new_dir: Vector2
+	if last_hit_body != null and is_instance_valid(last_hit_body) \
+		and last_hit_body is StaticBody2D:
+		var to_body: Vector2 = last_hit_body.global_position - global_position
+		var normal := -to_body.normalized()
+		if normal.length_squared() < 0.01:
+			normal = Vector2.UP
+		new_dir = direction.bounce(normal).normalized()
+		global_position += new_dir * 20.0
+	else:
+		var ang := randf() * TAU
+		new_dir = Vector2(cos(ang), sin(ang))
+	direction = new_dir
+	lifetime = max_lifetime
+	# Steering/boost are consumed — bounced rocket flies on its own
+	# (homing can still act if the passive is active).
+	steering = false
+	boosted = false
+	exploded = false
+	last_hit_body = null
+	queue_redraw()
 
 
 func _draw() -> void:
