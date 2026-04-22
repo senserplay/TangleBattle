@@ -1,5 +1,48 @@
 # TangleBattle — Рабочий лог
 
+## 2026-04-22 — feat(ui): hover → focus в меню + фикс ab-slot id в lobby
+
+### Запрос
+"При наведении мыши кнопки должны стать selectable. Если сначала
+навелась мышь, потом переключение клавиатурой продолжается с того
+пункта, где был hover."
+
+### Реализация
+
+**`scripts/ui/title_menu.gd`:**
+- В `_unhandled_input` добавлена ветка `InputEventMouseMotion` →
+  `_handle_hover(pos)`.
+- `_handle_hover` повторяет hit-тест из `_handle_click`, но только
+  ставит `title_focus` / `settings_focus` (без action). Клавиатура
+  и геймпад продолжают навигацию с обновлённого фокуса.
+
+**`scripts/ui/lobby.gd`:**
+- Извлёк карту настроек `_settings_map()` — один источник истины
+  для позиций 6 контролов (HP/Rounds/Mode/Luck/Cards/Picks).
+  Теперь и click, и hover читают из неё.
+- Добавил `_handle_mouse_hover(pos)`: тест ability-строк P1
+  (`kb_focus = 1/2`) и 6 настроек (`kb_focus = 3..8`). Без action.
+- `InputEventMouseMotion` в `_unhandled_input` → `_handle_mouse_hover`.
+
+### Побочный fix в lobby.gd
+В click-обработчике ability-строк P1 было:
+```
+kb_focus = ab_slot   # ab_slot 0 или 1
+```
+Но `kb_focus = 0` у клавиатурного маппинга — это **color** (не ab1),
+а `kb_focus = 1` — ab1 (не ab2). Клик ломал фокус.
+Исправлено: `kb_focus = ab_slot + 1`.
+
+### Файлы
+- `scripts/ui/title_menu.gd::_unhandled_input` + `_handle_hover` (+22)
+- `scripts/ui/lobby.gd::_unhandled_input` + `_handle_mouse_hover` +
+  `_settings_map` + fix ab-slot offset (+40 / −14)
+
+### Тест
+- `mcp__godot__run_project` — runtime чисто.
+
+---
+
 ## 2026-04-22 — fix(ui): клики мыши не долетали до меню — mouse_filter
 
 ### Запрос
