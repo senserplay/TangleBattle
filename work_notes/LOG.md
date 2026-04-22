@@ -1,5 +1,40 @@
 # TangleBattle — Рабочий лог
 
+## 2026-04-22 — chore(balance): потолок радиуса взрыва 10× → 25×
+
+### Запрос
+"Сделай максимальный радиус — 25×."
+
+### Фикс
+Во всех трёх взрывных снарядах `grenade.gd`, `rocket.gd`,
+`guided_rocket.gd`:
+```
+r = min(BASE_VISUAL_RADIUS * size_mult * wide,
+        12.5 * BASE_VISUAL_RADIUS)
+```
+(было `5.0 * BASE_VISUAL_RADIUS`). Так как `max_reach = 2r`,
+внешний потолок теперь `25 × BASE_VISUAL_RADIUS` (было 10×).
+
+### Итоговые числа
+
+| Снаряд | Base | Max (25×) |
+|--------|------|------------|
+| Grenade | reach 44 px | **550 px** |
+| Rocket | reach 20 px | **250 px** |
+| Guided | reach 24 px | **300 px** |
+
+Комментарии про кап в коде обновлены на «12.5×» / «25×».
+
+### Файлы
+- `scripts/characters/grenade.gd` (1× замена + комментарий)
+- `scripts/characters/rocket.gd` (1× замена + комментарий)
+- `scripts/characters/guided_rocket.gd` (1× замена + комментарий)
+
+### Тест
+- `mcp__godot__run_project` — runtime чисто.
+
+---
+
 ## 2026-04-22 — fix(gameplay): взрыв = 2×визуал_снаряда, cap 10×стандартного размера
 
 ### Запрос
