@@ -103,9 +103,12 @@ func update_grapple_shot(delta: float) -> void:
 
 func handle_grapple(delta: float) -> void:
 	var prefix := "p%d_" % player.player_id
-	if player.is_on_floor():
-		release_grapple()
-		return
+	# Grapple used to release the moment the player touched a floor —
+	# which made mid-air "hook then land" tactics impossible. Now the
+	# rope persists on the ground: the player can jump, hook a nearby
+	# enemy / platform, and keep reeling (or being reeled) after
+	# landing. Release is still driven by the jump button in
+	# `_handle_movement`, so the player stays in control.
 	# Update grapple point — follow moving targets
 	if player.grapple_target_player != null:
 		if not is_instance_valid(player.grapple_target_player) \
