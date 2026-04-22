@@ -1,5 +1,33 @@
 # TangleBattle — Рабочий лог
 
+## 2026-04-22 — chore(balance): потолок Wide Impact ×5
+
+### Запрос
+"Сделай максимальное влияние Wide Impact — 5x от изначального размера."
+
+### Фикс
+`scripts/characters/player.gd`:
+- `const RADIUS_MULT_CAP := 5.0` (рядом с `GRAPPLE_RANGE_MULT_CAP`).
+- В конце `_apply_passives`:
+  `radius_multiplier = minf(radius_multiplier, RADIUS_MULT_CAP)`.
+
+Стакание Wide Impact прогрессивно растёт до потолка и затем не
+увеличивается. Два Legendary копии дают 1.8² = 3.24× — под
+потолком; три Legendary = 5.83× → кэпнется в 5.0. Работает для
+всех мест, которые читают `radius_multiplier` (взрывы, dash hit,
+spike armor, Heaven's Wrath, Portal Gate, cloud radii и т.д.).
+
+`docs/passives/05_wide_impact.md` упоминает кэп.
+
+### Файлы
+- `scripts/characters/player.gd` (+7 строк: const + clamp)
+- `docs/passives/05_wide_impact.md` (комментарий о кэпе)
+
+### Тест
+- `mcp__godot__run_project` — runtime чисто.
+
+---
+
 ## 2026-04-22 — feat(gameplay): Wide Impact масштабирует Heaven's Wrath и Portal Gate
 
 ### Запрос
