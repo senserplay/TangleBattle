@@ -1,6 +1,10 @@
 extends Control
-## Draws HUD elements: score dots (top-left), passive icons (top-right),
+## Draws HUD elements: score dots (bottom-left), passive icons (top-right),
 ## round label (center), passive hover tooltip.
+##
+## Win-score rows live at the bottom so passive icons stacking from the
+## top-right can never reach down and cover them — even when a player
+## has every passive slot filled.
 
 var hud: CanvasLayer = null
 
@@ -53,8 +57,14 @@ func _draw_score_dots() -> void:
 				max_score = GameManager.scores[i]
 		win = max_score + 1
 
+	# Anchor to the bottom-left of the viewport. Rows stack UPWARD so
+	# P1 is the topmost row of the block and P4 sits flush with the
+	# bottom margin — mirrors the top-right passive column visually.
+	var vp := get_viewport_rect().size
+	var bottom_margin := 18.0
 	var start_x := 20.0
-	var start_y := 18.0
+	var block_h: float = GameManager.player_count * ROW_GAP
+	var start_y: float = vp.y - block_h - bottom_margin
 
 	for p_idx in range(GameManager.player_count):
 		var pc := GameManager.player_colors[p_idx]
