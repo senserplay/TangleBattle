@@ -28,6 +28,11 @@ var throw_speed: float = 1000.0
 var initialized: bool = false
 var homing: float = 0.0  # from Homing Projectiles passive
 var has_bounced: bool = false
+# Ricochet passive — number of *additional* explosions after the first.
+# On each re-bounce the grenade launches in a random direction at high
+# speed and its fuse re-arms; re-explodes on fuse expiry or player hit.
+var max_bounces: int = 0
+var bounces_left: int = 0
 
 const GRAVITY := 980.0
 
@@ -60,6 +65,7 @@ func setup_from_config(
 
 func _ready() -> void:
 	add_to_group("ability_entities")
+	bounces_left = max_bounces
 
 
 func _exit_tree() -> void:
@@ -210,7 +216,29 @@ func _explode() -> void:
 			)
 	queue_redraw()
 	await get_tree().create_timer(0.2).timeout
+	if not is_inside_tree() or not is_instance_valid(self):
+		return
+	# Ricochet passive: re-launch in a random direction and re-arm fuse.
+	# Each bounce counts as one extra explosion. Direction is purely
+	# random — the grenade's bounces don't care about surface normals.
+	if bounces_left > 0:
+		bounces_left -= 1
+		_rebounce_grenade()
+		return
 	queue_free()
+
+
+func _rebounce_grenade() -> void:
+	var ang := randf() * TAU
+	var spd: float = maxf(throw_speed * 1.2, 1500.0)
+	throw_dir = Vector2(cos(ang), sin(ang))
+	throw_speed = spd
+	velocity = throw_dir * spd
+	initialized = true  # velocity already set, skip first-frame init
+	has_bounced = false
+	timer = fuse_time
+	exploded = false
+	queue_redraw()
 
 
 func _draw() -> void:
