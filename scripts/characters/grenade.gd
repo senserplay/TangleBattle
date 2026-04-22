@@ -33,6 +33,9 @@ var has_bounced: bool = false
 # speed and its fuse re-arms; re-explodes on fuse expiry or player hit.
 var max_bounces: int = 0
 var bounces_left: int = 0
+# Scales visual size, physical collision, explosion radius AND contact
+# detection radius by the owner's damage_multiplier — set at spawn.
+var size_mult: float = 1.0
 
 const GRAVITY := 980.0
 
@@ -66,6 +69,19 @@ func setup_from_config(
 func _ready() -> void:
 	add_to_group("ability_entities")
 	bounces_left = max_bounces
+	_apply_size_mult()
+
+
+func _apply_size_mult() -> void:
+	if size_mult == 1.0:
+		return
+	explosion_radius *= size_mult
+	player_detect_radius *= size_mult
+	var col: CollisionShape2D = get_node_or_null("CollisionShape2D")
+	if col != null and col.shape is CircleShape2D:
+		var new_shape: CircleShape2D = col.shape.duplicate()
+		new_shape.radius *= size_mult
+		col.shape = new_shape
 
 
 func _exit_tree() -> void:
@@ -261,4 +277,5 @@ func _draw() -> void:
 	var mod: Color = Color.WHITE if not flash else Color(1.4, 1.4, 1.2, 1.0)
 	# spin_angle is driven by velocity in _physics_process — direction
 	# and speed of spin now match the actual flight trajectory.
-	ProjectileSprites.draw_single(self, "grenade.png", 44.0, spin_angle, mod)
+	ProjectileSprites.draw_single(self, "grenade.png",
+		44.0 * size_mult, spin_angle, mod)

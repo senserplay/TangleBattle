@@ -25,6 +25,8 @@ var max_bounces: int = 0
 var bounces_left: int = 0
 var max_lifetime: float = 3.5
 var last_hit_body: Node = null
+# Scales visual + collision + explosion radius by damage_multiplier.
+var size_mult: float = 1.0
 
 const BOOST_MULTIPLIER := 3.0
 
@@ -52,6 +54,18 @@ func _ready() -> void:
 	body_entered.connect(_on_body_entered)
 	add_to_group("ability_entities")
 	bounces_left = max_bounces
+	_apply_size_mult()
+
+
+func _apply_size_mult() -> void:
+	if size_mult == 1.0:
+		return
+	explosion_radius *= size_mult
+	var col: CollisionShape2D = get_node_or_null("CollisionShape2D")
+	if col != null and col.shape is CircleShape2D:
+		var new_shape: CircleShape2D = col.shape.duplicate()
+		new_shape.radius *= size_mult
+		col.shape = new_shape
 
 
 func _exit_tree() -> void:
@@ -225,17 +239,20 @@ func _draw() -> void:
 	for i in range(trail.size()):
 		var local: Vector2 = trail[i] - global_position
 		var t := 1.0 - float(i) / TRAIL_MAX
-		draw_circle(local, 5.0 * t, Color(1.0, 0.5 * t, 0.1, 0.5 * t))
+		draw_circle(local, 5.0 * size_mult * t,
+			Color(1.0, 0.5 * t, 0.1, 0.5 * t))
 
-	# Rocket body
+	# Rocket body — all offsets scale with size_mult
 	var perp := Vector2(-direction.y, direction.x)
-	var tip := direction * 12.0
-	var tail := -direction * 10.0
+	var tip := direction * 12.0 * size_mult
+	var tail := -direction * 10.0 * size_mult
 	draw_colored_polygon(PackedVector2Array([
-		tip, tail + perp * 6, tail - perp * 6,
+		tip, tail + perp * 6.0 * size_mult, tail - perp * 6.0 * size_mult,
 	]), color)
 
 	# Exhaust
-	draw_circle(-direction * 10.0, 5.0, Color(1, 0.5, 0.1, 0.7))
+	draw_circle(-direction * 10.0 * size_mult, 5.0 * size_mult,
+		Color(1, 0.5, 0.1, 0.7))
 	# Nose
-	draw_circle(direction * 8.0, 3.0, Color(1, 1, 0.8, 0.5))
+	draw_circle(direction * 8.0 * size_mult, 3.0 * size_mult,
+		Color(1, 1, 0.8, 0.5))

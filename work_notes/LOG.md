@@ -1,5 +1,77 @@
 # TangleBattle — Рабочий лог
 
+## 2026-04-22 — feat(gameplay): урон масштабирует размер снарядов (5 способностей)
+
+### Запрос
+"Пусть урон влияет на размер снарядов: чем больше урон — тем больше
+снаряды (радиус поражения и взрыва должны расти пропорционально).
+Применить к Yarn Toss, Grenade, Rocket Launcher, Boomerang,
+Guided Rocket."
+
+### Реализация
+Каждому снаряду добавлено поле `size_mult: float = 1.0`. В
+`player_abilities.gd` в каждой точке спавна (и в бурст-вариантах)
+строка:
+```
+entity.size_mult = player.damage_multiplier
+```
+`damage_multiplier` (Glass Cannon, Thread Master legendary, damage_flat
+и т.д.) напрямую становится коэффициентом визуала + поражающей
+зоны. Кап-а нет (user не просил) — Wide Impact и Damage работают
+параллельно.
+
+### По файлам
+
+**`scripts/characters/yarn_projectile.gd`:**
+- `size_mult`, `_apply_size_mult()` в `_ready`.
+- Коллайдер (CircleShape2D) дублируется и `radius *= size_mult`
+  (иначе sub_resource шарится между инстансами).
+- `_draw`: `48.0 * size_mult`, трейл `14.0 * size_mult`.
+
+**`scripts/characters/grenade.gd`:**
+- `size_mult`, `_apply_size_mult()` в `_ready`.
+- `explosion_radius *= size_mult`, `player_detect_radius *= size_mult`,
+  duplicate collision + radius.
+- `_draw`: `44.0 * size_mult`.
+
+**`scripts/characters/rocket.gd`:**
+- `size_mult`, `_apply_size_mult()`: `explosion_radius` и коллайдер.
+- `_draw`: все полигональные смещения + trail + nose + exhaust
+  умножены на `size_mult`.
+
+**`scripts/characters/guided_rocket.gd`:**
+- То же самое: `explosion_radius` + коллайдер + визуал полностью
+  проходят через `size_mult`.
+
+**`scripts/characters/boomerang.gd`:**
+- Node2D без коллайдера — масштабируется только `hit_radius`
+  (distance-based detection) + draw size (72.0 * size_mult).
+
+**`scripts/characters/player_abilities.gd`:**
+- 8 точек: `_ab_yarn_toss`, `_burst_yarn_toss`, `_throw_grenade`,
+  `_ab_boomerang`, `_burst_boomerang`, `_burst_rockets`,
+  `_ab_rocket_launcher` (цикл 3 ракет), `_ab_guided_rocket`.
+
+### Семантика
+- damage_multiplier = 1.0 → базовый размер, нет overhead.
+- Glass Cannon +35% урона → снаряды визуально и по радиусу +35%.
+- Damage stack (например Glass Cannon + Swift Feet legendary) →
+  мультипликативно накапливается.
+- Прозрачно для shield/parry/phase — только визуал и радиус.
+
+### Файлы
+- `scripts/characters/yarn_projectile.gd` (+19 / -5)
+- `scripts/characters/grenade.gd` (+17 / -3)
+- `scripts/characters/rocket.gd` (+22 / -8)
+- `scripts/characters/guided_rocket.gd` (+22 / -7)
+- `scripts/characters/boomerang.gd` (+8 / -3)
+- `scripts/characters/player_abilities.gd` (+8 строк setter'ов)
+
+### Тест
+- `mcp__godot__run_project` — runtime чисто (warnings не новые).
+
+---
+
 ## 2026-04-22 — fix(gameplay): Heaven's Wrath edge-to-edge — равная ширина всех лучей
 
 ### Запрос

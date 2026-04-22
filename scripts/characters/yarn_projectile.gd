@@ -16,6 +16,9 @@ var max_bounces: int = 0  # from Ricochet passive
 var bounces_left: int = 0
 var homing: float = 0.0  # from Homing Projectiles passive
 var phase: bool = false  # from Phase Shot passive
+# Scales visual size + collision radius by the owner's damage_multiplier —
+# set by player_abilities at spawn. Bigger hits literally look bigger.
+var size_mult: float = 1.0
 
 # Trail
 var trail_points: Array[Vector2] = []
@@ -49,6 +52,21 @@ func _ready() -> void:
 	bounces_left = max_bounces
 	body_entered.connect(_on_body_entered)
 	add_to_group("ability_entities")
+	_apply_size_mult()
+
+
+func _apply_size_mult() -> void:
+	## Scale collision shape so larger-damage throws hit a bigger area.
+	## Duplicate the shape first — .tscn sub_resources are shared by
+	## default and we don't want one projectile's resize to affect
+	## every other live yarn ball.
+	if size_mult == 1.0:
+		return
+	var col: CollisionShape2D = get_node_or_null("CollisionShape2D")
+	if col != null and col.shape is CircleShape2D:
+		var new_shape: CircleShape2D = col.shape.duplicate()
+		new_shape.radius *= size_mult
+		col.shape = new_shape
 
 
 func _exit_tree() -> void:
@@ -159,7 +177,7 @@ func _draw() -> void:
 	for i in range(trail_points.size()):
 		var local_pos: Vector2 = trail_points[i] - global_position
 		var t := 1.0 - float(i) / TRAIL_MAX
-		var r := 14.0 * t
+		var r := 14.0 * size_mult * t
 		var alpha := 0.45 * t
 		draw_circle(local_pos, r,
 			Color(color.r, color.g, color.b, alpha))
@@ -167,4 +185,5 @@ func _draw() -> void:
 	# Textured yarn ball body. direction.angle() keeps the built-in
 	# motion blur lines trailing behind the ball as it moves.
 	var ang: float = direction.angle()
-	ProjectileSprites.draw_single(self, "yarn_toss.png", 48.0, ang, color)
+	ProjectileSprites.draw_single(self, "yarn_toss.png",
+		48.0 * size_mult, ang, color)
