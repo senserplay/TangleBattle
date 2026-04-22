@@ -1,5 +1,63 @@
 # TangleBattle — Рабочий лог
 
+## 2026-04-22 — fix(gameplay): Shockwave + shield VFX на нажатие щита (фикс-CD 5 с)
+
+### Запрос
+"Shockwave и анимация щита работают только при parry_burst. Исправить:
+Shockwave — перезарядка всегда 5 с, ничем не меняется, при повторном
+нажатии щита не срабатывает если в cooldown. Shockwave и анимация
+щита должны работать независимо от наличия parry_burst."
+
+### Причина
+- `shield_flash` VFX эмиттился только из `take_damage` (при успешной
+  блокировке), `on_parry_reflect` (при отражении снаряда) и каждой
+  итерации `_burst_parry`. Обычное нажатие щита без входящей атаки
+  не давало flash — визуально "щит есть только с parry_burst".
+- `_do_shockwave()` вызывался в тех же самых местах — т.е. только при
+  успехе или бурсте. Без parry_burst он срабатывал только если
+  противник реально бил в parry-окно.
+- Перезарядки у shockwave не было совсем; в бурсте он мог сработать
+  много раз подряд (по одному на итерацию).
+
+### Фикс
+
+**`scripts/characters/player.gd`:**
+- Добавлены:
+  ```
+  const SHOCKWAVE_CD := 5.0     # hard-coded, ни одна пассивка не меняет
+  var shockwave_cooldown: float = 0.0
+  ```
+- В `_update_timers` добавлен декремент `shockwave_cooldown`.
+- В `respawn()` сбрасывается `shockwave_cooldown = 0.0`.
+- Из `take_damage` (parry-ветка) и `on_parry_reflect` **удалены**
+  вызовы `_add_vfx("shield_flash", …)` и `_do_shockwave()` — теперь
+  это задача press-обработчика.
+
+**`scripts/characters/player_abilities.gd::handle_abilities` (parry press):**
+- Добавлен всегдашний `player._add_vfx("shield_flash", 0.3)` — анимация
+  щита играет при каждом нажатии, независимо от любых пассивок.
+- Добавлен вызов `_do_shockwave()` с гейтом по `shockwave_cooldown`:
+  если пассивка активна и cooldown истёк — волна + установка
+  `shockwave_cooldown = SHOCKWAVE_CD`. Иначе — щит без волны.
+
+**`scripts/characters/player_abilities.gd::_burst_parry`:**
+- Тот же гейт по `shockwave_cooldown` у каждой итерации. Parry Burst
+  теперь не может за 0.15 с выпустить несколько shockwave'ов подряд.
+
+**`docs/passives/15_shockwave.md`:**
+- Описание переписано: "при активации щита (не только при успешной
+  блокировке)", явно указан фикс-CD 5 с и non-modifiable статус.
+
+### Файлы
+- `scripts/characters/player.gd` (+7 / -8)
+- `scripts/characters/player_abilities.gd` (+14 / -2)
+- `docs/passives/15_shockwave.md` (описание)
+
+### Тест
+- `mcp__godot__run_project` — runtime чисто.
+
+---
+
 ## 2026-04-22 — feat(gameplay): масштабирование knockback по размеру + общий cap
 
 ### Запрос

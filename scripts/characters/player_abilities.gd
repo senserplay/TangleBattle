@@ -60,12 +60,23 @@ func handle_abilities() -> void:
 		player.parry_cooldown = player.PARRY_CD * player.parry_cd_multiplier
 		player.parry_visual = 0.3
 		SoundManager.play_shield()
+		# Shield animation fires on every parry press, independent of
+		# whether an attack connects and independent of any passive.
+		player._add_vfx("shield_flash", 0.3)
 		# Angry/determined face during parry
 		player.trigger_face_event("angry", 0.4)
 		# Set custom spawn point — only if player has extra lives
 		if player.extra_lives > 0 and not player.spawn_point_used_this_life:
 			player.custom_spawn_point = player.global_position
 			player.has_custom_spawn = true
+		# Shockwave passive — fires on the parry press itself, gated by
+		# its own fixed 5 s cooldown (SHOCKWAVE_CD). Nothing modifies
+		# that cooldown, and re-pressing the shield while it's still on
+		# cooldown simply skips the shockwave (shield itself still works).
+		if player.shockwave_radius_mult > 0.0 \
+			and player.shockwave_cooldown <= 0.0:
+			player._do_shockwave()
+			player.shockwave_cooldown = player.SHOCKWAVE_CD
 		# Spirit Burst passive — spawn 5 homing essences
 		if player.spirit_burst_count > 0:
 			_spawn_spirit_burst()
@@ -852,8 +863,12 @@ func _burst_parry(count: int) -> void:
 		player._add_sprite_vfx("cartoon_7", 0.4,
 			player.global_position, 0.3, 0.0)
 		player._parry_detach_grapples()
-		if player.shockwave_radius_mult > 0.0:
+		# Shockwave on burst iterations respects the same fixed cooldown —
+		# a 0.15 s burst train can't fire multiple shockwaves.
+		if player.shockwave_radius_mult > 0.0 \
+			and player.shockwave_cooldown <= 0.0:
 			player._do_shockwave()
+			player.shockwave_cooldown = player.SHOCKWAVE_CD
 		if player.spirit_burst_count > 0:
 			_spawn_spirit_burst()
 
