@@ -1,5 +1,71 @@
 # TangleBattle — Рабочий лог
 
+## 2026-04-22 — feat(gameplay): возврат к explosion_radius-логике + MAX_EXPLOSION_RADIUS cap
+
+### Запрос
+"Нет, так не пойдёт, давай вернёмся к логике explosion_radius, но
+добавь туда ещё переменную для каждого снаряда — max_explosion_radius.
+Продумай так, чтобы было приемлемо для снаряда 5× размера от базового."
+
+### Причина
+Переход на «радиус = визуальный размер × 2» давал базовый reach всего
+22-44 px — игрок должен был стоять на снаряде, чтобы получить
+урон. Классическая модель `explosion_radius` с линейным falloff от
+центра гораздо предсказуемее и ощутимее.
+
+### Фикс
+
+Во всех трёх взрывных снарядах (`grenade.gd`, `rocket.gd`,
+`guided_rocket.gd`):
+
+1. **Возврат к линейному falloff**:
+   ```
+   if dist < r:
+       falloff = 1.0 - dist / r
+   ```
+   Одна зона, спад от 1 в центре до 0 на краю. Проще, знакомо,
+   ощутимее в игре.
+
+2. **Новая константа** `MAX_EXPLOSION_RADIUS` — жёсткий потолок,
+   рассчитанный на снаряд ×5 от базового:
+   - Grenade: `180 × 5 = 900` px.
+   - Rocket: `120 × 5 = 600` px.
+   - Guided Rocket: `150 × 5 = 750` px.
+
+3. **Формула в `_explode`**:
+   ```
+   r = min(explosion_radius * size_mult * wide, MAX_EXPLOSION_RADIUS)
+   ```
+   - `explosion_radius` — base из cfg (180/120/150).
+   - `size_mult` — damage-driven (cap ×5).
+   - `wide` — Wide Impact (cap ×5).
+   - Произведение до ×25 → клэмп на ×5. Выше 5× размера нет смысла —
+     снаряд всё равно достиг потолка.
+
+4. **Удалены** `BASE_VISUAL_RADIUS` и двухзонный falloff. `effective_reach`
+   теперь равен `r` (не `2r`).
+
+### Итоговые числа
+
+| Снаряд | Base r | Max r (5×) |
+|--------|--------|------------|
+| Grenade | 180 px | **900 px** |
+| Rocket | 120 px | **600 px** |
+| Guided | 150 px | **750 px** |
+
+Базовая граната без пассивок снова достаёт до 180 px (старое
+доброе поведение). При полностью стекнутых пассивках — 900 px.
+
+### Файлы
+- `scripts/characters/grenade.gd` (−7/+3, const)
+- `scripts/characters/rocket.gd` (−7/+3, const)
+- `scripts/characters/guided_rocket.gd` (−7/+3, const)
+
+### Тест
+- `mcp__godot__run_project` — runtime чисто.
+
+---
+
 ## 2026-04-22 — chore(balance): потолок радиуса взрыва 25× → 50× + аудит кода
 
 ### Запрос
