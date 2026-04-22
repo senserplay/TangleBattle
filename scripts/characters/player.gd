@@ -25,6 +25,10 @@ const GRAPPLE_MAX_RANGE := 1200.0
 # can grow high enough that the rope travels off-screen and takes too
 # long to return (shoot/retract speeds now scale with range).
 const GRAPPLE_RANGE_MULT_CAP := 2.5
+# Hard cap on stacked Wide Impact picks. Without this, two Legendary
+# copies alone push the multiplier to 1.8² = 3.24× and more stacks
+# from Chaos/Endless lobbies would blow ability radii past the map.
+const RADIUS_MULT_CAP := 5.0
 const GRAPPLE_REEL_SPEED := 350.0  # stronger pull
 const GRAPPLE_SWING_FORCE := 600.0
 const GRAPPLE_MIN_LENGTH := 150.0
@@ -1609,6 +1613,9 @@ func _apply_passives() -> void:
 	# picks can send the rope beyond the map. Shoot/retract speeds
 	# derive from this value, so the cap also tames round-trip time.
 	grapple_range_mult = minf(grapple_range_mult, GRAPPLE_RANGE_MULT_CAP)
+	# Cap Wide Impact at 5×. Stacked picks still grow until the ceiling,
+	# but can't push ability footprints past whole platforms.
+	radius_multiplier = minf(radius_multiplier, RADIUS_MULT_CAP)
 
 	hp = minf(hp, MAX_HP)
 
