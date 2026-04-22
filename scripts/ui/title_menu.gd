@@ -42,6 +42,12 @@ var yarn_anim: float = 0.0
 
 
 func _ready() -> void:
+	# Root Control defaults to MOUSE_FILTER_STOP, which consumes mouse
+	# clicks inside the gui system and prevents them from ever reaching
+	# `_unhandled_input`. Force IGNORE so the script-level click
+	# handler actually sees the events (whole screen is drawn via
+	# `_draw`, there are no native Button children to intercept).
+	mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_apply_settings()
 	MusicManager.play_menu_music()
 

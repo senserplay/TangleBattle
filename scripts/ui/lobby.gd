@@ -63,6 +63,10 @@ var blink_timer: float = 0.0
 
 
 func _ready() -> void:
+	# Control roots default to MOUSE_FILTER_STOP, which absorbs mouse
+	# clicks inside the gui system before `_unhandled_input` fires.
+	# Ignore so script-level click handling receives the events.
+	mouse_filter = Control.MOUSE_FILTER_IGNORE
 	slot_device[0] = -2
 	set_process_unhandled_input(true)
 
