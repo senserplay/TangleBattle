@@ -27,9 +27,9 @@ var max_lifetime: float = 3.5
 var last_hit_body: Node = null
 # Scales visual + collision + explosion radius by damage_multiplier.
 var size_mult: float = 1.0
-# See grenade.gd — rocket body tip distance used as standard size.
-# Explosion inner r capped at 25× so outer reach ≤ 50× standard size.
-const BASE_VISUAL_RADIUS := 12.0
+# Absolute ceiling for scaled explosion radius (see grenade.gd).
+# Sized for a 5× guided rocket (cfg 150 × 5 = 750).
+const MAX_EXPLOSION_RADIUS := 750.0
 var effective_reach: float = 0.0
 
 const BOOST_MULTIPLIER := 3.0
@@ -171,29 +171,23 @@ func _explode() -> void:
 	var cam := get_viewport().get_camera_2d()
 	if cam != null and cam.has_method("add_shake"):
 		cam.add_shake(8.0)
-	# Size-driven explosion zones (see grenade.gd for full rationale):
-	#   dist ≤ r       → full damage/knockback.
-	#   r < dist < 2·r → linear falloff.
-	#   dist ≥ 2·r     → no effect.
+	# Classic linear-falloff explosion (see grenade.gd): base
+	# explosion_radius × size_mult × Wide Impact, clamped to
+	# MAX_EXPLOSION_RADIUS (5× base cfg).
 	var src: Node = owner_ref if is_instance_valid(owner_ref) else null
 	var dmg_mult: float = src.damage_multiplier if src != null else 1.0
 	var wide: float = src.radius_multiplier if src != null else 1.0
-	var r: float = minf(BASE_VISUAL_RADIUS * size_mult * wide,
-		25.0 * BASE_VISUAL_RADIUS)
-	var max_reach: float = 2.0 * r
-	effective_reach = max_reach
+	var r: float = minf(explosion_radius * size_mult * wide,
+		MAX_EXPLOSION_RADIUS)
+	effective_reach = r
 	for p in get_tree().get_nodes_in_group("players"):
 		if not p.is_alive:
 			continue
 		var diff: Vector2 = p.global_position - global_position
 		var dist := diff.length()
-		if dist >= max_reach:
+		if dist >= r:
 			continue
-		var falloff: float
-		if dist <= r:
-			falloff = 1.0
-		else:
-			falloff = 1.0 - (dist - r) / r
+		var falloff: float = 1.0 - dist / r
 		var away := diff.normalized() if dist > 1.0 else Vector2.UP
 		p.take_damage(damage * falloff * dmg_mult, src)
 		p.apply_knockback(

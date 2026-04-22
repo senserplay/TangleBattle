@@ -36,18 +36,17 @@ var bounces_left: int = 0
 # Scales visual size, physical collision, explosion radius AND contact
 # detection radius by the owner's damage_multiplier — set at spawn.
 var size_mult: float = 1.0
-# Actual outer reach of the last blast (2·r). Stored so _draw's
+# Effective explosion radius of the last blast — stored so _draw's
 # stylised fireball circles match the real damage zone instead of
-# the old cfg-driven 180-px default.
+# the unscaled config value.
 var effective_reach: float = 0.0
 
 const GRAVITY := 980.0
-# Base *visual* half-width of the grenade sprite (display_w 44 / 2).
-# The explosion's full-damage zone is exactly this at size_mult=1
-# and Wide Impact=1 — so the damage reach matches what the player
-# sees on screen, not the config's explosion_radius (which was an
-# old-school 180-px AoE that looked 4× bigger than the grenade).
-const BASE_VISUAL_RADIUS := 22.0
+# Absolute ceiling for the scaled explosion radius. Sized for a 5×
+# version of the base projectile (cfg.explosion_radius 180 × 5 = 900)
+# so stacked size_mult + Wide Impact can grow the blast up to that
+# point — any combined product past ×5 is clamped here.
+const MAX_EXPLOSION_RADIUS := 900.0
 
 
 func setup(id: int, dir: Vector2, speed: float, col: Color) -> void:
@@ -228,39 +227,25 @@ func _explode() -> void:
 			if dist < 500.0:
 				var intensity := 1.0 - dist / 500.0
 				p.vibrate(intensity * 0.4, intensity * 0.8, 0.25)
-	# Explosion reach is driven by the projectile's SIZE, not directly
-	# by damage — size_mult is already damage-capped at 5× elsewhere,
-	# and Wide Impact (owner.radius_multiplier) stacks on top.
-	# Two zones:
-	#   dist ≤ r           → full damage + full knockback.
-	#   r < dist < 2·r     → linear falloff from 1 to 0.
-	#   dist ≥ 2·r         → out of reach, skip.
+	# Explosion uses cfg.explosion_radius as the base, scaled by the
+	# projectile's size_mult (capped 5×) and the owner's Wide Impact
+	# (radius_multiplier, capped 5×). The product is clamped to
+	# MAX_EXPLOSION_RADIUS so the blast can't exceed what a 5×
+	# projectile would produce. Classic linear falloff from center.
 	var src: Node = owner_ref if is_instance_valid(owner_ref) else null
 	var dmg_mult: float = src.damage_multiplier if src != null else 1.0
 	var wide: float = src.radius_multiplier if src != null else 1.0
-	# "Projectile radius" — the grenade's visible half-width, scaled by
-	# its own size_mult (damage-driven, capped 5×) and Wide Impact
-	# (capped 5×). Explosion_radius from cfg is no longer used for
-	# the damage zone — only for legacy _draw circles below.
-	# Cap inner r at 25× base so outer reach (2r) never exceeds 50×
-	# the projectile's standard visual radius, no matter how much
-	# size_mult and Wide Impact stack.
-	var r: float = minf(BASE_VISUAL_RADIUS * size_mult * wide,
-		25.0 * BASE_VISUAL_RADIUS)
-	var max_reach: float = 2.0 * r
-	effective_reach = max_reach
+	var r: float = minf(explosion_radius * size_mult * wide,
+		MAX_EXPLOSION_RADIUS)
+	effective_reach = r
 	for p in get_tree().get_nodes_in_group("players"):
 		if not p.is_alive:
 			continue
 		var diff: Vector2 = p.global_position - global_position
 		var dist := diff.length()
-		if dist >= max_reach:
+		if dist >= r:
 			continue
-		var falloff: float
-		if dist <= r:
-			falloff = 1.0
-		else:
-			falloff = 1.0 - (dist - r) / r
+		var falloff: float = 1.0 - dist / r
 		var away := diff.normalized() if dist > 1.0 else Vector2.UP
 		p.take_damage(damage * falloff * dmg_mult, src)
 		p.apply_knockback(
