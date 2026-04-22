@@ -28,7 +28,7 @@ var last_hit_body: Node = null
 # Scales visual + collision + explosion radius by damage_multiplier.
 var size_mult: float = 1.0
 # See grenade.gd — rocket body tip distance used as standard size.
-# Explosion inner r capped at 5× so outer reach ≤ 10× standard size.
+# Explosion inner r capped at 12.5× so outer reach ≤ 25× standard size.
 const BASE_VISUAL_RADIUS := 12.0
 var effective_reach: float = 0.0
 
@@ -179,7 +179,7 @@ func _explode() -> void:
 	var dmg_mult: float = src.damage_multiplier if src != null else 1.0
 	var wide: float = src.radius_multiplier if src != null else 1.0
 	var r: float = minf(BASE_VISUAL_RADIUS * size_mult * wide,
-		5.0 * BASE_VISUAL_RADIUS)
+		12.5 * BASE_VISUAL_RADIUS)
 	var max_reach: float = 2.0 * r
 	effective_reach = max_reach
 	for p in get_tree().get_nodes_in_group("players"):
