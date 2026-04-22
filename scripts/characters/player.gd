@@ -1972,7 +1972,9 @@ func _draw() -> void:
 		# player keeps moving after placing the portal; without an
 		# explicit offset, draw_single's internal draw_set_transform
 		# would place the sprite on the player.)
-		var display_w: float = 180.0
+		# Wide Impact scales the portal visual to match the logic radius
+		# (`portal_radius * radius_multiplier` in player_abilities).
+		var display_w: float = 180.0 * radius_multiplier
 		var tex_name: String = "portal_gate_%d.png" % frame_idx
 		ProjectileSprites.draw_single(self, tex_name,
 			display_w, 0.0, Color(1, 1, 1, 0.95), false, pg)
@@ -1987,8 +1989,8 @@ func _draw() -> void:
 				)
 				var angle: float = float(pi) * TAU / n_particles \
 					+ now_anim * 0.4
-				var r0: float = 35.0
-				var r1: float = 150.0
+				var r0: float = 35.0 * radius_multiplier
+				var r1: float = 150.0 * radius_multiplier
 				var rr: float = lerpf(r0, r1, life_t)
 				var alpha: float = (1.0 - life_t) * 0.85
 				var size: float = 2.5 + (1.0 - life_t) * 3.5

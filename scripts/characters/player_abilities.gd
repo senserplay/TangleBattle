@@ -845,7 +845,8 @@ func _ab_heavens_wrath() -> void:
 		Color(1.0, 0.95, 0.6))
 	var wrath: Node2D = _heavens_wrath_scene.instantiate()
 	wrath.setup_from_config(
-		player.player_id, player.aim_direction, player.player_color, cfg)
+		player.player_id, player.aim_direction, player.player_color,
+		cfg, player.radius_multiplier)
 	wrath.owner_ref = player
 	wrath.start_pos = player.global_position
 	wrath.global_position = Vector2.ZERO
