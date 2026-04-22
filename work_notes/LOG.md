@@ -1,5 +1,59 @@
 # TangleBattle — Рабочий лог
 
+## 2026-04-22 — fix(gameplay): геометрически корректный отскок снарядов от платформ
+
+### Запрос
+"Отскоки любых снарядов от платформ должны быть геометрически логичны.
+Сейчас отскок может улететь с другой стороны платформы. Должен быть
+угол, обратный к нормали платформы, по которой прилетел снаряд."
+
+### Причина
+В `yarn_projectile.gd`, `rocket.gd`, `guided_rocket.gd` нормаль
+аппроксимировалась как «направление от центра платформы к снаряду»:
+```
+normal := -(body.global_position - global_position).normalized()
+```
+На широких прямоугольных платформах это неверно — центр может быть
+далеко в стороне от точки контакта. Пример: снаряд попал в **верх**
+широкой платформы у её правого края. `body.global_position` смещён
+от центра, псевдонормаль почти горизонтальна → отражение продолжает
+движение горизонтально (а то и «через» платформу), вместо вертикального.
+
+### Фикс
+В каждом из трёх файлов добавлен хелпер `_surface_normal_at_hit()`:
+```
+space := get_world_2d().direct_space_state
+query := PhysicsRayQueryParameters2D.create(
+    global_position - direction * 80,
+    global_position + direction * 40,
+    1  # layer 1 = walls/platforms
+)
+result := space.intersect_ray(query)
+return result.get("normal", Vector2.UP)
+```
+Рейкаст по линии полёта снаряда (назад-вперёд от точки контакта)
+возвращает **настоящую** нормаль поверхности — `direction.bounce(normal)`
+теперь геометрически правилен для любых форм (широкие платформы,
+наклонные поверхности и т.п.).
+
+Применяется:
+- `yarn_projectile.gd::_on_body_entered` в ветке StaticBody2D.
+- `rocket.gd::_rebounce_rocket` при re-bounce после взрыва.
+- `guided_rocket.gd::_rebounce_guided` аналогично.
+
+Grenade (CharacterBody2D) использует `get_slide_collision(0).get_normal()`
+из `move_and_slide` — уже геометрически правильный, без изменений.
+
+### Файлы
+- `scripts/characters/yarn_projectile.gd` (+20 / -6)
+- `scripts/characters/rocket.gd` (+23 / -9)
+- `scripts/characters/guided_rocket.gd` (+20 / -6)
+
+### Тест
+- `mcp__godot__run_project` — runtime чисто.
+
+---
+
 ## 2026-04-22 — feat(gameplay): Ricochet покрывает гранату и ракеты
 
 ### Запрос

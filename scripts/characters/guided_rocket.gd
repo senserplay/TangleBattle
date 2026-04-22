@@ -182,12 +182,9 @@ func _rebounce_guided() -> void:
 	var new_dir: Vector2
 	if last_hit_body != null and is_instance_valid(last_hit_body) \
 		and last_hit_body is StaticBody2D:
-		var to_body: Vector2 = last_hit_body.global_position - global_position
-		var normal := -to_body.normalized()
-		if normal.length_squared() < 0.01:
-			normal = Vector2.UP
+		var normal := _surface_normal_at_hit()
 		new_dir = direction.bounce(normal).normalized()
-		global_position += new_dir * 20.0
+		global_position += normal * 20.0
 	else:
 		var ang := randf() * TAU
 		new_dir = Vector2(cos(ang), sin(ang))
@@ -200,6 +197,22 @@ func _rebounce_guided() -> void:
 	exploded = false
 	last_hit_body = null
 	queue_redraw()
+
+
+func _surface_normal_at_hit() -> Vector2:
+	## Raycast along the flight line to recover the real wall normal
+	## at the explosion point. Falls back to Vector2.UP on a miss.
+	var space: PhysicsDirectSpaceState2D = get_world_2d().direct_space_state
+	var start: Vector2 = global_position - direction * 80.0
+	var end: Vector2 = global_position + direction * 40.0
+	var query := PhysicsRayQueryParameters2D.create(start, end, 1)
+	query.collide_with_bodies = true
+	var result := space.intersect_ray(query)
+	if not result.is_empty():
+		var n: Vector2 = result.get("normal", Vector2.UP)
+		if n.length_squared() > 0.01:
+			return n.normalized()
+	return Vector2.UP
 
 
 func _draw() -> void:
