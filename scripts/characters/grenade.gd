@@ -115,8 +115,9 @@ func _physics_process(delta: float) -> void:
 	var spin_speed: float = (horiz + vert_bias) * 0.0045
 	spin_angle += spin_speed * delta
 
-	# Save pre-slide velocity for bounce calculation
+	# Save pre-slide state for bounce + swept contact detection
 	var vel_before := velocity
+	var prev_pos := global_position
 	move_and_slide()
 
 	# Bounce using collision normals
@@ -126,16 +127,26 @@ func _physics_process(delta: float) -> void:
 		var normal := collision.get_normal()
 		velocity = vel_before.bounce(normal) * bounce_damping
 
-	# Explode on player contact
+	# Explode on player contact — swept segment [prev_pos → global_position]
+	# vs player circle so fast throws can't tunnel past the detection zone
+	# between two physics frames.
+	var seg: Vector2 = global_position - prev_pos
+	var seg_len_sq: float = seg.length_squared()
 	for p in get_tree().get_nodes_in_group("players"):
 		if not p.is_alive:
 			continue
-		var diff: Vector2 = p.global_position - global_position
 		var p_radius: float = p.get_player_radius() if p.has_method("get_player_radius") else 24.0
-		if diff.length() < player_detect_radius + p_radius:
-			# Parry — kick grenade away
+		var hit_r: float = player_detect_radius + p_radius
+		var closest: Vector2 = global_position
+		if seg_len_sq > 0.01:
+			var to_p: Vector2 = p.global_position - prev_pos
+			var t: float = clampf(to_p.dot(seg) / seg_len_sq, 0.0, 1.0)
+			closest = prev_pos + seg * t
+		var min_dist: float = closest.distance_to(p.global_position)
+		if min_dist < hit_r:
+			# Parry — kick grenade away (use current position for kick dir)
 			if p.has_method("is_parrying") and p.is_parrying():
-				var kick_dir: Vector2 = diff.normalized() * -1.0
+				var kick_dir: Vector2 = (global_position - p.global_position).normalized()
 				velocity = kick_dir * 1200.0 + Vector2.UP * 400.0
 				owner_id = p.player_id
 				owner_ref = p

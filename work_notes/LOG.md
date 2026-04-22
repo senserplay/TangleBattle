@@ -1,5 +1,52 @@
 # TangleBattle — Рабочий лог
 
+## 2026-04-22 — fix(gameplay): граната не взрывается при попадании в игрока
+
+### Запрос
+"Граната при попадании в игрока не взрывается. Должен происходить
+моментальный взрыв при столкновении с персонажем."
+
+### Причина
+Детекция контакта в `grenade.gd`:
+```
+if diff.length() < player_detect_radius + p_radius:
+```
+С конфигом `player_detect_radius = 20` и `p_radius = 24` порог = **44 px**
+между центрами. Визуальное касание наступает при ~46 px (22 px radius
+спрайта гранаты + 24 px игрока). Детекция требовала **2 px
+перекрытия** — почти всегда пропускалась:
+- Быстрые броски (до 2000 px/s = 33 px/tick) **тунелировали** мимо 2-px
+  коридора за один физический кадр.
+- Даже медленные броски (после bounce, ~500 px/s = 8 px/tick)
+  срабатывали нестабильно.
+
+### Фикс — `scripts/characters/grenade.gd`
+1. **Swept-check** отрезка pre-move → post-move против окружности игрока.
+   Сохраняем `prev_pos` перед `move_and_slide()`, считаем минимальную
+   дистанцию от центра игрока до отрезка траектории за кадр:
+   ```
+   var t = clamp((p.pos - prev_pos).dot(seg) / seg.length_squared(), 0, 1)
+   var closest = prev_pos + seg * t
+   if closest.distance_to(p.pos) < hit_r: ...
+   ```
+   Теперь быстрая граната не может проскочить между кадрами.
+2. Parry kick_dir считается от игрока к **текущей** позиции гранаты
+   (а не по старому `diff` из предыдущей проверки).
+
+### Фикс — `data/abilities.json` + `docs/abilities/10_grenade.md`
+`player_detect_radius: 20.0 → 24.0`. Теперь детекция (24+24=48 px)
+гарантированно срабатывает ровно в момент визуального касания.
+
+### Файлы
+- `scripts/characters/grenade.gd` (+15 / -7)
+- `data/abilities.json` (grenade: player_detect_radius 20→24)
+- `docs/abilities/10_grenade.md` (синхронизация конфига)
+
+### Тест
+- `mcp__godot__run_project` game.tscn — runtime чисто, ошибок нет.
+
+---
+
 ## 2026-04-21 — tweak(vfx): прозрачность stink_cloud + fade in/out
 
 ### Запрос
