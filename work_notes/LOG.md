@@ -1,5 +1,74 @@
 # TangleBattle — Рабочий лог
 
+## 2026-04-22 — feat(gameplay): нить grapple — cap дальности + скорость ∝ дальности
+
+### Запрос
+"При большом количестве пассивок на дальность нитка улетает вдаль и
+не возвращается. Нужно ограничение дальности (порог высокий) и чтобы
+скорость возврата/выстрела была пропорциональна дальности (всегда).
+Пассивки должны увеличивать только дальность — скорость растёт сама.
+На картах пассивок с дальностью и скоростью оставить только дальность."
+
+### Причина
+- `grapple_range_mult` мог стекать без предела (2× Thread Master =
+  2×2 = ×4 → 4800 px дальности на базе 1200).
+- `GRAPPLE_RETRACT_SPEED` был жёсткой константой (5000 px/s), не
+  зависел от `grapple_range_mult`. Выстрел использовал отдельный
+  `grapple_speed_mult` — но у Swift Feet он даже не применялся (в
+  `_apply_passives` для `SWIFT_FEET` стоял `pass` + неверный комментарий
+  «handled by universal modifiers», хотя `grapple_speed_mult` —
+  не universal; значит его +15/25/35/50% у Swift Feet **игнорировались**).
+- Итог: нить могла улететь на 4800 px и ~1 секунду ползти обратно с
+  5000 px/s, оставляя игрока беззащитным.
+
+### Фикс
+
+**`scripts/characters/player.gd`:**
+- Добавлена константа `const GRAPPLE_RANGE_MULT_CAP := 2.5`.
+- Удалены `grapple_speed_mult` var + reset (переменная больше нигде
+  не нужна).
+- В `THREAD_MASTER` ветке `_apply_passives` удалена строка
+  `grapple_speed_mult *= …`.
+- В конце `_apply_passives` добавлен clamp:
+  `grapple_range_mult = minf(grapple_range_mult, GRAPPLE_RANGE_MULT_CAP)`.
+
+**`scripts/characters/player_grapple.gd`:**
+- В `update_grapple_shot()` вместо `GRAPPLE_SHOOT_SPEED *
+  grapple_speed_mult` и фиксированного `GRAPPLE_RETRACT_SPEED`
+  введены локальные:
+  ```
+  shoot_spd   = GRAPPLE_SHOOT_SPEED   * grapple_range_mult
+  retract_spd = GRAPPLE_RETRACT_SPEED * grapple_range_mult
+  ```
+- Используются единообразно в shoot, prev_tip и retract ветках.
+
+Эффект: при любом множителе дальности полный круговорот занимает то
+же время, что и базовый. Стек Thread Master растягивает и дальность,
+и скорость одинаково. Вектор «пассивки = только дальность, скорость
+автоматическая» выполнен.
+
+**`data/passives.json` + docs:**
+- `Thread Master` (id 4): у всех 4 редкостей убран `grapple_speed_mult`,
+  описания/positive обновлены на «+X% дальность нити». Legendary
+  больше не говорит про скорость, оставлен +20% speed_multiplier.
+- `Swift Feet` (id 11): убран `grapple_speed_mult` из всех редкостей
+  (он и раньше не применялся). Positive тексты сокращены до «+X%
+  скорость». Legendary сохраняет +10% урон.
+- `docs/passives/04_thread_master.md` + `docs/passives/11_swift_feet.md`
+  переписаны под новый состав.
+
+### Файлы
+- `scripts/characters/player.gd` (+7 / -3)
+- `scripts/characters/player_grapple.gd` (+9 / -6)
+- `data/passives.json` (Thread Master + Swift Feet rarities)
+- `docs/passives/04_thread_master.md` (переписан)
+- `docs/passives/11_swift_feet.md` (переписан)
+
+### Тест
+- `mcp__godot__run_project` — runtime чисто.
+
+---
+
 ## 2026-04-22 — feat(gameplay): универсальное сохранение импульса (dash carry)
 
 ### Запрос
