@@ -56,9 +56,12 @@ const BUILTIN_MAPS: Array[Dictionary] = [
 @onready var prop_friction: SpinBox   = %PropFriction
 @onready var prop_event: OptionButton = %PropEvent
 
-const EVENT_IDS: Array[String] = ["none", "all", "wind", "meteor", "lightning"]
+const EVENT_IDS: Array[String] = [
+	"none", "all", "wind", "meteor", "lightning", "tsunami",
+]
 const EVENT_LABELS: Array[String] = [
 	"None", "Random (all)", "Wind gust", "Meteor", "Lightning",
+	"Tsunami",
 ]
 
 @onready var sel_panel: VBoxContainer = %SelectedPanel

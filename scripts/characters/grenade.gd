@@ -28,8 +28,25 @@ var throw_speed: float = 1000.0
 var initialized: bool = false
 var homing: float = 0.0  # from Homing Projectiles passive
 var has_bounced: bool = false
+# Ricochet passive — number of *additional* explosions after the first.
+# On each re-bounce the grenade launches in a random direction at high
+# speed and its fuse re-arms; re-explodes on fuse expiry or player hit.
+var max_bounces: int = 0
+var bounces_left: int = 0
+# Scales visual size, physical collision, explosion radius AND contact
+# detection radius by the owner's damage_multiplier — set at spawn.
+var size_mult: float = 1.0
+# Effective explosion radius of the last blast — stored so _draw's
+# stylised fireball circles match the real damage zone instead of
+# the unscaled config value.
+var effective_reach: float = 0.0
 
 const GRAVITY := 980.0
+# Absolute ceiling for the scaled explosion radius. Sized for a 5×
+# version of the base projectile (cfg.explosion_radius 180 × 5 = 900)
+# so stacked size_mult + Wide Impact can grow the blast up to that
+# point — any combined product past ×5 is clamped here.
+const MAX_EXPLOSION_RADIUS := 900.0
 
 
 func setup(id: int, dir: Vector2, speed: float, col: Color) -> void:
@@ -60,6 +77,23 @@ func setup_from_config(
 
 func _ready() -> void:
 	add_to_group("ability_entities")
+	bounces_left = max_bounces
+	_apply_size_mult()
+
+
+func _apply_size_mult() -> void:
+	if size_mult == 1.0:
+		return
+	# Explosion extent is computed on demand in _explode (it also folds
+	# in Wide Impact), so we no longer pre-scale `explosion_radius`.
+	# Contact detection and physical collision still scale here so the
+	# grenade actually feels bigger while flying.
+	player_detect_radius *= size_mult
+	var col: CollisionShape2D = get_node_or_null("CollisionShape2D")
+	if col != null and col.shape is CircleShape2D:
+		var new_shape: CircleShape2D = col.shape.duplicate()
+		new_shape.radius *= size_mult
+		col.shape = new_shape
 
 
 func _exit_tree() -> void:
@@ -115,8 +149,9 @@ func _physics_process(delta: float) -> void:
 	var spin_speed: float = (horiz + vert_bias) * 0.0045
 	spin_angle += spin_speed * delta
 
-	# Save pre-slide velocity for bounce calculation
+	# Save pre-slide state for bounce + swept contact detection
 	var vel_before := velocity
+	var prev_pos := global_position
 	move_and_slide()
 
 	# Bounce using collision normals
@@ -126,16 +161,26 @@ func _physics_process(delta: float) -> void:
 		var normal := collision.get_normal()
 		velocity = vel_before.bounce(normal) * bounce_damping
 
-	# Explode on player contact
+	# Explode on player contact — swept segment [prev_pos → global_position]
+	# vs player circle so fast throws can't tunnel past the detection zone
+	# between two physics frames.
+	var seg: Vector2 = global_position - prev_pos
+	var seg_len_sq: float = seg.length_squared()
 	for p in get_tree().get_nodes_in_group("players"):
 		if not p.is_alive:
 			continue
-		var diff: Vector2 = p.global_position - global_position
 		var p_radius: float = p.get_player_radius() if p.has_method("get_player_radius") else 24.0
-		if diff.length() < player_detect_radius + p_radius:
-			# Parry — kick grenade away
+		var hit_r: float = player_detect_radius + p_radius
+		var closest: Vector2 = global_position
+		if seg_len_sq > 0.01:
+			var to_p: Vector2 = p.global_position - prev_pos
+			var t: float = clampf(to_p.dot(seg) / seg_len_sq, 0.0, 1.0)
+			closest = prev_pos + seg * t
+		var min_dist: float = closest.distance_to(p.global_position)
+		if min_dist < hit_r:
+			# Parry — kick grenade away (use current position for kick dir)
 			if p.has_method("is_parrying") and p.is_parrying():
-				var kick_dir: Vector2 = diff.normalized() * -1.0
+				var kick_dir: Vector2 = (global_position - p.global_position).normalized()
 				velocity = kick_dir * 1200.0 + Vector2.UP * 400.0
 				owner_id = p.player_id
 				owner_ref = p
@@ -182,37 +227,72 @@ func _explode() -> void:
 			if dist < 500.0:
 				var intensity := 1.0 - dist / 500.0
 				p.vibrate(intensity * 0.4, intensity * 0.8, 0.25)
+	# Explosion uses cfg.explosion_radius as the base, scaled by the
+	# projectile's size_mult (capped 5×) and the owner's Wide Impact
+	# (radius_multiplier, capped 5×). The product is clamped to
+	# MAX_EXPLOSION_RADIUS so the blast can't exceed what a 5×
+	# projectile would produce. Classic linear falloff from center.
+	var src: Node = owner_ref if is_instance_valid(owner_ref) else null
+	var dmg_mult: float = src.damage_multiplier if src != null else 1.0
+	var wide: float = src.radius_multiplier if src != null else 1.0
+	var r: float = minf(explosion_radius * size_mult * wide,
+		MAX_EXPLOSION_RADIUS)
+	effective_reach = r
 	for p in get_tree().get_nodes_in_group("players"):
 		if not p.is_alive:
 			continue
 		var diff: Vector2 = p.global_position - global_position
 		var dist := diff.length()
-		if dist < explosion_radius:
-			var falloff := 1.0 - dist / explosion_radius
-			var away := diff.normalized() if dist > 1.0 else Vector2.UP
-			var src: Node = owner_ref if is_instance_valid(owner_ref) else null
-			var dmg_mult: float = src.damage_multiplier if src != null else 1.0
-			p.take_damage(damage * falloff * dmg_mult, src)
-			p.apply_knockback(
-				away * knockback * falloff
-				+ Vector2.UP * knockback_up * falloff
-			)
+		if dist >= r:
+			continue
+		var falloff: float = 1.0 - dist / r
+		var away := diff.normalized() if dist > 1.0 else Vector2.UP
+		p.take_damage(damage * falloff * dmg_mult, src)
+		p.apply_knockback(
+			away * knockback * falloff
+			+ Vector2.UP * knockback_up * falloff
+		)
 	queue_redraw()
 	await get_tree().create_timer(0.2).timeout
+	if not is_inside_tree() or not is_instance_valid(self):
+		return
+	# Ricochet passive: re-launch in a random direction and re-arm fuse.
+	# Each bounce counts as one extra explosion. Direction is purely
+	# random — the grenade's bounces don't care about surface normals.
+	if bounces_left > 0:
+		bounces_left -= 1
+		_rebounce_grenade()
+		return
 	queue_free()
+
+
+func _rebounce_grenade() -> void:
+	var ang := randf() * TAU
+	var spd: float = maxf(throw_speed * 1.2, 1500.0)
+	throw_dir = Vector2(cos(ang), sin(ang))
+	throw_speed = spd
+	velocity = throw_dir * spd
+	initialized = true  # velocity already set, skip first-frame init
+	has_bounced = false
+	timer = fuse_time
+	exploded = false
+	queue_redraw()
 
 
 func _draw() -> void:
 	if exploded:
-		# Stylised fireball layers (no art asset for explosion yet).
+		# Stylised fireball layers — sized off the real outer reach so
+		# the visual matches the actual damage zone (old cfg-driven
+		# `explosion_radius * 0.5` was locked to 180 px and no longer
+		# reflects the blast).
 		draw_circle(
-			Vector2.ZERO, explosion_radius * 0.5, Color(1, 0.7, 0.1, 0.4)
+			Vector2.ZERO, effective_reach * 0.5, Color(1, 0.7, 0.1, 0.4)
 		)
 		draw_circle(
-			Vector2.ZERO, explosion_radius * 0.3, Color(1, 0.9, 0.3, 0.6)
+			Vector2.ZERO, effective_reach * 0.3, Color(1, 0.9, 0.3, 0.6)
 		)
 		draw_circle(
-			Vector2.ZERO, explosion_radius * 0.15, Color(1, 1, 0.8, 0.8)
+			Vector2.ZERO, effective_reach * 0.15, Color(1, 1, 0.8, 0.8)
 		)
 		return
 
@@ -222,4 +302,5 @@ func _draw() -> void:
 	var mod: Color = Color.WHITE if not flash else Color(1.4, 1.4, 1.2, 1.0)
 	# spin_angle is driven by velocity in _physics_process — direction
 	# and speed of spin now match the actual flight trajectory.
-	ProjectileSprites.draw_single(self, "grenade.png", 44.0, spin_angle, mod)
+	ProjectileSprites.draw_single(self, "grenade.png",
+		44.0 * size_mult, spin_angle, mod)

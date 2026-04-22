@@ -2,6 +2,11 @@ class_name PlayerAbilities
 extends Node
 ## Ability dispatch and individual ability logic extracted from player.gd.
 
+# Hard cap on `damage_multiplier → size_mult` for every spawned projectile.
+# Stacked damage passives can push damage_multiplier high; without a cap
+# a single yarn ball / grenade / rocket would fill a whole screen.
+const PROJECTILE_SIZE_MULT_CAP := 5.0
+
 var player: CharacterBody2D
 
 var _yarn_projectile_scene: PackedScene = preload(
@@ -60,12 +65,23 @@ func handle_abilities() -> void:
 		player.parry_cooldown = player.PARRY_CD * player.parry_cd_multiplier
 		player.parry_visual = 0.3
 		SoundManager.play_shield()
+		# Shield animation fires on every parry press, independent of
+		# whether an attack connects and independent of any passive.
+		player._add_vfx("shield_flash", 0.3)
 		# Angry/determined face during parry
 		player.trigger_face_event("angry", 0.4)
 		# Set custom spawn point — only if player has extra lives
 		if player.extra_lives > 0 and not player.spawn_point_used_this_life:
 			player.custom_spawn_point = player.global_position
 			player.has_custom_spawn = true
+		# Shockwave passive — fires on the parry press itself, gated by
+		# its own fixed 5 s cooldown (SHOCKWAVE_CD). Nothing modifies
+		# that cooldown, and re-pressing the shield while it's still on
+		# cooldown simply skips the shockwave (shield itself still works).
+		if player.shockwave_radius_mult > 0.0 \
+			and player.shockwave_cooldown <= 0.0:
+			player._do_shockwave()
+			player.shockwave_cooldown = player.SHOCKWAVE_CD
 		# Spirit Burst passive — spawn 5 homing essences
 		if player.spirit_burst_count > 0:
 			_spawn_spirit_burst()
@@ -235,6 +251,7 @@ func _ab_yarn_toss() -> void:
 	proj.speed *= player.projectile_speed_mult
 	proj.homing = player.homing_strength
 	proj.phase = player.phase_shot
+	proj.size_mult = minf(player.damage_multiplier, PROJECTILE_SIZE_MULT_CAP)
 	proj.global_position = player.global_position \
 		+ player.aim_direction * (player.get_player_radius() + 8.0)
 	get_tree().current_scene.add_child(proj)
@@ -260,6 +277,7 @@ func _burst_yarn_toss(cfg: Dictionary, count: int) -> void:
 		p2.speed *= player.projectile_speed_mult
 		p2.homing = player.homing_strength
 		p2.phase = player.phase_shot
+		p2.size_mult = minf(player.damage_multiplier, PROJECTILE_SIZE_MULT_CAP)
 		p2.global_position = player.global_position \
 			+ dir * (player.get_player_radius() + 8.0)
 		get_tree().current_scene.add_child(p2)
@@ -378,6 +396,20 @@ func _throw_grenade() -> void:
 		player.charge_timer = 0.0
 		return
 	SoundManager.play_toss()
+	# Spawn offset has to account for BOTH hitboxes — at high size_mult
+	# the grenade's own collision shape can be as wide as the player,
+	# so the old fixed "player_radius + 30" gap would spawn the grenade
+	# INSIDE the player. Compute each radius explicitly and add an
+	# 8-px safety gap so the hitboxes can't touch at spawn.
+	const GRENADE_BASE_COLLISION_RADIUS := 14.0   # matches grenade.tscn
+	const GRENADE_SPAWN_GAP := 8.0
+	var gren_size_mult: float = minf(player.damage_multiplier,
+		PROJECTILE_SIZE_MULT_CAP)
+	var grenade_collision_radius: float = \
+		GRENADE_BASE_COLLISION_RADIUS * gren_size_mult
+	var spawn_offset: float = player.get_player_radius() \
+		+ grenade_collision_radius + GRENADE_SPAWN_GAP
+
 	var gren: CharacterBody2D = _grenade_scene.instantiate()
 	gren.setup_from_config(
 		player.player_id, player.aim_direction, player.player_color,
@@ -385,8 +417,10 @@ func _throw_grenade() -> void:
 	)
 	gren.owner_ref = player
 	gren.homing = player.homing_strength
+	gren.max_bounces = player.ricochet_bounces
+	gren.size_mult = gren_size_mult
 	gren.global_position = player.global_position \
-		+ player.aim_direction * (maxf(player.get_player_radius(), 24.0) + 30.0)
+		+ player.aim_direction * spawn_offset
 	get_tree().current_scene.add_child(gren)
 	_track_entity(gren, AbilityRegistry.GRENADE)
 
@@ -501,6 +535,7 @@ func _ab_boomerang() -> void:
 		player.player_id, player.aim_direction, player.player_color, cfg)
 	boom.owner_ref = player
 	boom.homing = player.homing_strength
+	boom.size_mult = minf(player.damage_multiplier, PROJECTILE_SIZE_MULT_CAP)
 	boom.global_position = player.global_position \
 		+ player.aim_direction * (player.get_player_radius() + 10.0)
 	get_tree().current_scene.add_child(boom)
@@ -523,6 +558,7 @@ func _burst_boomerang(cfg: Dictionary, count: int) -> void:
 		b2.setup_from_config(player.player_id, dir, player.player_color, cfg)
 		b2.owner_ref = player
 		b2.homing = player.homing_strength
+		b2.size_mult = minf(player.damage_multiplier, PROJECTILE_SIZE_MULT_CAP)
 		b2.global_position = player.global_position \
 			+ dir * (player.get_player_radius() + 10.0)
 		get_tree().current_scene.add_child(b2)
@@ -554,6 +590,8 @@ func _burst_rockets(cfg: Dictionary, count: int) -> void:
 			r2.owner_ref = player
 			r2.homing = player.homing_strength
 			r2.phase = player.phase_shot
+			r2.max_bounces = player.ricochet_bounces
+			r2.size_mult = minf(player.damage_multiplier, PROJECTILE_SIZE_MULT_CAP)
 			r2.global_position = player.global_position \
 				+ dir * (player.get_player_radius() + 10.0)
 			get_tree().current_scene.add_child(r2)
@@ -576,6 +614,8 @@ func _ab_guided_rocket() -> void:
 	rocket.owner_ref = player
 	rocket.homing = player.homing_strength
 	rocket.phase = player.phase_shot
+	rocket.max_bounces = player.ricochet_bounces
+	rocket.size_mult = minf(player.damage_multiplier, PROJECTILE_SIZE_MULT_CAP)
 	rocket.global_position = player.global_position \
 		+ player.aim_direction * (player.get_player_radius() + 10.0)
 	get_tree().current_scene.add_child(rocket)
@@ -662,6 +702,8 @@ func _ab_rocket_launcher() -> void:
 		rocket.owner_ref = player
 		rocket.homing = player.homing_strength
 		rocket.phase = player.phase_shot
+		rocket.max_bounces = player.ricochet_bounces
+		rocket.size_mult = minf(player.damage_multiplier, PROJECTILE_SIZE_MULT_CAP)
 		rocket.global_position = player.global_position \
 			+ dir * (player.get_player_radius() + 10.0)
 		get_tree().current_scene.add_child(rocket)
@@ -830,7 +872,8 @@ func _ab_heavens_wrath() -> void:
 		Color(1.0, 0.95, 0.6))
 	var wrath: Node2D = _heavens_wrath_scene.instantiate()
 	wrath.setup_from_config(
-		player.player_id, player.aim_direction, player.player_color, cfg)
+		player.player_id, player.aim_direction, player.player_color,
+		cfg, player.radius_multiplier)
 	wrath.owner_ref = player
 	wrath.start_pos = player.global_position
 	wrath.global_position = Vector2.ZERO
@@ -852,8 +895,12 @@ func _burst_parry(count: int) -> void:
 		player._add_sprite_vfx("cartoon_7", 0.4,
 			player.global_position, 0.3, 0.0)
 		player._parry_detach_grapples()
-		if player.shockwave_radius_mult > 0.0:
+		# Shockwave on burst iterations respects the same fixed cooldown —
+		# a 0.15 s burst train can't fire multiple shockwaves.
+		if player.shockwave_radius_mult > 0.0 \
+			and player.shockwave_cooldown <= 0.0:
 			player._do_shockwave()
+			player.shockwave_cooldown = player.SHOCKWAVE_CD
 		if player.spirit_burst_count > 0:
 			_spawn_spirit_burst()
 

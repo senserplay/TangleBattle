@@ -16,6 +16,9 @@ var max_bounces: int = 0  # from Ricochet passive
 var bounces_left: int = 0
 var homing: float = 0.0  # from Homing Projectiles passive
 var phase: bool = false  # from Phase Shot passive
+# Scales visual size + collision radius by the owner's damage_multiplier —
+# set by player_abilities at spawn. Bigger hits literally look bigger.
+var size_mult: float = 1.0
 
 # Trail
 var trail_points: Array[Vector2] = []
@@ -49,6 +52,21 @@ func _ready() -> void:
 	bounces_left = max_bounces
 	body_entered.connect(_on_body_entered)
 	add_to_group("ability_entities")
+	_apply_size_mult()
+
+
+func _apply_size_mult() -> void:
+	## Scale collision shape so larger-damage throws hit a bigger area.
+	## Duplicate the shape first — .tscn sub_resources are shared by
+	## default and we don't want one projectile's resize to affect
+	## every other live yarn ball.
+	if size_mult == 1.0:
+		return
+	var col: CollisionShape2D = get_node_or_null("CollisionShape2D")
+	if col != null and col.shape is CircleShape2D:
+		var new_shape: CircleShape2D = col.shape.duplicate()
+		new_shape.radius *= size_mult
+		col.shape = new_shape
 
 
 func _exit_tree() -> void:
@@ -126,14 +144,32 @@ func _on_body_entered(body: Node2D) -> void:
 			return
 		if bounces_left > 0:
 			bounces_left -= 1
-			# Reflect direction off surface normal (approximate)
-			var to_body: Vector2 = body.global_position - global_position
-			var normal := -to_body.normalized()
+			# Geometrically correct reflection: probe the real surface
+			# normal via a short raycast along the flight line. The old
+			# "to_body.center" approximation bounced projectiles through
+			# the far side of wide rectangular platforms.
+			var normal := _surface_normal_at_hit()
 			direction = direction.bounce(normal).normalized()
-			# Nudge away from surface
 			global_position += normal * 5.0
 		else:
 			queue_free()
+
+
+func _surface_normal_at_hit() -> Vector2:
+	## Raycast backward-then-forward along current heading to find the
+	## actual wall normal at the point the Area2D just entered a
+	## StaticBody2D. Falls back to Vector2.UP if the probe misses.
+	var space: PhysicsDirectSpaceState2D = get_world_2d().direct_space_state
+	var start: Vector2 = global_position - direction * 80.0
+	var end: Vector2 = global_position + direction * 40.0
+	var query := PhysicsRayQueryParameters2D.create(start, end, 1)
+	query.collide_with_bodies = true
+	var result := space.intersect_ray(query)
+	if not result.is_empty():
+		var n: Vector2 = result.get("normal", Vector2.UP)
+		if n.length_squared() > 0.01:
+			return n.normalized()
+	return Vector2.UP
 
 
 func _draw() -> void:
@@ -141,7 +177,7 @@ func _draw() -> void:
 	for i in range(trail_points.size()):
 		var local_pos: Vector2 = trail_points[i] - global_position
 		var t := 1.0 - float(i) / TRAIL_MAX
-		var r := 14.0 * t
+		var r := 14.0 * size_mult * t
 		var alpha := 0.45 * t
 		draw_circle(local_pos, r,
 			Color(color.r, color.g, color.b, alpha))
@@ -149,4 +185,5 @@ func _draw() -> void:
 	# Textured yarn ball body. direction.angle() keeps the built-in
 	# motion blur lines trailing behind the ball as it moves.
 	var ang: float = direction.angle()
-	ProjectileSprites.draw_single(self, "yarn_toss.png", 48.0, ang, color)
+	ProjectileSprites.draw_single(self, "yarn_toss.png",
+		48.0 * size_mult, ang, color)

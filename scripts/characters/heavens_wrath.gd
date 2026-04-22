@@ -19,6 +19,9 @@ var start_pos: Vector2 = Vector2.ZERO
 var color: Color = Color.WHITE
 var map_top: float = 0.0
 var map_bottom: float = 3200.0
+# When Wide Impact is maxed out, switch to a 5-beam edge-to-edge
+# layout anchored at the player's cast point (see setup_from_config).
+var edge_to_edge: bool = false
 
 # Active pillar state
 var pillars: Array[Dictionary] = []
@@ -29,7 +32,8 @@ const TOTAL_LIFETIME := 4.0  # total visual lifetime
 
 
 func setup_from_config(
-	id: int, dir: Vector2, col: Color, cfg: Dictionary
+	id: int, dir: Vector2, col: Color, cfg: Dictionary,
+	radius_mult: float = 1.0
 ) -> void:
 	owner_id = id
 	aim_dir = Vector2(dir.x, 0.0).normalized()
@@ -38,10 +42,18 @@ func setup_from_config(
 	color = col
 	damage = cfg.get("damage", 30.0)
 	pillar_count = int(cfg.get("pillar_count", 6))
+	# Wide Impact scales pillar_width up; spacing is left alone until
+	# we hit the cap, at which point the layout switches to 5 beams
+	# placed edge-to-edge starting from the cast point (user spec).
 	pillar_spacing = cfg.get("pillar_spacing", 120.0)
-	pillar_width = cfg.get("pillar_width", 60.0)
+	pillar_width = cfg.get("pillar_width", 60.0) * radius_mult
 	pillar_delay = cfg.get("pillar_delay", 0.12)
 	pillar_speed = cfg.get("pillar_speed", 3000.0)
+	# Detect max Wide Impact. RADIUS_MULT_CAP lives on Player as 5.0;
+	# a small epsilon absorbs float-stack noise from multiplied picks.
+	edge_to_edge = radius_mult >= 4.99
+	if edge_to_edge:
+		pillar_count = 5
 
 
 func _exit_tree() -> void:
@@ -105,9 +117,28 @@ func _physics_process(delta: float) -> void:
 
 
 func _spawn_pillar(index: int) -> void:
-	var offset_x: float = (index + 1) * pillar_spacing * aim_dir.x
+	# At max Wide Impact — arrange 5 beams edge-to-edge from the cast
+	# point: beam i's center sits at (i + 0.5) * pillar_width from
+	# start_pos. Beam 0's left edge is exactly at the player; each
+	# next beam's left edge is the previous beam's right edge.
+	# Otherwise — original fixed-spacing layout.
+	var offset_x: float
+	if edge_to_edge:
+		offset_x = (index + 0.5) * pillar_width * aim_dir.x
+	else:
+		offset_x = (index + 1) * pillar_spacing * aim_dir.x
 	var px: float = start_pos.x + offset_x
-	var pw: float = pillar_width * (1.0 - index * 0.05)  # slightly narrower each
+	# In the edge-to-edge layout every beam must keep the full width so
+	# that the "left edge = previous right edge" invariant actually
+	# holds. Without this, the 5%-per-index narrowing opens up a
+	# growing visual gap the further the beam is from the player.
+	# In the standard layout we keep the slight taper for visual
+	# rhythm — beams don't have to touch there.
+	var pw: float
+	if edge_to_edge:
+		pw = pillar_width
+	else:
+		pw = pillar_width * (1.0 - index * 0.05)  # slightly narrower each
 	pillars.append({
 		"x": px,
 		"w": maxf(pw, 30.0),

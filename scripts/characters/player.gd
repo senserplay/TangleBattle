@@ -21,6 +21,14 @@ const AIR_FRICTION := 1.5
 const AIR_DRAG := 0.5  # drag on horizontal velocity in air (per second)
 
 const GRAPPLE_MAX_RANGE := 1200.0
+# Hard cap on stacked grapple_range_mult from passives. Without it, mult
+# can grow high enough that the rope travels off-screen and takes too
+# long to return (shoot/retract speeds now scale with range).
+const GRAPPLE_RANGE_MULT_CAP := 2.5
+# Hard cap on stacked Wide Impact picks. Without this, two Legendary
+# copies alone push the multiplier to 1.8² = 3.24× and more stacks
+# from Chaos/Endless lobbies would blow ability radii past the map.
+const RADIUS_MULT_CAP := 5.0
 const GRAPPLE_REEL_SPEED := 350.0  # stronger pull
 const GRAPPLE_SWING_FORCE := 600.0
 const GRAPPLE_MIN_LENGTH := 150.0
@@ -53,10 +61,21 @@ const ICON_SPACING := 62.0
 
 # Player-to-player collision
 const PLAYER_BOUNCE := 200.0
+# Hard cap on the magnitude of any single knockback event after mass
+# scaling. Passives (Heavy Impact, future knockback boosters, stacked
+# explosions) may still push the applied force up to this value, but
+# can't exceed it — so no combination yeets a player off the map.
+const MAX_KNOCKBACK_MAGNITUDE := 1800.0
 const BASE_RADIUS := 24.0  # radius at 100 HP
-const MIN_SCALE := 0.7  # scale at very low HP
-const MAX_SCALE := 1.8  # scale at very high HP (e.g. 250 HP with Tank)
+const MIN_SCALE := 0.3  # asymptote at HP → 0 (never reached)
+const MAX_SCALE := 3.6  # asymptote at HP → ∞ (never reached)
 const BASE_HP_REF := 100.0  # reference HP for scale=1.0
+# Steepness of the log-tanh curve. Input is `ln(HP/100)` so a single
+# unit of x already covers a ×e ≈ 2.72 step in HP. k=1 was tuned so
+# the curve spreads meaningfully over HP ∈ [20, 10000]:
+#   HP=20  → ~0.53,  HP=100 → 1.0,  HP=10000 → ~3.55.
+# Never actually touches MIN or MAX for any finite HP > 0.
+const HP_SCALE_STEEPNESS := 1.0
 
 var player_id: int = 1
 var player_color: Color = Color.RED
@@ -73,8 +92,7 @@ var lifesteal_pct: float = 0.0  # from passives
 var poison_pct: float = 0.0  # from passives
 var poison_slow: float = 0.0  # from passives (legendary poison)
 var extra_lives: int = 0  # from phoenix
-var grapple_range_mult: float = 1.0  # from thread master
-var grapple_speed_mult: float = 1.0  # from thread master
+var grapple_range_mult: float = 1.0  # from thread master (capped)
 var radius_multiplier: float = 1.0  # from wide impact
 var passives: Array[Dictionary] = []  # [{passive_id, rarity}]
 var fire_thread_active: bool = false  # from Fire Thread passive
@@ -111,8 +129,13 @@ var ability_cds: Array[float] = [0.0, 0.0]
 # Parry
 var parry_timer: float = 0.0
 var parry_cooldown: float = 0.0
+var shockwave_cooldown: float = 0.0  # ticks down independently of parry_cooldown
 const PARRY_WINDOW := 0.2  # seconds of active parry
 const PARRY_CD := 1.0
+# Hard-coded shockwave cooldown. Intentionally a free-standing const
+# (no multiplier, no passive, no flat modifier touches it) so the
+# mechanic can't be cheesed with spammable parry builds.
+const SHOCKWAVE_CD := 5.0
 var parry_visual: float = 0.0  # for sphere animation
 
 # Custom spawn point — set by parry, one per life
@@ -245,13 +268,23 @@ func setup(id: int) -> void:
 	# Ensure input actions exist for this player
 	_ensure_actions()
 	if player_id == 1:
+		# Hide OS cursor — in-game crosshair is drawn in _draw_crosshair
+		# at the mouse world position, always legible against any map.
 		Input.set_default_cursor_shape(Input.CURSOR_CROSS)
+		Input.mouse_mode = Input.MOUSE_MODE_HIDDEN
 	# Setup extracted components
 	_grapple = $PlayerGrapple
 	_abilities = $PlayerAbilities
 	_grapple.setup(self)
 	_abilities.setup(self)
 	_setup_visual_sprites()
+
+
+func _exit_tree() -> void:
+	# Restore OS cursor visibility when the keyboard player leaves the
+	# scene (round end, returning to lobby, menu) so UI remains usable.
+	if player_id == 1:
+		Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 
 
 func _setup_visual_sprites() -> void:
@@ -415,9 +448,27 @@ func trigger_face_event(emotion: String, duration: float) -> void:
 # ══════════════════ ANIMATION ══════════════════
 
 func _update_hp_scale() -> void:
-	# Scale based on MAX_HP relative to base (100 HP)
-	var raw_scale := MAX_HP / BASE_HP_REF
-	hp_scale = clampf(raw_scale, MIN_SCALE, MAX_SCALE)
+	# Log-tanh HP → size curve. Linear hp_ratio saturates long before
+	# crazy HP values do anything useful — a 10 000 HP Endless run
+	# looked the same as a 500 HP Tank. Take the natural log of the
+	# HP ratio first so every ×e step of HP maps to a constant step
+	# of x, then squash with tanh so the result stays strictly inside
+	# (MIN_SCALE, MAX_SCALE):
+	#
+	#   x = ln(max(MAX_HP, 1) / 100)           # x=0 at 100 HP
+	#   t = tanh(k·x / 2)                      # t ∈ (−1, +1)
+	#   t ≥ 0 → scale = 1 + (MAX−1)·t          # asymptote MAX
+	#   t < 0 → scale = 1 − (1−MIN)·(−t)       # asymptote MIN
+	#
+	# For any finite HP > 0 the result is strictly inside the bounds,
+	# so there's no clamp — MIN and MAX are approached asymptotically.
+	var safe_hp: float = maxf(MAX_HP, 1.0)
+	var x: float = log(safe_hp / BASE_HP_REF)
+	var t: float = tanh(HP_SCALE_STEEPNESS * x / 2.0)
+	if t >= 0.0:
+		hp_scale = 1.0 + (MAX_SCALE - 1.0) * t
+	else:
+		hp_scale = 1.0 - (1.0 - MIN_SCALE) * -t
 	# Update collision shape radius
 	var col_shape: CollisionShape2D = $CollisionShape2D
 	if col_shape != null and col_shape.shape is CircleShape2D:
@@ -658,8 +709,16 @@ func _handle_player_collisions() -> void:
 				var bounce_force := maxf(PLAYER_BOUNCE, impact * 0.4)
 				var my_mult: float = collision_force_mult
 				var their_mult: float = p.collision_force_mult
-				velocity += push * bounce_force * my_mult * 0.5
-				p.velocity -= push * bounce_force * their_mult * 0.5
+				# Route each side through the same mass-scaling + cap
+				# rule used by apply_knockback. Heavy Impact still
+				# amplifies collision_force_mult, but the amplification
+				# can't exceed MAX_KNOCKBACK_MAGNITUDE.
+				velocity += _scale_knockback(
+					push * bounce_force * my_mult * 0.5
+				)
+				p.velocity -= p._scale_knockback(
+					push * bounce_force * their_mult * 0.5
+				)
 				# Squash on collision
 				squash_x = 0.85
 				squash_y = 1.15
@@ -727,6 +786,7 @@ func _update_timers(delta: float) -> void:
 	parry_timer = maxf(parry_timer - delta, 0.0)
 	parry_cooldown = maxf(parry_cooldown - delta, 0.0)
 	parry_visual = maxf(parry_visual - delta, 0.0)
+	shockwave_cooldown = maxf(shockwave_cooldown - delta, 0.0)
 	spawn_anim_timer = maxf(spawn_anim_timer - delta, 0.0)
 	face_event_timer = maxf(face_event_timer - delta, 0.0)
 	if grab_stun_timer > 0.0:
@@ -888,33 +948,41 @@ func _handle_movement(delta: float) -> void:
 	if Input.is_action_pressed(prefix + "right"):
 		direction += 1.0
 
+	# Universal momentum-preservation rule: any horizontal velocity above
+	# normal walk speed is treated as "boosted momentum" (dash, knockback,
+	# grapple fling, explosion push, …) and is NOT subject to artificial
+	# friction/air-drag. Only external forces — gravity, collisions via
+	# move_and_slide, and the player's own counter-steer input — are
+	# allowed to decay it. The rule is direction-agnostic: a sideways
+	# carry, diagonal carry, or even a backward carry is preserved
+	# identically; no component of the dash gets special treatment.
+	var target_vx: float = direction * SPEED * speed_multiplier * base_speed_mult
+	var max_walk: float = SPEED * speed_multiplier * base_speed_mult
+	var over_walk: bool = absf(velocity.x) > max_walk
+	var counter_steering: bool = direction != 0.0 \
+		and signf(direction) != signf(velocity.x)
+
 	if is_on_floor():
-		var target_vx := direction * SPEED * speed_multiplier * base_speed_mult
-		var fric_mul: float = _map_floor_friction_mult()
-		# Preserve momentum from dash/knockback when player has more speed
-		# than walking would give. Active input still steers, but gives a
-		# soft pull toward target instead of an abrupt brake.
-		var max_walk: float = SPEED * speed_multiplier * base_speed_mult
-		if absf(velocity.x) > max_walk and (
-			direction == 0.0
-			or signf(velocity.x) == signf(direction)
-		):
-			# Decelerate gently to retain dash carry-over
-			velocity.x = move_toward(
-				velocity.x, target_vx,
-				GROUND_FRICTION * SPEED * delta * 0.30 * fric_mul
-			)
+		if over_walk and not counter_steering:
+			# Coast — preserve boosted momentum exactly. Ground friction
+			# skipped; only a direct collision or the player pressing the
+			# opposite direction will slow them.
+			pass
 		else:
+			var fric_mul: float = _map_floor_friction_mult()
 			velocity.x = move_toward(
 				velocity.x, target_vx,
 				GROUND_FRICTION * SPEED * delta * fric_mul
 			)
 	else:
-		# Air: additive steering, preserves momentum from knockback/rope
+		# Air movement — additive steering. Input accelerates normally.
+		# When no input is held, a gentle drag applies ONLY while the
+		# player is within normal walk speed (sub-boost). Above that
+		# threshold, drag is skipped so a mid-air dash carry keeps going
+		# until gravity/collision/input act on it.
 		if absf(direction) > 0.1:
 			velocity.x += direction * AIR_ACCEL * delta
-		else:
-			# Gentle drag when not pressing anything
+		elif not over_walk:
 			velocity.x *= (1.0 - AIR_DRAG * delta)
 
 	if player_id != 1 and direction != 0.0:
@@ -957,7 +1025,8 @@ func _apply_fire_burn(
 		await get_tree().create_timer(tick).timeout
 		if not is_alive:
 			break
-		hp -= dmg
+		# Iron Skin applies to DoT tick damage just like direct hits.
+		hp -= dmg * (1.0 - damage_reduction)
 		hit_flash_timer = 0.05
 		_spawn_hit_burst("fire", 6)
 		if hp <= 0.0:
@@ -981,16 +1050,15 @@ func take_damage(amount: float, source: Node = null) -> void:
 	if shield_timer > 0.0:
 		shield_timer = 0.0
 		return
-	# Parry — block damage (projectiles are reflected in their own scripts)
+	# Parry — block damage (projectiles are reflected in their own scripts).
+	# Note: shockwave + shield_flash are driven by the parry *press* in
+	# `player_abilities.handle_abilities`, not by the successful block,
+	# so they fire whether or not an incoming attack lands.
 	if parry_timer > 0.0:
 		parry_timer = 0.0
 		SoundManager.play_whip()
-		_add_vfx("shield_flash", 0.3)
 		vibrate(0.5, 0.8, 0.2)
 		_parry_detach_grapples()
-		# Shockwave passive — push nearby enemies on parry
-		if shockwave_radius_mult > 0.0:
-			_do_shockwave()
 		return
 	# Iron Skin damage reduction
 	var actual_amount := amount * (1.0 - damage_reduction)
@@ -1050,13 +1118,12 @@ func is_parrying() -> bool:
 
 func on_parry_reflect() -> void:
 	## Called when a projectile is reflected by parry.
+	## Shockwave + shield_flash already fired on the parry *press* —
+	## this path only handles the successful reflect feedback.
 	parry_timer = 0.0
 	SoundManager.play_whip()
-	_add_vfx("shield_flash", 0.3)
 	vibrate(0.5, 0.8, 0.2)
 	_parry_detach_grapples()
-	if shockwave_radius_mult > 0.0:
-		_do_shockwave()
 
 
 func _parry_detach_grapples() -> void:
@@ -1117,7 +1184,8 @@ func _run_poison_dot(per_tick: float, ticks: int) -> void:
 		if not is_alive:
 			remove_meta("poison_active")
 			return
-		hp -= per_tick
+		# Iron Skin applies to DoT tick damage just like direct hits.
+		hp -= per_tick * (1.0 - damage_reduction)
 		hit_flash_timer = 0.05
 		_spawn_hit_burst("poison", 5)
 		if hp <= 0.0:
@@ -1133,7 +1201,21 @@ func apply_knockback(force: Vector2) -> void:
 		return
 	if is_grappling:
 		_release_grapple()
-	velocity += force
+	velocity += _scale_knockback(force)
+
+
+## Universal knockback scaling — applies to every source (explosions,
+## projectiles, dash hits, swap, parry-reflect, player bounce, etc.).
+## Heavier player (larger hp_scale) resists being pushed (divisor ≥1),
+## lighter player is pushed more (divisor <1). The resulting vector is
+## clamped to MAX_KNOCKBACK_MAGNITUDE so any stacked passive boost tops
+## out at a fair ceiling instead of spiralling to infinity.
+func _scale_knockback(force: Vector2) -> Vector2:
+	var mass_factor: float = maxf(hp_scale, 0.5)
+	var scaled: Vector2 = force / mass_factor
+	if scaled.length() > MAX_KNOCKBACK_MAGNITUDE:
+		scaled = scaled.normalized() * MAX_KNOCKBACK_MAGNITUDE
+	return scaled
 
 
 func apply_slow(duration: float) -> void:
@@ -1367,6 +1449,7 @@ func respawn(pos: Vector2) -> void:
 	parry_timer = 0.0
 	parry_cooldown = 0.0
 	parry_visual = 0.0
+	shockwave_cooldown = 0.0
 	has_custom_spawn = false
 	custom_spawn_point = Vector2.ZERO
 	spawn_point_used_this_life = false
@@ -1417,7 +1500,6 @@ func _apply_passives() -> void:
 	poison_slow = 0.0
 	extra_lives = 0
 	grapple_range_mult = 1.0
-	grapple_speed_mult = 1.0
 	radius_multiplier = 1.0
 	fire_thread_active = false
 	fire_burn_damage = 0.0
@@ -1478,7 +1560,6 @@ func _apply_passives() -> void:
 
 			PassiveRegistry.PassiveId.THREAD_MASTER:
 				grapple_range_mult *= rdata.get("grapple_range_mult", 1.0)
-				grapple_speed_mult *= rdata.get("grapple_speed_mult", 1.0)
 
 			PassiveRegistry.PassiveId.WIDE_IMPACT:
 				radius_multiplier *= rdata.get("radius_multiplier", 1.0)
@@ -1551,6 +1632,14 @@ func _apply_passives() -> void:
 
 			PassiveRegistry.PassiveId.PHASE_SHOT:
 				phase_shot = true
+
+	# Cap grapple range multiplier — otherwise stacked Thread Master
+	# picks can send the rope beyond the map. Shoot/retract speeds
+	# derive from this value, so the cap also tames round-trip time.
+	grapple_range_mult = minf(grapple_range_mult, GRAPPLE_RANGE_MULT_CAP)
+	# Cap Wide Impact at 5×. Stacked picks still grow until the ceiling,
+	# but can't push ability footprints past whole platforms.
+	radius_multiplier = minf(radius_multiplier, RADIUS_MULT_CAP)
 
 	hp = minf(hp, MAX_HP)
 
@@ -1793,9 +1882,8 @@ func _draw() -> void:
 		var spin_col := Color(1.0, 0.8, 0.2, 0.5 * (1.0 - t))
 		draw_arc(Vector2.ZERO, 30.0 + t * 30.0, 0.0, TAU, 24, spin_col, 4.0)
 
-	# Crosshair (gamepad only)
-	if player_id != 1:
-		_draw_crosshair()
+	# Crosshair — drawn for every player (P1 at mouse, others at aim dir)
+	_draw_crosshair()
 
 	# Body and eyes are drawn by Sprite2D nodes via _update_visual_sprites().
 	# Below variables are still needed by trailing draws (whip, grab hook, etc.).
@@ -1915,7 +2003,9 @@ func _draw() -> void:
 		# player keeps moving after placing the portal; without an
 		# explicit offset, draw_single's internal draw_set_transform
 		# would place the sprite on the player.)
-		var display_w: float = 180.0
+		# Wide Impact scales the portal visual to match the logic radius
+		# (`portal_radius * radius_multiplier` in player_abilities).
+		var display_w: float = 180.0 * radius_multiplier
 		var tex_name: String = "portal_gate_%d.png" % frame_idx
 		ProjectileSprites.draw_single(self, tex_name,
 			display_w, 0.0, Color(1, 1, 1, 0.95), false, pg)
@@ -1930,8 +2020,8 @@ func _draw() -> void:
 				)
 				var angle: float = float(pi) * TAU / n_particles \
 					+ now_anim * 0.4
-				var r0: float = 35.0
-				var r1: float = 150.0
+				var r0: float = 35.0 * radius_multiplier
+				var r1: float = 150.0 * radius_multiplier
 				var rr: float = lerpf(r0, r1, life_t)
 				var alpha: float = (1.0 - life_t) * 0.85
 				var size: float = 2.5 + (1.0 - life_t) * 3.5
@@ -2044,7 +2134,14 @@ func draw_ellipse_simple(
 
 
 func _draw_crosshair() -> void:
-	var ch_pos := aim_direction * CROSSHAIR_DIST
+	# Keyboard player — pin the crosshair to the actual mouse position
+	# (converted to local space so _draw's canvas transform is honored).
+	# Gamepad players — fixed offset along aim_direction.
+	var ch_pos: Vector2
+	if player_id == 1:
+		ch_pos = get_global_mouse_position() - global_position
+	else:
+		ch_pos = aim_direction * CROSSHAIR_DIST
 	var s := CROSSHAIR_SIZE
 	var col := player_color.lightened(0.3)
 	col.a = 0.85

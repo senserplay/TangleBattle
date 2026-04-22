@@ -42,6 +42,12 @@ var yarn_anim: float = 0.0
 
 
 func _ready() -> void:
+	# Root Control defaults to MOUSE_FILTER_STOP, which consumes mouse
+	# clicks inside the gui system and prevents them from ever reaching
+	# `_unhandled_input`. Force IGNORE so the script-level click
+	# handler actually sees the events (whole screen is drawn via
+	# `_draw`, there are no native Button children to intercept).
+	mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_apply_settings()
 	MusicManager.play_menu_music()
 
@@ -63,6 +69,30 @@ func _unhandled_input(event: InputEvent) -> void:
 	if event is InputEventMouseButton and event.pressed:
 		if event.button_index == MOUSE_BUTTON_LEFT:
 			_handle_click(event.position)
+	# Mouse hover — acts like moving the keyboard focus. If keyboard or
+	# gamepad moves focus next, navigation continues from wherever the
+	# hover last landed — selection state is shared between all inputs.
+	if event is InputEventMouseMotion:
+		_handle_hover(event.position)
+
+
+func _handle_hover(pos: Vector2) -> void:
+	var vp := get_viewport_rect().size
+	var cx := vp.x / 2.0
+	match current_screen:
+		Screen.TITLE:
+			for i in range(TITLE_ITEMS.size()):
+				var iy := 500.0 + i * 80.0
+				if pos.y > iy - 25 and pos.y < iy + 25 \
+						and absf(pos.x - cx) < 150:
+					title_focus = i
+					return
+		Screen.SETTINGS:
+			for i in range(SETTINGS_ITEMS.size()):
+				var iy := 250.0 + i * 65.0
+				if pos.y > iy - 20 and pos.y < iy + 20:
+					settings_focus = i
+					return
 
 
 func _handle_key(event: InputEventKey) -> void:

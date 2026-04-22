@@ -17,6 +17,8 @@ var hit_radius: float = 96.0
 var return_radius: float = 40.0
 var homing: float = 0.0  # from Homing Projectiles passive
 var lifetime: float = 4.0
+# Scales visual size + hit_radius by damage_multiplier (set at spawn).
+var size_mult: float = 1.0
 
 var traveled: float = 0.0
 var returning: bool = false
@@ -36,6 +38,10 @@ const TRAIL_MAX := 10
 
 func _ready() -> void:
 	add_to_group("ability_entities")
+	# Boomerang is Node2D with distance-based hit detection — only
+	# hit_radius needs scaling (no collision shape to resize).
+	if size_mult != 1.0:
+		hit_radius *= size_mult
 
 
 func _exit_tree() -> void:
@@ -161,8 +167,9 @@ func _draw() -> void:
 	for i in range(trail.size()):
 		var local: Vector2 = trail[i] - global_position
 		var t := 1.0 - float(i) / TRAIL_MAX
-		draw_circle(local, 10.0 * t,
+		draw_circle(local, 10.0 * size_mult * t,
 			Color(color.r, color.g, color.b, 0.3 * t))
 
 	# Textured boomerang, spins with `spin`, tinted to owner color.
-	ProjectileSprites.draw_single(self, "boomerang.png", 72.0, spin, color)
+	ProjectileSprites.draw_single(self, "boomerang.png",
+		72.0 * size_mult, spin, color)

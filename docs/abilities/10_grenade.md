@@ -36,6 +36,6 @@ explosion_radius = 180.0
 damage = 50.0
 knockback = 1100.0
 knockback_up = 500.0
-player_detect_radius = 20.0
+player_detect_radius = 24.0
 grenade_radius = 14.0
 ```

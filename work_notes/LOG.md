@@ -1,5 +1,1517 @@
 # TangleBattle — Рабочий лог
 
+## 2026-04-22 — fix(camera): убрана тряска при большом расстоянии между игроками
+
+### Запрос
+"Убрать тряску камеры при большом расстоянии между игроками.
+Ограничения применяются ПОСЛЕ того, как камера поменяла позицию
+в этом тике — надо ДО. Не менять position в _process несколько
+раз за выполнение."
+
+### Причина
+`_process` писал в `position` трижды за кадр:
+1. Lerp к `target_center`: `position = position.lerp(target_center, t_pos)`.
+2. Emergency-correction в `_ensure_players_visible`: ещё один
+   `position.lerp(pos, 0.15)` + домножение zoom'а на 0.97.
+3. Финальный `clampf` по map_rect на `position.x/y`.
+
+Когда игроки разбежались у краёв карты, `_ensure_players_visible`
+срабатывал каждый кадр (игрок снаружи safe-area → emergency zoom
+делает камеру ещё меньше → на след. кадре другой игрок уже снаружи
+→ повтор). Плюс финальный clamp дёргал `position` назад в bounds
+после неверного шага. Всё это — визуальная тряска.
+
+### Фикс
+`scripts/main/game_camera.gd::_process`:
+
+1. **Pre-clamp `target_center`** по map_rect'у, используя half_view
+   из `target_zoom` (не текущего). Значит цель лерпа всегда внутри
+   допустимой зоны.
+2. **Одна запись в `position` за кадр** — только `position.lerp(target_center, t_pos)`. Никакого post-clamp.
+3. **`_ensure_players_visible` удалён** — он был главным источником
+   feedback-цикла. Игроки за краем camera-view при `min_allowed`
+   zoom — это ограничение карты, а не баг; принудительное дотягивание
+   только портило ощущение.
+4. `offset` используется только под shake (как и раньше), чтобы
+   shake и bounds-clamp не дрались.
+
+### Файлы
+- `scripts/main/game_camera.gd::_process` (+15 / −32)
+
+### Тест
+- `mcp__godot__run_project` — runtime чисто.
+
+---
+
+## 2026-04-22 — feat(editor): опция Tsunami в выпадающем меню событий
+
+### Запрос
+"И в редактор карт тоже добавь возможность добавлять это событие."
+
+### Фикс
+`scripts/main/map_editor.gd`:
+- `EVENT_IDS` добавлен `"tsunami"`.
+- `EVENT_LABELS` добавлен `"Tsunami"`.
+
+`scripts/maps/map_base.gd::_trigger_random_event`:
+- Пул «Random (all)» расширен с 3 до 4 событий — теперь
+  включает tsunami. Иначе если кастомная карта выбирает
+  `event_type = "all"`, цунами бы никогда не срабатывало.
+
+### Файлы
+- `scripts/main/map_editor.gd` (константы, +1 строка)
+- `scripts/maps/map_base.gd::_trigger_random_event` (+2 строки)
+
+### Тест
+- `mcp__godot__run_project` — runtime чисто.
+
+---
+
+## 2026-04-22 — feat(maps): событие «Tsunami» на Ocean Shore
+
+### Запрос
+"Добавить событие Цунами — с одной стороны вода начинает потихоньку
+приходить, потом появляется медленная волна. На какой-нибудь одной
+карте."
+
+### Реализация
+
+Событие добавлено в `map_base.gd` как переиспользуемое (единый
+event-диспетчер). Включено на **Ocean Shore** через
+`event_type = "tsunami"`.
+
+**Фазы (итого ~13 секунд):**
+1. **Rise (5 с)**: уровень воды поднимается от kill-line вверх на
+   `TSUNAMI_WATER_PEAK = 420 px`. Все, кто ниже, получают 5 DPS и
+   сносятся влево (80 px/s² постоянный).
+2. **Wave (5 с)**: один большой гребень (ширина 600, высота 260)
+   движется справа налево через всю карту. Игрок, попавший в зону
+   гребня, получает 20 урона и knockback `(−650, −320)` — **один
+   раз за волну** (метка `tsunami_hit` чтобы не многократно).
+   Пока гребень идёт, вода стоит на peak-уровне.
+3. **Recede (3 с)**: вода опускается обратно до kill-line.
+
+### Код
+
+**`map_base.gd`:**
+- Состояние: `_tsunami_start_t`, константы фаз/размеров.
+- Диспетчер: `match event_type: "tsunami": _event_tsunami()`.
+- Per-frame тик в `_physics_process` вызывает `_apply_tsunami_tick`.
+- Хелперы: `_tsunami_water_y(el)`, `_tsunami_wave_x(el)`.
+- `_event_tsunami()` ставит баннер «🌊 TSUNAMI 🌊» и стартует.
+- `_draw_event_vfx` рисует:
+  - Semi-transparent deep-blue body воды ниже уровня.
+  - Мерцающую верхнюю кромку (sin-волны по x, скролл по времени).
+  - Эллипс гребня + foam-arc сверху + брызги.
+- По окончании `tsunami_hit` метки очищаются у всех игроков.
+
+**`ocean_shore.gd`:** добавлена строка `event_type = "tsunami"` в
+`_init()`.
+
+### Файлы
+- `scripts/maps/map_base.gd` (+140: state, dispatch, logic, draw)
+- `scripts/maps/ocean_shore.gd` (+4: event_type)
+
+### Тест
+- `mcp__godot__run_project` — runtime чисто.
+
+---
+
+## 2026-04-22 — feat(gameplay): верёвка не обрывается при приземлении
+
+### Запрос
+"Верёвка не должна обрываться, если персонаж встал на платформу.
+Можно подпрыгнуть, зацепить другого персонажа или платформу и при
+приземлении всё ещё быть привязанным (тянуться или тянуть)."
+
+### Причина
+`player_grapple.gd::handle_grapple` начинался с:
+```
+if player.is_on_floor():
+    release_grapple()
+    return
+```
+Как только мы касались пола — верёвка обрывалась. Тактика
+«подпрыгнул → зацепил → приземлился, продолжая тянуть» была
+невозможна.
+
+### Фикс
+Условие удалено. Грэппл-физика (length constraint, reel-in, swing)
+теперь применяется и на полу:
+- Если anchor выше — игрок подтягивается вверх и отрывается от пола.
+- Если anchor сбоку — игрок ползёт по полу в сторону anchor'а.
+- Если anchor ниже/рядом — верёвка просто натянута, игрок стоит.
+
+Выход из грэппла остался под кнопкой jump (см.
+`player.gd::_handle_movement`): отпустил — `_release_grapple()`.
+Игрок всегда в контроле, никакой потери управления.
+
+### Файлы
+- `scripts/characters/player_grapple.gd::handle_grapple` (−4
+  строки условия + комментарий с обоснованием)
+
+### Тест
+- `mcp__godot__run_project` — runtime чисто.
+
+---
+
+## 2026-04-22 — feat(ui): hover → focus в меню + фикс ab-slot id в lobby
+
+### Запрос
+"При наведении мыши кнопки должны стать selectable. Если сначала
+навелась мышь, потом переключение клавиатурой продолжается с того
+пункта, где был hover."
+
+### Реализация
+
+**`scripts/ui/title_menu.gd`:**
+- В `_unhandled_input` добавлена ветка `InputEventMouseMotion` →
+  `_handle_hover(pos)`.
+- `_handle_hover` повторяет hit-тест из `_handle_click`, но только
+  ставит `title_focus` / `settings_focus` (без action). Клавиатура
+  и геймпад продолжают навигацию с обновлённого фокуса.
+
+**`scripts/ui/lobby.gd`:**
+- Извлёк карту настроек `_settings_map()` — один источник истины
+  для позиций 6 контролов (HP/Rounds/Mode/Luck/Cards/Picks).
+  Теперь и click, и hover читают из неё.
+- Добавил `_handle_mouse_hover(pos)`: тест ability-строк P1
+  (`kb_focus = 1/2`) и 6 настроек (`kb_focus = 3..8`). Без action.
+- `InputEventMouseMotion` в `_unhandled_input` → `_handle_mouse_hover`.
+
+### Побочный fix в lobby.gd
+В click-обработчике ability-строк P1 было:
+```
+kb_focus = ab_slot   # ab_slot 0 или 1
+```
+Но `kb_focus = 0` у клавиатурного маппинга — это **color** (не ab1),
+а `kb_focus = 1` — ab1 (не ab2). Клик ломал фокус.
+Исправлено: `kb_focus = ab_slot + 1`.
+
+### Файлы
+- `scripts/ui/title_menu.gd::_unhandled_input` + `_handle_hover` (+22)
+- `scripts/ui/lobby.gd::_unhandled_input` + `_handle_mouse_hover` +
+  `_settings_map` + fix ab-slot offset (+40 / −14)
+
+### Тест
+- `mcp__godot__run_project` — runtime чисто.
+
+---
+
+## 2026-04-22 — fix(ui): клики мыши не долетали до меню — mouse_filter
+
+### Запрос
+"В главном меню кнопки Play, Map Editor и т. д. не кликабельны. В
+лобби кнопки настроек не кликабельны (нативная сборка)."
+
+### Причина
+Корневые `Control`-ноды в `title_menu.tscn` и `lobby.tscn` имели
+дефолтный `MOUSE_FILTER_STOP`. Это значит, что GUI-система Godot
+**потребляет** `InputEventMouseButton`, вызывает `gui_input` и НЕ
+передаёт событие дальше в `_unhandled_input`. А оба скрипта ловят
+клик именно через `_unhandled_input`. В редакторе прошлые итерации
+тестировались только клавиатурой, поэтому баг остался незамечен.
+
+### Фикс
+В `_ready()` обоих скриптов:
+```
+mouse_filter = Control.MOUSE_FILTER_IGNORE
+```
+Теперь события проходят сквозь корень — `_unhandled_input`
+получает `InputEventMouseButton`, существующие `_handle_click` /
+`_handle_mouse_click` срабатывают. Клавиатура + геймпад остались
+без изменений (они не завязаны на mouse_filter).
+
+Сцены (`.tscn`) не трогал — фикс из кода, чтобы не менять
+художественную конфигурацию.
+
+### Файлы
+- `scripts/ui/title_menu.gd::_ready` (+6 строк)
+- `scripts/ui/lobby.gd::_ready` (+4 строки)
+
+### Тест
+- `mcp__godot__run_project` — runtime чисто. Кнопки в
+  главном меню и все 6 настроек лобби теперь реагируют на клик.
+
+---
+
+## 2026-04-22 — feat(ui): мышь в лобби — все 6 настроек кликабельны
+
+### Запрос
+"В главном меню и настройках должна быть возможность выбирать через
+мышку. В меню перед началом игры настройки (продолжительность,
+режим, удача, HP) тоже должны быть кликабельны мышкой."
+
+### Аудит
+- `title_menu.gd` (главное меню + настройки) **уже поддерживает
+  мышь** — `_handle_click` обрабатывает `InputEventMouseButton`,
+  кликает по пунктам TITLE, делит слайдеры громкости на половинки
+  (±10%) и тогглит toggles. Оставлен без изменений.
+- `lobby.gd` (меню перед игрой) частично: мышь работала для стрелок
+  ability P1, HP, Rounds и Start — но **Mode, Luck, Cards, Picks
+  игнорировали клики**.
+
+### Фикс
+`scripts/ui/lobby.gd::_handle_mouse_click`:
+- Старый код с двумя if-ветками (HP, rounds) заменён на карту-таблицу:
+  ```
+  settings_map = [
+      [3, cx−250, bar_y+42],   # HP
+      [4, cx− 50, bar_y+42],   # Rounds (disabled в Endless)
+      [5, cx+250, bar_y+42],   # Mode
+      [6, cx−250, bar_y2+22],  # Luck
+      [7, cx− 50, bar_y2+22],  # Cards
+      [8, cx+150, bar_y2+22],  # Picks
+  ]
+  ```
+- Для каждого контрола: клик-бокс 120×36 (матчит отрисованный focus
+  rect + стрелки). Левая половина → `−1`, правая → `+1`.
+  `kb_focus` устанавливается в соответствующий id — визуальный фокус
+  совпадает с keyboard-навигацией.
+- Rounds в Endless-моде остаётся «INF» — клик только фокусирует,
+  без изменения (как при нажатии клавиш).
+- Всё проходит через `_apply_kb_change(dir)` — одна точка изменения
+  значений, единая логика для клавиатуры и мыши. Никакой
+  дублирующей логики для «клик с диапазоном».
+
+### Файлы
+- `scripts/ui/lobby.gd::_handle_mouse_click` (+22 / −11)
+
+### Тест
+- `mcp__godot__run_project` — runtime чисто.
+
+---
+
+## 2026-04-22 — tweak(gameplay): HP-scale log-tanh, спред 0.3..3.6, HP 20..10000
+
+### Запрос
+"Сильно меняться в диапазоне хотя бы от 20 до 10000 HP. Минимум
+0.3, максимум 3.6."
+
+### Причина
+Старая формула (две экспоненты на линейном `hp_ratio`) быстро
+насыщалась — HP=500 и HP=10000 выглядели одинаково, т.к. linear
+ratio=5 уже почти полностью «съедал» k=2. Нужно логарифмическое
+преобразование входа, чтобы каждый ×e HP давал постоянный шаг.
+
+### Фикс
+`scripts/characters/player.gd`:
+
+Константы:
+```
+MIN_SCALE = 0.3     # асимптота при HP → 0
+MAX_SCALE = 3.6     # асимптота при HP → ∞
+HP_SCALE_STEEPNESS = 1.0
+```
+
+Формула (`_update_hp_scale`):
+```
+x = ln(max(MAX_HP, 1) / 100)      # x=0 на 100 HP, ±1 ≈ ×e HP
+t = tanh(k · x / 2)                # t ∈ (−1, +1)
+t ≥ 0 → scale = 1 + (MAX − 1) · t
+t < 0 → scale = 1 − (1 − MIN) · (−t)
+```
+
+`log()` в GDScript — натуральный логарифм. `tanh` встроен.
+
+### Профиль (MIN=0.3, MAX=3.6)
+
+| HP | scale |
+|----|-------|
+| 1 | 0.314 |
+| 20 | 0.533 |
+| 50 | 0.767 |
+| 100 | 1.000 |
+| 200 | 1.867 |
+| 500 | 2.733 |
+| 1000 | 3.128 |
+| 2000 | 3.353 |
+| 5000 | 3.499 |
+| **10000** | **3.548** |
+| ∞ | 3.6 (асимптота) |
+
+Заметная разница HP=20 ↔ HP=10000 (0.53 vs 3.55 — 6.7× по визуалу).
+
+### Файлы
+- `scripts/characters/player.gd` (+15 / −10: const + log-tanh формула)
+
+### Тест
+- `mcp__godot__run_project` — runtime чисто.
+
+---
+
+## 2026-04-22 — feat(gameplay): асимптотическая функция размера игрока от HP
+
+### Запрос
+"Пусть размер игрока изменяется не линейно, а по степени меньше нуля
+или логарифмом. Минимальное/максимальное значения никогда не
+достигаются — функция заключена между ними, принимая любое HP."
+
+### Причина
+`_update_hp_scale` использовал жёсткий clamp:
+```
+raw_scale = MAX_HP / 100
+hp_scale = clampf(raw_scale, MIN_SCALE, MAX_SCALE)
+```
+Разница между 70 HP и 100 HP визуально точно такая же, как между
+180 HP и 250 HP — все ушедшие за границы просто прижимаются к
+`MIN_SCALE = 0.7` / `MAX_SCALE = 1.8`. Tank +100% HP и Glass
+Cannon −30% HP не имели «градации мягкости» в сравнении.
+
+### Фикс
+`scripts/characters/player.gd::_update_hp_scale`:
+```
+hp_ratio = MAX_HP / 100
+t ≥ 1 → scale = 1 + (MAX-1) · (1 − e^(−k·(t−1)))   # → MAX
+t < 1 → scale = 1 − (1−MIN) · (1 − e^(−k·(1−t)))   # → MIN
+```
+Двусторонний экспоненциальный спад. При `k = HP_SCALE_STEEPNESS = 2`:
+
+| HP | old (linear+clamp) | new (asymptotic) |
+|----|--------------------|-------------------|
+| 0 | 0.70 (clamped) | **0.74** |
+| 50 | 0.70 (clamped) | **0.81** |
+| 100 | 1.00 | **1.00** |
+| 150 | 1.50 | **1.40** |
+| 200 | 1.80 (clamped) | **1.69** |
+| 350 | 1.80 (clamped) | **1.79** |
+| ∞ | 1.80 | **1.80 (асимптота)** |
+
+Граничные значения MIN/MAX приближаются, но никогда не достигаются
+на конечном HP. Промежуточные значения различимы на вид:
+«сильно раненый» не выглядит идентично «раненому».
+
+Клэмп больше не нужен — формула сама ограничена в `(MIN_SCALE,
+MAX_SCALE)` для любого конечного HP.
+
+### Файлы
+- `scripts/characters/player.gd` (+18 / −3: const + новая формула)
+
+### Тест
+- `mcp__godot__run_project` — runtime чисто.
+
+---
+
+## 2026-04-22 — fix(gameplay): граната не застревает в игроке при выпуске
+
+### Запрос
+"Иногда граната застревает в игроке при выпуске способности. Место
+появления гранаты должно учитывать размер игрока и гранаты, чтобы
+их хитбоксы не пересекались и имели дистанцию."
+
+### Причина
+В `player_abilities.gd::_throw_grenade` спавн вычислялся как
+```
+player.global_position + aim_direction *
+    (maxf(player.get_player_radius(), 24.0) + 30.0)
+```
+— фиксированный запас 30 px от края игрока. Не учитывал собственный
+радиус гранаты. При `size_mult = 5` граната имеет коллайдер
+`14 × 5 = 70 px`. Спавн в `24 + 30 = 54 px` от центра игрока даёт
+центр гранаты при радиусе 70 — **её хитбокс залезает на 16 px
+обратно в игрока**. Грантата застревает на первом кадре, пока физика
+не вытолкнет.
+
+### Фикс
+`scripts/characters/player_abilities.gd::_throw_grenade`:
+```
+const GRENADE_BASE_COLLISION_RADIUS := 14.0  # matches grenade.tscn
+const GRENADE_SPAWN_GAP := 8.0
+var grenade_collision_radius = 14.0 * gren_size_mult
+var spawn_offset = player.get_player_radius()
+              + grenade_collision_radius
+              + GRENADE_SPAWN_GAP
+```
+Теперь оба радиуса учтены явно + 8 px гарантированного зазора.
+
+### Примеры
+| player_radius | size_mult | old offset | new offset |
+|---------------|-----------|-----------|------------|
+| 24 | 1.0 | 54 | 46 |
+| 24 | 5.0 | 54 | **102** |
+| 36 | 1.0 | 66 | 58 |
+| 36 | 5.0 | 66 | **114** |
+
+При `size_mult × 5` new offset > old в 2× — хитбокс теперь не
+пересекается ни в одной конфигурации. Граната всё так же летит в
+направлении `aim_direction` со скоростью зарядки.
+
+### Файлы
+- `scripts/characters/player_abilities.gd::_throw_grenade` (+10 / -3)
+
+### Тест
+- `mcp__godot__run_project` — runtime чисто.
+
+---
+
+## 2026-04-22 — feat(gameplay): возврат к explosion_radius-логике + MAX_EXPLOSION_RADIUS cap
+
+### Запрос
+"Нет, так не пойдёт, давай вернёмся к логике explosion_radius, но
+добавь туда ещё переменную для каждого снаряда — max_explosion_radius.
+Продумай так, чтобы было приемлемо для снаряда 5× размера от базового."
+
+### Причина
+Переход на «радиус = визуальный размер × 2» давал базовый reach всего
+22-44 px — игрок должен был стоять на снаряде, чтобы получить
+урон. Классическая модель `explosion_radius` с линейным falloff от
+центра гораздо предсказуемее и ощутимее.
+
+### Фикс
+
+Во всех трёх взрывных снарядах (`grenade.gd`, `rocket.gd`,
+`guided_rocket.gd`):
+
+1. **Возврат к линейному falloff**:
+   ```
+   if dist < r:
+       falloff = 1.0 - dist / r
+   ```
+   Одна зона, спад от 1 в центре до 0 на краю. Проще, знакомо,
+   ощутимее в игре.
+
+2. **Новая константа** `MAX_EXPLOSION_RADIUS` — жёсткий потолок,
+   рассчитанный на снаряд ×5 от базового:
+   - Grenade: `180 × 5 = 900` px.
+   - Rocket: `120 × 5 = 600` px.
+   - Guided Rocket: `150 × 5 = 750` px.
+
+3. **Формула в `_explode`**:
+   ```
+   r = min(explosion_radius * size_mult * wide, MAX_EXPLOSION_RADIUS)
+   ```
+   - `explosion_radius` — base из cfg (180/120/150).
+   - `size_mult` — damage-driven (cap ×5).
+   - `wide` — Wide Impact (cap ×5).
+   - Произведение до ×25 → клэмп на ×5. Выше 5× размера нет смысла —
+     снаряд всё равно достиг потолка.
+
+4. **Удалены** `BASE_VISUAL_RADIUS` и двухзонный falloff. `effective_reach`
+   теперь равен `r` (не `2r`).
+
+### Итоговые числа
+
+| Снаряд | Base r | Max r (5×) |
+|--------|--------|------------|
+| Grenade | 180 px | **900 px** |
+| Rocket | 120 px | **600 px** |
+| Guided | 150 px | **750 px** |
+
+Базовая граната без пассивок снова достаёт до 180 px (старое
+доброе поведение). При полностью стекнутых пассивках — 900 px.
+
+### Файлы
+- `scripts/characters/grenade.gd` (−7/+3, const)
+- `scripts/characters/rocket.gd` (−7/+3, const)
+- `scripts/characters/guided_rocket.gd` (−7/+3, const)
+
+### Тест
+- `mcp__godot__run_project` — runtime чисто.
+
+---
+
+## 2026-04-22 — chore(balance): потолок радиуса взрыва 25× → 50× + аудит кода
+
+### Запрос
+"Сделай ×50, что-то вообще не ощутим радиус взрыва, проверь ещё
+нет ли ошибок."
+
+### Аудит
+Прочитал `_explode` во всех трёх взрывных снарядах. Ошибок в логике
+нет:
+- Формула `r = min(BASE_VISUAL_RADIUS * size_mult * wide, cap)` верна.
+- Двухзонный falloff правильный.
+- `owner_ref` читается через `is_instance_valid` и `null`-guard для
+  `damage_multiplier` / `radius_multiplier`.
+- `effective_reach` сохраняется для визуала.
+
+Единственный dead-data — `explosion_radius` из cfg (180/120/150).
+Значение загружается `setup_from_config`, но в damage zone больше не
+участвует. Оставлен для обратной совместимости с конфигом (комментарий
+в коде это фиксирует). Удалять не стал — config.json продолжает
+валидироваться.
+
+### Замеченное про "не ощутим"
+Базовый grenade (без пассивок): `r = 22, max_reach = 44 px`.
+Игрок должен стоять практически на гранате. Это сознательно —
+проект масштабирует взрыв пассивками. Чтобы cap ×50 стал реально
+достижим, нужны обе пассивки на максимуме:
+- `size_mult ≤ 5` (PROJECTILE_SIZE_MULT_CAP)
+- `wide ≤ 5` (RADIUS_MULT_CAP)
+- Произведение до 25× ⇒ outer reach до **50× BASE** (с новым cap).
+
+### Фикс
+`12.5 * BASE_VISUAL_RADIUS` → `25.0 * BASE_VISUAL_RADIUS` в трёх файлах.
+Max outer = 2r = **50× BASE**.
+
+| Снаряд | Base reach | Max (50×) |
+|--------|------------|------------|
+| Grenade | 44 px | **1100 px** |
+| Rocket | 20 px | **500 px** |
+| Guided | 24 px | **600 px** |
+
+### Файлы
+- `scripts/characters/grenade.gd` (const, комментарий)
+- `scripts/characters/rocket.gd` (const, комментарий)
+- `scripts/characters/guided_rocket.gd` (const, комментарий)
+
+### Тест
+- `mcp__godot__run_project` — runtime чисто.
+
+---
+
+## 2026-04-22 — chore(balance): потолок радиуса взрыва 10× → 25×
+
+### Запрос
+"Сделай максимальный радиус — 25×."
+
+### Фикс
+Во всех трёх взрывных снарядах `grenade.gd`, `rocket.gd`,
+`guided_rocket.gd`:
+```
+r = min(BASE_VISUAL_RADIUS * size_mult * wide,
+        12.5 * BASE_VISUAL_RADIUS)
+```
+(было `5.0 * BASE_VISUAL_RADIUS`). Так как `max_reach = 2r`,
+внешний потолок теперь `25 × BASE_VISUAL_RADIUS` (было 10×).
+
+### Итоговые числа
+
+| Снаряд | Base | Max (25×) |
+|--------|------|------------|
+| Grenade | reach 44 px | **550 px** |
+| Rocket | reach 20 px | **250 px** |
+| Guided | reach 24 px | **300 px** |
+
+Комментарии про кап в коде обновлены на «12.5×» / «25×».
+
+### Файлы
+- `scripts/characters/grenade.gd` (1× замена + комментарий)
+- `scripts/characters/rocket.gd` (1× замена + комментарий)
+- `scripts/characters/guided_rocket.gd` (1× замена + комментарий)
+
+### Тест
+- `mcp__godot__run_project` — runtime чисто.
+
+---
+
+## 2026-04-22 — fix(gameplay): взрыв = 2×визуал_снаряда, cap 10×стандартного размера
+
+### Запрос
+"Взрыв от гранаты задевает даже на 4× от размера, должно быть не
+более 2×. Установи максимальный радиус взрывной волны у любого
+взрываного снаряда — 10× стандартного размера."
+
+### Причина
+В прошлой итерации я использовал `explosion_radius` из конфига (180
+для гранаты, 120 для ракет) как «радиус снаряда». Это визуально
+в ~8× больше, чем сама граната (sprite ~22 px). Юзер называл это
+"4×" — по сути тот же симптом. Формула должна опираться на
+ВИЗУАЛЬНЫЙ радиус снаряда, не на `explosion_radius` cfg.
+
+### Фикс
+В каждом из трёх взрывных снарядов — `grenade.gd`, `rocket.gd`,
+`guided_rocket.gd`:
+
+1. Добавлена константа `BASE_VISUAL_RADIUS`:
+   - Grenade: 22 (половина display_w 44).
+   - Rocket: 10 (tip distance polygon body).
+   - Guided Rocket: 12 (tip distance).
+
+2. В `_explode`:
+   ```
+   r = min(BASE_VISUAL_RADIUS * size_mult * wide, 5 * BASE_VISUAL_RADIUS)
+   max_reach = 2 * r     # ≤ 10 × BASE_VISUAL_RADIUS — жёсткий кап
+   ```
+   - Размер снаряда ведёт расширение (size_mult × Wide Impact).
+   - Cap на `r = 5 × base` гарантирует `max_reach ≤ 10 × base`.
+   - `cfg.explosion_radius` больше не участвует в damage zone.
+
+3. Добавлено поле `effective_reach` (сохраняется на `_explode`).
+   В `_draw` ветка `exploded` теперь рисует визуал fireball от
+   `effective_reach`, а не от старого `explosion_radius`. Иначе был
+   бы конфликт: визуал 180 px, урон 44 px.
+
+### Итоговые числа
+
+| Снаряд | Base | Max stacks (cap) |
+|--------|------|------------------|
+| Grenade | r=22, reach=44 | r=110, reach=220 |
+| Rocket | r=10, reach=20 | r=50, reach=100 |
+| Guided | r=12, reach=24 | r=60, reach=120 |
+
+Внутри `r` — полный урон, между `r` и `2r` — линейный спад, вне —
+ноль. Размер визуала fireball совпадает с реальной зоной поражения.
+
+### Файлы
+- `scripts/characters/grenade.gd` (+14 / -4: const, effective_reach,
+  cap, draw ties)
+- `scripts/characters/rocket.gd` (+11 / -5)
+- `scripts/characters/guided_rocket.gd` (+10 / -4)
+
+### Тест
+- `mcp__godot__run_project` — runtime чисто.
+
+---
+
+## 2026-04-22 — feat(gameplay): размер снаряда + Wide Impact определяют взрыв с двумя зонами
+
+### Запрос
+"На расстояние взрыва пусть влияет не урон, а размер снаряда
+(+пассивка на дистанцию). Чем ближе игрок к центру снаряда — тем
+сильнее эффект. Максимальная дальность взрыва = 2·радиус снаряда.
+Максимальный урон = 1·радиус и менее."
+
+### Причина
+До этого `explosion_radius *= size_mult` (т.е. размер через damage_cap)
+делался в `_apply_size_mult`, а falloff был линейным от центра:
+`falloff = 1 - dist/r`. Wide Impact (`radius_multiplier`) вообще не
+касался взрывов гранаты/ракеты.
+
+### Фикс
+
+Во всех трёх снарядах с взрывом:
+**`grenade.gd`, `rocket.gd`, `guided_rocket.gd`:**
+1. Из `_apply_size_mult` удалено `explosion_radius *= size_mult` —
+   исходное значение из cfg сохраняется как «база».
+2. В `_explode` эффективный радиус теперь вычисляется:
+   ```
+   var wide: float = src.radius_multiplier if src != null else 1.0
+   var r: float = explosion_radius * size_mult * wide
+   var max_reach: float = 2.0 * r
+   ```
+3. Новый двухзонный falloff:
+   ```
+   if dist >= max_reach: continue
+   if dist <= r:
+       falloff = 1.0               # полный урон + полный knockback
+   else:
+       falloff = 1.0 - (dist - r) / r   # линейный спад от 1 до 0
+   ```
+
+### Семантика
+- Зона 1 (`dist ≤ r`) — максимальный урон и отбрасывание, как
+  попадание «в самый центр».
+- Зона 2 (`r < dist < 2r`) — линейный спад к нулю.
+- За `2r` — нет эффекта.
+- При `size_mult = 1, radius_multiplier = 1`: зона 1 = базовый
+  `explosion_radius` из cfg (как было раньше «полная зона»),
+  zone 2 добавляет мягкий outer ring до 2×.
+- Wide Impact ×5 + Size-Cap ×5 = max `r = base × 25` (покрытие 2×25 = 50×).
+  Cap-ы обеих множителей (5.0 каждый) предотвращают runaway.
+
+### Файлы
+- `scripts/characters/grenade.gd` (+17 / -8 в `_apply_size_mult` + `_explode`)
+- `scripts/characters/rocket.gd` (+17 / -8)
+- `scripts/characters/guided_rocket.gd` (+17 / -8)
+
+### Тест
+- `mcp__godot__run_project` — runtime чисто.
+
+---
+
+## 2026-04-22 — chore(balance): потолок damage→size ×5
+
+### Запрос
+"Максимальное влияние урона на размер снарядов — 5× от стандартного."
+
+### Фикс
+`scripts/characters/player_abilities.gd`:
+- `const PROJECTILE_SIZE_MULT_CAP := 5.0` в шапке файла.
+- Все 8 точек присвоения заменены с
+  `entity.size_mult = player.damage_multiplier` на
+  `entity.size_mult = minf(player.damage_multiplier, PROJECTILE_SIZE_MULT_CAP)`.
+
+Покрытие: Yarn Toss (regular + burst), Grenade, Boomerang (regular +
+burst), Rocket Launcher salvo-3, Rocket Launcher burst, Guided Rocket.
+
+Стакание урона выше ×5 по-прежнему увеличивает damage значения (через
+`damage_multiplier`), но визуал/коллизия/explosion_radius/hit_radius
+останавливаются на ×5 базового.
+
+### Файлы
+- `scripts/characters/player_abilities.gd` (+1 const, 8× `minf`-обёртки)
+
+### Тест
+- `mcp__godot__run_project` — runtime чисто (warnings pre-existing).
+
+---
+
+## 2026-04-22 — feat(gameplay): урон масштабирует размер снарядов (5 способностей)
+
+### Запрос
+"Пусть урон влияет на размер снарядов: чем больше урон — тем больше
+снаряды (радиус поражения и взрыва должны расти пропорционально).
+Применить к Yarn Toss, Grenade, Rocket Launcher, Boomerang,
+Guided Rocket."
+
+### Реализация
+Каждому снаряду добавлено поле `size_mult: float = 1.0`. В
+`player_abilities.gd` в каждой точке спавна (и в бурст-вариантах)
+строка:
+```
+entity.size_mult = player.damage_multiplier
+```
+`damage_multiplier` (Glass Cannon, Thread Master legendary, damage_flat
+и т.д.) напрямую становится коэффициентом визуала + поражающей
+зоны. Кап-а нет (user не просил) — Wide Impact и Damage работают
+параллельно.
+
+### По файлам
+
+**`scripts/characters/yarn_projectile.gd`:**
+- `size_mult`, `_apply_size_mult()` в `_ready`.
+- Коллайдер (CircleShape2D) дублируется и `radius *= size_mult`
+  (иначе sub_resource шарится между инстансами).
+- `_draw`: `48.0 * size_mult`, трейл `14.0 * size_mult`.
+
+**`scripts/characters/grenade.gd`:**
+- `size_mult`, `_apply_size_mult()` в `_ready`.
+- `explosion_radius *= size_mult`, `player_detect_radius *= size_mult`,
+  duplicate collision + radius.
+- `_draw`: `44.0 * size_mult`.
+
+**`scripts/characters/rocket.gd`:**
+- `size_mult`, `_apply_size_mult()`: `explosion_radius` и коллайдер.
+- `_draw`: все полигональные смещения + trail + nose + exhaust
+  умножены на `size_mult`.
+
+**`scripts/characters/guided_rocket.gd`:**
+- То же самое: `explosion_radius` + коллайдер + визуал полностью
+  проходят через `size_mult`.
+
+**`scripts/characters/boomerang.gd`:**
+- Node2D без коллайдера — масштабируется только `hit_radius`
+  (distance-based detection) + draw size (72.0 * size_mult).
+
+**`scripts/characters/player_abilities.gd`:**
+- 8 точек: `_ab_yarn_toss`, `_burst_yarn_toss`, `_throw_grenade`,
+  `_ab_boomerang`, `_burst_boomerang`, `_burst_rockets`,
+  `_ab_rocket_launcher` (цикл 3 ракет), `_ab_guided_rocket`.
+
+### Семантика
+- damage_multiplier = 1.0 → базовый размер, нет overhead.
+- Glass Cannon +35% урона → снаряды визуально и по радиусу +35%.
+- Damage stack (например Glass Cannon + Swift Feet legendary) →
+  мультипликативно накапливается.
+- Прозрачно для shield/parry/phase — только визуал и радиус.
+
+### Файлы
+- `scripts/characters/yarn_projectile.gd` (+19 / -5)
+- `scripts/characters/grenade.gd` (+17 / -3)
+- `scripts/characters/rocket.gd` (+22 / -8)
+- `scripts/characters/guided_rocket.gd` (+22 / -7)
+- `scripts/characters/boomerang.gd` (+8 / -3)
+- `scripts/characters/player_abilities.gd` (+8 строк setter'ов)
+
+### Тест
+- `mcp__godot__run_project` — runtime чисто (warnings не новые).
+
+---
+
+## 2026-04-22 — fix(gameplay): Heaven's Wrath edge-to-edge — равная ширина всех лучей
+
+### Запрос
+"Сейчас более дальние лучи от игрока имеют большее расстояние между
+собой."
+
+### Причина
+Центры лучей в edge-to-edge режиме считались от фиксированного
+`pillar_width`, но реальная ширина каждого луча сужалась на 5% за
+индекс (`pillar_width * (1 - index * 0.05)`). При width = 300:
+- Луч 0: ширина 300, правый край = 300.
+- Луч 1: центр на 450, ширина 285 → левый край 307.5. Gap 7.5 px.
+- Луч 2: центр на 750, ширина 270 → левый край 615 vs правый луча 1
+  (592.5). Gap **22.5 px**.
+- Луч 3: Gap ~37.5 px. Лучи тем дальше, тем сильнее разошлись.
+
+### Фикс
+`scripts/characters/heavens_wrath.gd::_spawn_pillar`:
+```
+if edge_to_edge:
+    pw = pillar_width            # все 5 лучей одинаковой ширины
+else:
+    pw = pillar_width * (1.0 - index * 0.05)   # прежний taper
+```
+В edge-to-edge режиме 5%-сужение отключено — инвариант
+«левый край = правому краю предыдущего» выполняется буквально для
+всех 5 лучей. В обычном режиме taper сохраняется для визуального
+ритма (там лучи и так не касаются).
+
+### Файлы
+- `scripts/characters/heavens_wrath.gd` (+7 / -1, таблица ширины)
+
+### Тест
+- `mcp__godot__run_project` — runtime чисто.
+
+---
+
+## 2026-04-22 — feat(gameplay): Heaven's Wrath — 5 лучей edge-to-edge на максимуме WI
+
+### Запрос
+"На максимальном влиянии от Wide Impact Heaven's Wrath должен работать
+так: 5 лучей, начало первого в точке использования, начало второго
+в точке конца первого (а не центра), и так далее."
+
+### Реализация
+`scripts/characters/heavens_wrath.gd`:
+- Новый флаг `edge_to_edge: bool` — выставляется в `setup_from_config`
+  при `radius_mult >= 4.99` (эпсилон против float-шума умножений,
+  реальный потолок `RADIUS_MULT_CAP = 5.0`).
+- При `edge_to_edge`: `pillar_count = 5` (вместо базовых 6).
+- В `_spawn_pillar`:
+  ```
+  if edge_to_edge:
+      offset_x = (index + 0.5) * pillar_width * aim_dir.x
+  else:
+      offset_x = (index + 1) * pillar_spacing * aim_dir.x
+  ```
+  Первый луч имеет центр в `player.x + width/2` → его **левый край
+  прямо в точке каста**. Следующий луч сдвинут на `+width` →
+  левый край = правый край предыдущего.
+
+### Семантика
+- WI ×1–×4: старая логика 6 лучей, spacing=120 фикс, ширина растёт,
+  края сближаются.
+- WI ×5 (потолок): внезапная смена раскладки на 5 лучей впритык,
+  стартующих ровно из игрока. Полная «стена света» без промежутков.
+
+### Файлы
+- `scripts/characters/heavens_wrath.gd` (+13 / -2)
+- `docs/passives/05_wide_impact.md` (пояснение максимальной раскладки)
+
+### Тест
+- `mcp__godot__run_project` — runtime чисто.
+
+---
+
+## 2026-04-22 — fix(gameplay): Heaven's Wrath — Wide Impact масштабирует только ширину
+
+### Запрос
+"Wide Impact на Heaven's Wrath: лучи увеличиваются, расстояние между
+краями луча уменьшаются, как и расстояние от края первого луча
+до игрока."
+
+### Причина
+В предыдущей итерации я масштабировал и `pillar_width`, и
+`pillar_spacing` на `radius_mult`. Центры лучей раздвигались
+пропорционально ширине — края стояли на тех же расстояниях, а край
+первого луча от игрока РОС вместе с `pillar_spacing`. Противоречит
+запросу.
+
+### Фикс
+`scripts/characters/heavens_wrath.gd::setup_from_config`:
+- `pillar_spacing = cfg.get("pillar_spacing", 120.0)` — **без**
+  `radius_mult`. Центры фиксированы.
+- `pillar_width = cfg.get("pillar_width", 60.0) * radius_mult` —
+  ширина всё ещё растёт.
+
+Математика (базово 120 spacing / 60 width):
+- Без WI: край первого луча = 120 − 30 = 90 px от игрока;
+  edge-to-edge gap = 120 − 60 = 60 px.
+- WI ×2: ширина 120, первый край = 120 − 60 = 60 px (ближе);
+  gap = 120 − 120 = 0 px (лучи касаются).
+- WI ×3: первый край = 120 − 90 = 30 px; gap = 120 − 180 = −60 px
+  (лучи перекрываются — "стена света").
+
+`docs/passives/05_wide_impact.md` обновлён: «ширина столбов растёт,
+spacing фиксирован → края сближаются, край первого луча к игроку».
+
+### Файлы
+- `scripts/characters/heavens_wrath.gd` (−1 умножение, +комментарий)
+- `docs/passives/05_wide_impact.md` (формулировка)
+
+### Тест
+- `mcp__godot__run_project` — runtime чисто.
+
+---
+
+## 2026-04-22 — chore(balance): потолок Wide Impact ×5
+
+### Запрос
+"Сделай максимальное влияние Wide Impact — 5x от изначального размера."
+
+### Фикс
+`scripts/characters/player.gd`:
+- `const RADIUS_MULT_CAP := 5.0` (рядом с `GRAPPLE_RANGE_MULT_CAP`).
+- В конце `_apply_passives`:
+  `radius_multiplier = minf(radius_multiplier, RADIUS_MULT_CAP)`.
+
+Стакание Wide Impact прогрессивно растёт до потолка и затем не
+увеличивается. Два Legendary копии дают 1.8² = 3.24× — под
+потолком; три Legendary = 5.83× → кэпнется в 5.0. Работает для
+всех мест, которые читают `radius_multiplier` (взрывы, dash hit,
+spike armor, Heaven's Wrath, Portal Gate, cloud radii и т.д.).
+
+`docs/passives/05_wide_impact.md` упоминает кэп.
+
+### Файлы
+- `scripts/characters/player.gd` (+7 строк: const + clamp)
+- `docs/passives/05_wide_impact.md` (комментарий о кэпе)
+
+### Тест
+- `mcp__godot__run_project` — runtime чисто.
+
+---
+
+## 2026-04-22 — feat(gameplay): Wide Impact масштабирует Heaven's Wrath и Portal Gate
+
+### Запрос
+"Wide Impact должен влиять на размер Heaven's Wrath и Portal Gate."
+
+### Причина
+- `heavens_wrath.gd::setup_from_config` брал `pillar_width` и
+  `pillar_spacing` из cfg напрямую — пассивка `radius_multiplier`
+  игнорировалась. Покрытие Wrath не зависело от Wide Impact.
+- `player_abilities.gd::_ab_portal_gate` уже умножал
+  `portal_radius * radius_multiplier` (логика свапа), НО визуал
+  портала в `player.gd::_draw` был захардкожен:
+  `display_w = 180.0`, `r0 = 35.0`, `r1 = 150.0`. Игрок с Wide Impact
+  видел маленький портал, но свапал в большом радиусе — рассинхрон.
+
+### Фикс
+
+**`scripts/characters/heavens_wrath.gd`:**
+- `setup_from_config` принимает новый параметр `radius_mult: float = 1.0`.
+- `pillar_width *= radius_mult`, `pillar_spacing *= radius_mult`.
+  `pillar_count` намеренно не меняется — ритм 6 ударов сохраняется.
+
+**`scripts/characters/player_abilities.gd::_ab_heavens_wrath`:**
+- Передаёт `player.radius_multiplier` пятым аргументом
+  `setup_from_config`.
+
+**`scripts/characters/player.gd` (Portal Gate visual):**
+- `display_w = 180.0 * radius_multiplier` — спрайт портала.
+- `r0 = 35 * radius_multiplier`, `r1 = 150 * radius_multiplier` —
+  дальность разлёта фиолетовых частиц.
+- Логика свапа уже была под `radius_multiplier` (без изменений).
+
+**`docs/passives/05_wide_impact.md`:**
+- Описание расширено: явно перечислены Heaven's Wrath и Portal Gate.
+
+### Файлы
+- `scripts/characters/heavens_wrath.gd` (+5 / -3)
+- `scripts/characters/player_abilities.gd` (+2 / -1)
+- `scripts/characters/player.gd` (+4 / -3 в Portal Gate рендере)
+- `docs/passives/05_wide_impact.md` (описание)
+
+### Тест
+- `mcp__godot__run_project` — runtime чисто.
+
+---
+
+## 2026-04-22 — fix(gameplay): геометрически корректный отскок снарядов от платформ
+
+### Запрос
+"Отскоки любых снарядов от платформ должны быть геометрически логичны.
+Сейчас отскок может улететь с другой стороны платформы. Должен быть
+угол, обратный к нормали платформы, по которой прилетел снаряд."
+
+### Причина
+В `yarn_projectile.gd`, `rocket.gd`, `guided_rocket.gd` нормаль
+аппроксимировалась как «направление от центра платформы к снаряду»:
+```
+normal := -(body.global_position - global_position).normalized()
+```
+На широких прямоугольных платформах это неверно — центр может быть
+далеко в стороне от точки контакта. Пример: снаряд попал в **верх**
+широкой платформы у её правого края. `body.global_position` смещён
+от центра, псевдонормаль почти горизонтальна → отражение продолжает
+движение горизонтально (а то и «через» платформу), вместо вертикального.
+
+### Фикс
+В каждом из трёх файлов добавлен хелпер `_surface_normal_at_hit()`:
+```
+space := get_world_2d().direct_space_state
+query := PhysicsRayQueryParameters2D.create(
+    global_position - direction * 80,
+    global_position + direction * 40,
+    1  # layer 1 = walls/platforms
+)
+result := space.intersect_ray(query)
+return result.get("normal", Vector2.UP)
+```
+Рейкаст по линии полёта снаряда (назад-вперёд от точки контакта)
+возвращает **настоящую** нормаль поверхности — `direction.bounce(normal)`
+теперь геометрически правилен для любых форм (широкие платформы,
+наклонные поверхности и т.п.).
+
+Применяется:
+- `yarn_projectile.gd::_on_body_entered` в ветке StaticBody2D.
+- `rocket.gd::_rebounce_rocket` при re-bounce после взрыва.
+- `guided_rocket.gd::_rebounce_guided` аналогично.
+
+Grenade (CharacterBody2D) использует `get_slide_collision(0).get_normal()`
+из `move_and_slide` — уже геометрически правильный, без изменений.
+
+### Файлы
+- `scripts/characters/yarn_projectile.gd` (+20 / -6)
+- `scripts/characters/rocket.gd` (+23 / -9)
+- `scripts/characters/guided_rocket.gd` (+20 / -6)
+
+### Тест
+- `mcp__godot__run_project` — runtime чисто.
+
+---
+
+## 2026-04-22 — feat(gameplay): Ricochet покрывает гранату и ракеты
+
+### Запрос
+"Пассивка отскока не работает на некоторых снарядах. Граната: после
+взрыва лететь в случайном направлении на быстрой скорости и снова
+взрываться (повторных взрывов = кол-во отскоков). Ракета управляемая:
+то же, но направление как у yarn toss. Тройные ракеты: то же, что и
+управляемая — но 3 ракеты."
+
+### Причина
+Пассивка Ricochet (`ricochet_bounces`) применялась только к
+`yarn_projectile.gd` (строка 49 — `bounces_left = max_bounces`).
+`grenade.gd`, `rocket.gd`, `guided_rocket.gd` игнорировали это поле —
+после единственного взрыва снаряд просто удалялся.
+
+### Фикс
+
+**`scripts/characters/grenade.gd`:**
+- Добавлены `max_bounces`, `bounces_left`. В `_ready` копируем max → left.
+- В `_explode()` после 0.2 с пауза: если `bounces_left > 0`,
+  декрементируем и вызываем `_rebounce_grenade()`.
+- `_rebounce_grenade`: случайное направление (random angle ∈ [0, TAU)),
+  скорость = `max(throw_speed * 1.2, 1500)`, `velocity` и `throw_dir`
+  пересчитаны, `timer = fuse_time`, `exploded = false`,
+  `initialized = true` (чтобы физика не переписывала velocity на
+  следующем тике).
+
+**`scripts/characters/rocket.gd` (тройные ракеты):**
+- Добавлены `max_bounces`, `bounces_left`, `max_lifetime`, `last_hit_body`.
+- В `_on_body_entered`: при попадании в игрока/стену сохраняем
+  `last_hit_body` перед вызовом `_explode()`.
+- В `_explode()` после паузы: если есть отскок — `_rebounce_rocket()`.
+- `_rebounce_rocket`: если последний хит — `StaticBody2D`, используем
+  reflection как в yarn_toss (approx normal от центра тела, `direction.bounce(normal)`);
+  иначе случайное направление. Сбрасываем `lifetime = max_lifetime`,
+  `exploded = false`.
+
+**`scripts/characters/guided_rocket.gd`:**
+- Та же схема: `max_bounces`, `bounces_left`, `max_lifetime`,
+  `last_hit_body`. `_rebounce_guided` гасит `steering`/`boosted`
+  (игрок уже отпустил), homing продолжает действовать.
+
+**`scripts/characters/player_abilities.gd`:**
+- В `_throw_grenade`, `_ab_guided_rocket`, `_ab_rocket_launcher`
+  (все 3 ракеты цикла), `_burst_rockets` (бурст-рокеты) добавлены
+  `<entity>.max_bounces = player.ricochet_bounces` строки.
+
+**`docs/passives/08_ricochet.md`:** описание переписано —
+пассивка теперь покрывает yarn_toss, grenade, rocket и guided_rocket.
+
+### Файлы
+- `scripts/characters/grenade.gd` (+26)
+- `scripts/characters/rocket.gd` (+36)
+- `scripts/characters/guided_rocket.gd` (+37)
+- `scripts/characters/player_abilities.gd` (+4 строки)
+- `docs/passives/08_ricochet.md` (обновлено описание)
+
+### Тест
+- `mcp__godot__run_project` — runtime чисто.
+
+---
+
+## 2026-04-22 — fix(gameplay): Iron Skin теперь действует и на DoT-тики
+
+### Запрос
+"Пассивка на пониженный входящий урон не работает или работает очень
+плохо. Не особо заметно разницу."
+
+### Причина
+`take_damage()` корректно умножал входящий урон на `(1 - damage_reduction)`
+перед вычитанием из `hp`. Однако DoT-эффекты (огонь и яд) обходили
+эту логику:
+
+- `_apply_fire_burn()` — `hp -= dmg` (прямое вычитание на каждый тик).
+- `_run_poison_dot()` — `hp -= per_tick` (прямое вычитание).
+
+Оба игнорировали `damage_reduction`. В бою с Poison Projectile +
+Fire Thread игрок с Iron Skin получал **полный** урон через DoT и
+мизерное снижение только по прямым ударам — отсюда ощущение, что
+пассивка «почти не работает».
+
+### Фикс
+`scripts/characters/player.gd`:
+- `_apply_fire_burn` tick: `hp -= dmg * (1.0 - damage_reduction)`
+- `_run_poison_dot` tick: `hp -= per_tick * (1.0 - damage_reduction)`
+
+Теперь редукция применяется единообразно ко всем типам входящего
+урона — прямому, огню, яду. Cap 0.8 на `damage_reduction` (в
+`_apply_passives`) по-прежнему защищает от 100% иммунитета при
+стеке Iron Skin + Tank.
+
+### Файлы
+- `scripts/characters/player.gd` (+2 / -2 + 2 комментария)
+
+### Тест
+- `mcp__godot__run_project` — runtime чисто.
+
+---
+
+## 2026-04-22 — fix(gameplay): Shockwave + shield VFX на нажатие щита (фикс-CD 5 с)
+
+### Запрос
+"Shockwave и анимация щита работают только при parry_burst. Исправить:
+Shockwave — перезарядка всегда 5 с, ничем не меняется, при повторном
+нажатии щита не срабатывает если в cooldown. Shockwave и анимация
+щита должны работать независимо от наличия parry_burst."
+
+### Причина
+- `shield_flash` VFX эмиттился только из `take_damage` (при успешной
+  блокировке), `on_parry_reflect` (при отражении снаряда) и каждой
+  итерации `_burst_parry`. Обычное нажатие щита без входящей атаки
+  не давало flash — визуально "щит есть только с parry_burst".
+- `_do_shockwave()` вызывался в тех же самых местах — т.е. только при
+  успехе или бурсте. Без parry_burst он срабатывал только если
+  противник реально бил в parry-окно.
+- Перезарядки у shockwave не было совсем; в бурсте он мог сработать
+  много раз подряд (по одному на итерацию).
+
+### Фикс
+
+**`scripts/characters/player.gd`:**
+- Добавлены:
+  ```
+  const SHOCKWAVE_CD := 5.0     # hard-coded, ни одна пассивка не меняет
+  var shockwave_cooldown: float = 0.0
+  ```
+- В `_update_timers` добавлен декремент `shockwave_cooldown`.
+- В `respawn()` сбрасывается `shockwave_cooldown = 0.0`.
+- Из `take_damage` (parry-ветка) и `on_parry_reflect` **удалены**
+  вызовы `_add_vfx("shield_flash", …)` и `_do_shockwave()` — теперь
+  это задача press-обработчика.
+
+**`scripts/characters/player_abilities.gd::handle_abilities` (parry press):**
+- Добавлен всегдашний `player._add_vfx("shield_flash", 0.3)` — анимация
+  щита играет при каждом нажатии, независимо от любых пассивок.
+- Добавлен вызов `_do_shockwave()` с гейтом по `shockwave_cooldown`:
+  если пассивка активна и cooldown истёк — волна + установка
+  `shockwave_cooldown = SHOCKWAVE_CD`. Иначе — щит без волны.
+
+**`scripts/characters/player_abilities.gd::_burst_parry`:**
+- Тот же гейт по `shockwave_cooldown` у каждой итерации. Parry Burst
+  теперь не может за 0.15 с выпустить несколько shockwave'ов подряд.
+
+**`docs/passives/15_shockwave.md`:**
+- Описание переписано: "при активации щита (не только при успешной
+  блокировке)", явно указан фикс-CD 5 с и non-modifiable статус.
+
+### Файлы
+- `scripts/characters/player.gd` (+7 / -8)
+- `scripts/characters/player_abilities.gd` (+14 / -2)
+- `docs/passives/15_shockwave.md` (описание)
+
+### Тест
+- `mcp__godot__run_project` — runtime чисто.
+
+---
+
+## 2026-04-22 — feat(gameplay): масштабирование knockback по размеру + общий cap
+
+### Запрос
+"Пофиксить отталкивание щитом и от взрывов/снарядов — слишком сильно.
+Силу отталкивания считать в зависимости от размера игрока и установить
+максимальную силу. Пассивки, увеличивающие отталкивание, должны его
+увеличивать, но есть предел."
+
+### Причина
+- `apply_knockback(force)` просто прибавлял `force` к `velocity` без
+  учёта массы и без кап-предела. Взрыв гранаты с buff'ом урона мог
+  сделать скорость неадекватной, а маленький игрок с Glass Cannon
+  получал то же ускорение, что и крупный Tank — физически неверно.
+- `_handle_player_collisions()` умножал `bounce_force` на
+  `collision_force_mult` (Heavy Impact: ×1.5/1.8/2.2/3.0,
+  мультипликативный стак). Два Mythic Heavy Impact = ×9 — отскок
+  превращал столкновение в катапульту.
+
+### Фикс — `scripts/characters/player.gd`
+
+1. **Новая константа:** `MAX_KNOCKBACK_MAGNITUDE = 1800.0`.
+2. **Новый хелпер** `_scale_knockback(force) -> Vector2`:
+   ```
+   scaled = force / max(hp_scale, 0.5)
+   if scaled.length > MAX_KNOCKBACK_MAGNITUDE:
+       scaled = scaled.normalized * MAX_KNOCKBACK_MAGNITUDE
+   ```
+   `hp_scale` ∈ [0.7, 1.8] (от MAX_HP/100). Большой Tank (hp_scale=1.8)
+   получает ×0.56 толчка, мелкий Glass Cannon (0.7) — ×1.43. После
+   скейлинга — абсолютный cap.
+3. **`apply_knockback(force)`** теперь делает:
+   `velocity += _scale_knockback(force)`.
+   Покрывает ВСЕ источники через единую точку: взрывы (граната, yarn
+   bomb, ракета, boomerang), tripwire, spike armor, swap, grab/throw,
+   parry-reflect, heavens wrath, shockwave — всё, что вызывает
+   `apply_knockback`.
+4. **Player-vs-player bounce** в `_handle_player_collisions()` теперь
+   тоже проходит через `_scale_knockback` для каждой стороны отдельно.
+   Heavy Impact усиливает `collision_force_mult` как раньше, но
+   эффективный применяемый импульс ограничен cap'ом.
+
+### Семантика
+- Большой игрок отталкивается меньше — честно.
+- Маленький игрок чуть сильнее — но cap всё равно не даст улететь.
+- Пассивки-бустеры (Heavy Impact + будущие) работают до предела.
+- Shield/invincibility по-прежнему полностью блокируют `apply_knockback`
+  (проверка в начале функции без изменений).
+
+### Файлы
+- `scripts/characters/player.gd` (+22 / -3)
+
+### Тест
+- `mcp__godot__run_project` — runtime чисто.
+
+---
+
+## 2026-04-22 — chore(ui): счётчик побед перенесён вниз (не перекрывается пассивками)
+
+### Запрос
+"При большом количестве пассивок у игроков они перекрывают победы —
+перенести счётчик побед вниз."
+
+### Причина
+В `hud_draw.gd::_draw_score_dots()` счётчик был закреплён у верхнего
+левого угла (`start_x=20`, `start_y=18`, `ROW_GAP=22` на каждого из
+4 игроков). Иконки пассивок отрисовываются у верхнего правого угла
+и растут влево от `vp.x - 15` по мере накопления. При полном наборе
+пассивок их строка пересекала центр экрана и накладывалась на точки
+счёта.
+
+### Фикс
+`scripts/ui/hud_draw.gd::_draw_score_dots()`:
+- Привязка к нижнему-левому углу:
+  ```
+  block_h = player_count * ROW_GAP
+  start_y = viewport.y - block_h - 18  # bottom_margin
+  ```
+- Порядок строк сохранён: P1 — верхняя строка блока, P4 — нижняя
+  (флеш с нижним margin). Визуально зеркалит правую колонку пассивок.
+
+Пассивки растут сверху-вправо вниз, счётчик — снизу-влево вверх.
+Пересечься они больше не могут при любом количестве пассивок.
+
+### Файлы
+- `scripts/ui/hud_draw.gd` (+8 / -2, комментарий в шапке обновлён)
+
+### Тест
+- `mcp__godot__run_project` — runtime чисто.
+
+---
+
+## 2026-04-22 — feat(gameplay): нить grapple — cap дальности + скорость ∝ дальности
+
+### Запрос
+"При большом количестве пассивок на дальность нитка улетает вдаль и
+не возвращается. Нужно ограничение дальности (порог высокий) и чтобы
+скорость возврата/выстрела была пропорциональна дальности (всегда).
+Пассивки должны увеличивать только дальность — скорость растёт сама.
+На картах пассивок с дальностью и скоростью оставить только дальность."
+
+### Причина
+- `grapple_range_mult` мог стекать без предела (2× Thread Master =
+  2×2 = ×4 → 4800 px дальности на базе 1200).
+- `GRAPPLE_RETRACT_SPEED` был жёсткой константой (5000 px/s), не
+  зависел от `grapple_range_mult`. Выстрел использовал отдельный
+  `grapple_speed_mult` — но у Swift Feet он даже не применялся (в
+  `_apply_passives` для `SWIFT_FEET` стоял `pass` + неверный комментарий
+  «handled by universal modifiers», хотя `grapple_speed_mult` —
+  не universal; значит его +15/25/35/50% у Swift Feet **игнорировались**).
+- Итог: нить могла улететь на 4800 px и ~1 секунду ползти обратно с
+  5000 px/s, оставляя игрока беззащитным.
+
+### Фикс
+
+**`scripts/characters/player.gd`:**
+- Добавлена константа `const GRAPPLE_RANGE_MULT_CAP := 2.5`.
+- Удалены `grapple_speed_mult` var + reset (переменная больше нигде
+  не нужна).
+- В `THREAD_MASTER` ветке `_apply_passives` удалена строка
+  `grapple_speed_mult *= …`.
+- В конце `_apply_passives` добавлен clamp:
+  `grapple_range_mult = minf(grapple_range_mult, GRAPPLE_RANGE_MULT_CAP)`.
+
+**`scripts/characters/player_grapple.gd`:**
+- В `update_grapple_shot()` вместо `GRAPPLE_SHOOT_SPEED *
+  grapple_speed_mult` и фиксированного `GRAPPLE_RETRACT_SPEED`
+  введены локальные:
+  ```
+  shoot_spd   = GRAPPLE_SHOOT_SPEED   * grapple_range_mult
+  retract_spd = GRAPPLE_RETRACT_SPEED * grapple_range_mult
+  ```
+- Используются единообразно в shoot, prev_tip и retract ветках.
+
+Эффект: при любом множителе дальности полный круговорот занимает то
+же время, что и базовый. Стек Thread Master растягивает и дальность,
+и скорость одинаково. Вектор «пассивки = только дальность, скорость
+автоматическая» выполнен.
+
+**`data/passives.json` + docs:**
+- `Thread Master` (id 4): у всех 4 редкостей убран `grapple_speed_mult`,
+  описания/positive обновлены на «+X% дальность нити». Legendary
+  больше не говорит про скорость, оставлен +20% speed_multiplier.
+- `Swift Feet` (id 11): убран `grapple_speed_mult` из всех редкостей
+  (он и раньше не применялся). Positive тексты сокращены до «+X%
+  скорость». Legendary сохраняет +10% урон.
+- `docs/passives/04_thread_master.md` + `docs/passives/11_swift_feet.md`
+  переписаны под новый состав.
+
+### Файлы
+- `scripts/characters/player.gd` (+7 / -3)
+- `scripts/characters/player_grapple.gd` (+9 / -6)
+- `data/passives.json` (Thread Master + Swift Feet rarities)
+- `docs/passives/04_thread_master.md` (переписан)
+- `docs/passives/11_swift_feet.md` (переписан)
+
+### Тест
+- `mcp__godot__run_project` — runtime чисто.
+
+---
+
+## 2026-04-22 — feat(gameplay): универсальное сохранение импульса (dash carry)
+
+### Запрос
+"У Dash должен оставаться более сильный импульс. Сейчас практически вся
+скорость теряется после дэша очень быстро. При дэше замедлить его
+могут только внешние факторы или физика (притяжение вниз). Не строй
+логику dash исходя из того, что именно вбок не должен теряться импульс —
+нужна универсальная логика."
+
+### Причина
+`_handle_movement` в `player.gd` применял «мягкое» искусственное трение
+(`GROUND_FRICTION * SPEED * 0.30 * fric_mul`) к любой скорости выше
+прогулочной. При `dash_speed = 900`, `GROUND_FRICTION = 12`,
+`SPEED = 300` это давало декель `1080 px/s²` — скорость 900 гасла до 0
+за ~0.83 с. В воздухе `AIR_DRAG = 0.5/s` тоже скусывал dash-carry.
+
+### Фикс — `scripts/characters/player.gd::_handle_movement`
+Универсальное правило: **любая горизонтальная скорость выше
+`max_walk = SPEED * множители` считается "boosted momentum"** (dash,
+knockback, взрывной импульс, грэппл-флинг — всё одинаково) и НЕ
+подвергается искусственному трению. Декей разрешён только внешним
+силам:
+- Гравитация (вертикаль).
+- Коллизии через `move_and_slide()`.
+- Сам игрок, если зажимает противоположное направление (counter-steer).
+
+Ключевые условия:
+```
+var over_walk := absf(velocity.x) > max_walk
+var counter_steering := direction != 0.0 \
+    and signf(direction) != signf(velocity.x)
+```
+- На земле: если `over_walk and not counter_steering` — `pass` (трение
+  не применяется). Иначе — обычное `move_toward` с полным трением
+  (ходьба и контр-штурвал работают как прежде).
+- В воздухе: air_drag применяется ТОЛЬКО при `not over_walk`. Выше
+  порога — полный carry до столкновения/ввода.
+
+Логика направлено-нейтральна: вбок, вверх по диагонали, назад —
+carry сохраняется одинаково. Никаких `if velocity.x is horizontal`.
+
+### Сайд-эффекты
+Правило универсально применяется и к любому другому boost:
+- Knockback от взрывов (граната/yarn_bomb/ракета) теперь не тает.
+- Grapple-fling (отрыв от верёвки) несёт игрока дальше.
+- Пассивка mega_knockback ощущается жёстче.
+
+Всё по дизайну: раньше эти импульсы тоже гасли фальшиво; теперь
+коридор ощущений честный и предсказуемый для всех способностей.
+
+### Файлы
+- `scripts/characters/player.gd::_handle_movement` (+27 / -21)
+
+### Тест
+- `mcp__godot__run_project` — runtime чисто, ошибок парсинга нет.
+
+---
+
+## 2026-04-22 — fix(ui): плохо видимый прицел у P1 на пёстрых картах
+
+### Запрос
+"Прицел у игрока на клавиатуре плохо видно на некоторых картах."
+
+### Причина
+P1 (клавиатура+мышь) полагался только на системный курсор
+(`Input.CURSOR_CROSS`) — на картах с ярким/пёстрым фоном курсор ОС
+сливался с окружением. Геймпад-игроки (P2-P4) уже рисовали внутриигровой
+крестик в `player.gd::_draw_crosshair()` с чёрной обводкой и цветом
+игрока, но он был залочен под `if player_id != 1`.
+
+### Фикс — `scripts/characters/player.gd`
+1. **Убрана блокировка** отрисовки крестика для P1 (в `_draw()`).
+2. `_draw_crosshair()` теперь:
+   - Для P1: позиция = `get_global_mouse_position() - global_position`
+     (мировая позиция курсора, переведённая в локальную).
+   - Для P2-P4: по-прежнему `aim_direction * CROSSHAIR_DIST`.
+3. В `setup(id)` при `player_id == 1` скрываем системный курсор
+   (`Input.mouse_mode = Input.MOUSE_MODE_HIDDEN`) — чтобы не было
+   двух индикаторов. `CURSOR_CROSS` shape оставлен как безопасный
+   fallback на случай, если курсор где-то принудительно покажут.
+4. Добавлен `_exit_tree()`: при удалении P1 восстанавливает
+   `MOUSE_MODE_VISIBLE` — UI лобби/меню остаются кликабельными.
+
+Теперь у P1 в матче виден тот же яркий крестик (цвет игрока + толстая
+чёрная обводка), что и у геймпадов — одинаково читается на любом фоне.
+
+### Файлы
+- `scripts/characters/player.gd` (+18 / -3)
+
+### Тест
+- `mcp__godot__run_project` — runtime чисто, ошибок парсинга нет.
+
+---
+
+## 2026-04-22 — fix(gameplay): граната не взрывается при попадании в игрока
+
+### Запрос
+"Граната при попадании в игрока не взрывается. Должен происходить
+моментальный взрыв при столкновении с персонажем."
+
+### Причина
+Детекция контакта в `grenade.gd`:
+```
+if diff.length() < player_detect_radius + p_radius:
+```
+С конфигом `player_detect_radius = 20` и `p_radius = 24` порог = **44 px**
+между центрами. Визуальное касание наступает при ~46 px (22 px radius
+спрайта гранаты + 24 px игрока). Детекция требовала **2 px
+перекрытия** — почти всегда пропускалась:
+- Быстрые броски (до 2000 px/s = 33 px/tick) **тунелировали** мимо 2-px
+  коридора за один физический кадр.
+- Даже медленные броски (после bounce, ~500 px/s = 8 px/tick)
+  срабатывали нестабильно.
+
+### Фикс — `scripts/characters/grenade.gd`
+1. **Swept-check** отрезка pre-move → post-move против окружности игрока.
+   Сохраняем `prev_pos` перед `move_and_slide()`, считаем минимальную
+   дистанцию от центра игрока до отрезка траектории за кадр:
+   ```
+   var t = clamp((p.pos - prev_pos).dot(seg) / seg.length_squared(), 0, 1)
+   var closest = prev_pos + seg * t
+   if closest.distance_to(p.pos) < hit_r: ...
+   ```
+   Теперь быстрая граната не может проскочить между кадрами.
+2. Parry kick_dir считается от игрока к **текущей** позиции гранаты
+   (а не по старому `diff` из предыдущей проверки).
+
+### Фикс — `data/abilities.json` + `docs/abilities/10_grenade.md`
+`player_detect_radius: 20.0 → 24.0`. Теперь детекция (24+24=48 px)
+гарантированно срабатывает ровно в момент визуального касания.
+
+### Файлы
+- `scripts/characters/grenade.gd` (+15 / -7)
+- `data/abilities.json` (grenade: player_detect_radius 20→24)
+- `docs/abilities/10_grenade.md` (синхронизация конфига)
+
+### Тест
+- `mcp__godot__run_project` game.tscn — runtime чисто, ошибок нет.
+
+---
+
 ## 2026-04-21 — tweak(vfx): прозрачность stink_cloud + fade in/out
 
 ### Запрос

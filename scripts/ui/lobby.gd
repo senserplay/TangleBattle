@@ -63,6 +63,10 @@ var blink_timer: float = 0.0
 
 
 func _ready() -> void:
+	# Control roots default to MOUSE_FILTER_STOP, which absorbs mouse
+	# clicks inside the gui system before `_unhandled_input` fires.
+	# Ignore so script-level click handling receives the events.
+	mouse_filter = Control.MOUSE_FILTER_IGNORE
 	slot_device[0] = -2
 	set_process_unhandled_input(true)
 
@@ -124,6 +128,11 @@ func _unhandled_input(event: InputEvent) -> void:
 	if event is InputEventMouseButton and event.pressed:
 		if event.button_index == MOUSE_BUTTON_LEFT:
 			_handle_mouse_click(event.position)
+	# Mouse hover → focus. Keyboard / gamepad navigation after hover
+	# continues from the hovered item, so mouse and key input share
+	# one selection state.
+	if event is InputEventMouseMotion:
+		_handle_mouse_hover(event.position)
 
 
 func _is_device_joined(device_id: int) -> bool:
@@ -248,6 +257,23 @@ func _cycle_color(slot: int, dir: int) -> void:
 	PLAYER_COLORS[slot] = COLOR_PALETTE[player_color_idx[slot]]
 
 
+func _settings_map() -> Array:
+	# Single source of truth for setting-control positions. Both click
+	# and hover go through this; kb_focus ids match _apply_kb_change.
+	var vp := get_viewport_rect().size
+	var bar_y := vp.y - 130.0
+	var bar_y2 := bar_y + 55.0
+	var s_cx := vp.x / 2.0
+	return [
+		[3, s_cx - 250.0, bar_y + 42.0],   # HP
+		[4, s_cx -  50.0, bar_y + 42.0],   # Rounds (disabled in Endless)
+		[5, s_cx + 250.0, bar_y + 42.0],   # Mode
+		[6, s_cx - 250.0, bar_y2 + 22.0],  # Luck
+		[7, s_cx -  50.0, bar_y2 + 22.0],  # Cards
+		[8, s_cx + 150.0, bar_y2 + 22.0],  # Picks
+	]
+
+
 func _handle_mouse_click(pos: Vector2) -> void:
 	# Check if clicking on ability selector arrows for P1
 	var vp := get_viewport_rect().size
@@ -265,28 +291,33 @@ func _handle_mouse_click(pos: Vector2) -> void:
 		var ay := top + 240.0 + ab_slot * 100.0
 		if pos.y > ay - 30 and pos.y < ay + 40:
 			if pos.x > slot_x and pos.x < slot_x + slot_w:
-				kb_focus = ab_slot
+				# kb_focus id: 0=color, 1=ab1, 2=ab2 — so +1 offset.
+				kb_focus = ab_slot + 1
 				if pos.x < cx:
 					_cycle_ability(0, ab_slot, -1)
 				else:
 					_cycle_ability(0, ab_slot, 1)
 				return
 
-	# Settings area
-	var bar_y := vp.y - 130.0
-	if pos.y > bar_y and pos.y < bar_y + 60:
-		if pos.x < vp.x / 2.0 - 100:
-			kb_focus = 2
-			if pos.x < vp.x / 2.0 - 250:
-				hp_index = clampi(hp_index - 1, 0, HP_OPTIONS.size() - 1)
-			else:
-				hp_index = clampi(hp_index + 1, 0, HP_OPTIONS.size() - 1)
-		elif pos.x < vp.x / 2.0 + 100:
-			kb_focus = 3
-			if pos.x < vp.x / 2.0:
-				rounds_index = clampi(rounds_index - 1, 0, ROUND_OPTIONS.size() - 1)
-			else:
-				rounds_index = clampi(rounds_index + 1, 0, ROUND_OPTIONS.size() - 1)
+	# Settings panel — layout mirrors _draw_settings exactly. Each
+	# control is a 100-px wide value block with ±48-px arrow zones on
+	# either side. Click left arrow = −1, right arrow = +1, middle =
+	# focus only.
+	for s in _settings_map():
+		var sid: int = s[0]
+		var scx: float = s[1]
+		var scy: float = s[2]
+		# Click box matches the drawn focus rect (−50..+50 × −14..+14)
+		# plus an extra 12 px around each arrow.
+		if absf(pos.x - scx) <= 60.0 and absf(pos.y - scy) <= 18.0:
+			kb_focus = sid
+			# Rounds value is frozen in Endless mode (mode_index == 1)
+			# — match the keyboard path exactly.
+			if sid == 4 and mode_index == 1:
+				return
+			var dir: int = -1 if pos.x < scx else 1
+			_apply_kb_change(dir)
+			return
 
 	# Start button
 	var btn_y := vp.y - 15.0
@@ -294,6 +325,34 @@ func _handle_mouse_click(pos: Vector2) -> void:
 	if pos.y > btn_y - 30 and pos.y < btn_y + 30 and can_start:
 		if absf(pos.x - vp.x / 2.0) < 150:
 			_start_game()
+
+
+func _handle_mouse_hover(pos: Vector2) -> void:
+	# Hover mirrors the click hit-tests, but only moves `kb_focus` —
+	# no cycling, no game start. Keyboard / gamepad nav that happens
+	# afterward continues from whatever control the mouse last touched.
+	var vp := get_viewport_rect().size
+	var slot_w := 380.0
+	var gap := 30.0
+	var total_w := slot_w * 4 + gap * 3
+	var start_x := (vp.x - total_w) / 2.0
+	var slot_x := start_x
+	var top := 130.0
+	# Ability rows for P1 — only the first slot (player id 0).
+	for ab_slot in range(2):
+		var ay := top + 240.0 + ab_slot * 100.0
+		if pos.y > ay - 30 and pos.y < ay + 40 \
+				and pos.x > slot_x and pos.x < slot_x + slot_w:
+			kb_focus = ab_slot + 1   # 1=ab1, 2=ab2
+			return
+	# Bottom-bar settings.
+	for s in _settings_map():
+		var sid: int = s[0]
+		var scx: float = s[1]
+		var scy: float = s[2]
+		if absf(pos.x - scx) <= 60.0 and absf(pos.y - scy) <= 18.0:
+			kb_focus = sid
+			return
 
 
 func _cycle_ability(slot: int, ab_slot: int, dir: int) -> void:
