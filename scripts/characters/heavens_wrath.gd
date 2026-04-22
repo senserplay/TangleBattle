@@ -29,7 +29,8 @@ const TOTAL_LIFETIME := 4.0  # total visual lifetime
 
 
 func setup_from_config(
-	id: int, dir: Vector2, col: Color, cfg: Dictionary
+	id: int, dir: Vector2, col: Color, cfg: Dictionary,
+	radius_mult: float = 1.0
 ) -> void:
 	owner_id = id
 	aim_dir = Vector2(dir.x, 0.0).normalized()
@@ -38,8 +39,12 @@ func setup_from_config(
 	color = col
 	damage = cfg.get("damage", 30.0)
 	pillar_count = int(cfg.get("pillar_count", 6))
-	pillar_spacing = cfg.get("pillar_spacing", 120.0)
-	pillar_width = cfg.get("pillar_width", 60.0)
+	# Wide Impact (radius_multiplier) scales BOTH the column width AND
+	# the spacing between columns — ability covers proportionally more
+	# ground and each pillar has a wider hit box. pillar_count is left
+	# alone so the feel of a steady 6-beat rhythm stays.
+	pillar_spacing = cfg.get("pillar_spacing", 120.0) * radius_mult
+	pillar_width = cfg.get("pillar_width", 60.0) * radius_mult
 	pillar_delay = cfg.get("pillar_delay", 0.12)
 	pillar_speed = cfg.get("pillar_speed", 3000.0)
 

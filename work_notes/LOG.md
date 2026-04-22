@@ -1,5 +1,51 @@
 # TangleBattle — Рабочий лог
 
+## 2026-04-22 — feat(gameplay): Wide Impact масштабирует Heaven's Wrath и Portal Gate
+
+### Запрос
+"Wide Impact должен влиять на размер Heaven's Wrath и Portal Gate."
+
+### Причина
+- `heavens_wrath.gd::setup_from_config` брал `pillar_width` и
+  `pillar_spacing` из cfg напрямую — пассивка `radius_multiplier`
+  игнорировалась. Покрытие Wrath не зависело от Wide Impact.
+- `player_abilities.gd::_ab_portal_gate` уже умножал
+  `portal_radius * radius_multiplier` (логика свапа), НО визуал
+  портала в `player.gd::_draw` был захардкожен:
+  `display_w = 180.0`, `r0 = 35.0`, `r1 = 150.0`. Игрок с Wide Impact
+  видел маленький портал, но свапал в большом радиусе — рассинхрон.
+
+### Фикс
+
+**`scripts/characters/heavens_wrath.gd`:**
+- `setup_from_config` принимает новый параметр `radius_mult: float = 1.0`.
+- `pillar_width *= radius_mult`, `pillar_spacing *= radius_mult`.
+  `pillar_count` намеренно не меняется — ритм 6 ударов сохраняется.
+
+**`scripts/characters/player_abilities.gd::_ab_heavens_wrath`:**
+- Передаёт `player.radius_multiplier` пятым аргументом
+  `setup_from_config`.
+
+**`scripts/characters/player.gd` (Portal Gate visual):**
+- `display_w = 180.0 * radius_multiplier` — спрайт портала.
+- `r0 = 35 * radius_multiplier`, `r1 = 150 * radius_multiplier` —
+  дальность разлёта фиолетовых частиц.
+- Логика свапа уже была под `radius_multiplier` (без изменений).
+
+**`docs/passives/05_wide_impact.md`:**
+- Описание расширено: явно перечислены Heaven's Wrath и Portal Gate.
+
+### Файлы
+- `scripts/characters/heavens_wrath.gd` (+5 / -3)
+- `scripts/characters/player_abilities.gd` (+2 / -1)
+- `scripts/characters/player.gd` (+4 / -3 в Portal Gate рендере)
+- `docs/passives/05_wide_impact.md` (описание)
+
+### Тест
+- `mcp__godot__run_project` — runtime чисто.
+
+---
+
 ## 2026-04-22 — fix(gameplay): геометрически корректный отскок снарядов от платформ
 
 ### Запрос
