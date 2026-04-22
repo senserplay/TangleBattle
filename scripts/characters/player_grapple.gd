@@ -27,15 +27,22 @@ func update_grapple_shot(delta: float) -> void:
 	if not player.grapple_shooting and not player.grapple_retracting:
 		return
 
+	# Shoot & retract speeds are proportional to the (capped) range mult.
+	# Rationale: a longer rope needs to travel further, so scaling the
+	# speed with range keeps the round-trip duration roughly constant no
+	# matter how much Thread Master is stacked. Passives only push range;
+	# speed follows automatically.
+	var shoot_spd: float = player.GRAPPLE_SHOOT_SPEED * player.grapple_range_mult
+	var retract_spd: float = player.GRAPPLE_RETRACT_SPEED * player.grapple_range_mult
+
 	if player.grapple_shooting:
 		# Advance tip
-		player.grapple_tip += player.grapple_shoot_dir \
-			* player.GRAPPLE_SHOOT_SPEED * player.grapple_speed_mult * delta
+		player.grapple_tip += player.grapple_shoot_dir * shoot_spd * delta
 
 		# Check if hit a platform (raycast from prev to current tip)
 		var space: PhysicsDirectSpaceState2D = player.get_world_2d().direct_space_state
 		var prev_tip: Vector2 = player.grapple_tip - player.grapple_shoot_dir \
-			* player.GRAPPLE_SHOOT_SPEED * player.grapple_speed_mult * delta
+			* shoot_spd * delta
 		var query := PhysicsRayQueryParameters2D.create(
 			prev_tip, player.grapple_tip, 1
 		)
@@ -86,13 +93,12 @@ func update_grapple_shot(delta: float) -> void:
 		# Pull tip back toward player
 		var to_player: Vector2 = player.global_position - player.grapple_tip
 		var dist := to_player.length()
-		if dist < player.GRAPPLE_RETRACT_SPEED * delta:
+		if dist < retract_spd * delta:
 			# Arrived back
 			player.grapple_retracting = false
 			player.grapple_tip = player.global_position
 		else:
-			player.grapple_tip += to_player.normalized() \
-				* player.GRAPPLE_RETRACT_SPEED * delta
+			player.grapple_tip += to_player.normalized() * retract_spd * delta
 
 
 func handle_grapple(delta: float) -> void:

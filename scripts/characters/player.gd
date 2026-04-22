@@ -21,6 +21,10 @@ const AIR_FRICTION := 1.5
 const AIR_DRAG := 0.5  # drag on horizontal velocity in air (per second)
 
 const GRAPPLE_MAX_RANGE := 1200.0
+# Hard cap on stacked grapple_range_mult from passives. Without it, mult
+# can grow high enough that the rope travels off-screen and takes too
+# long to return (shoot/retract speeds now scale with range).
+const GRAPPLE_RANGE_MULT_CAP := 2.5
 const GRAPPLE_REEL_SPEED := 350.0  # stronger pull
 const GRAPPLE_SWING_FORCE := 600.0
 const GRAPPLE_MIN_LENGTH := 150.0
@@ -73,8 +77,7 @@ var lifesteal_pct: float = 0.0  # from passives
 var poison_pct: float = 0.0  # from passives
 var poison_slow: float = 0.0  # from passives (legendary poison)
 var extra_lives: int = 0  # from phoenix
-var grapple_range_mult: float = 1.0  # from thread master
-var grapple_speed_mult: float = 1.0  # from thread master
+var grapple_range_mult: float = 1.0  # from thread master (capped)
 var radius_multiplier: float = 1.0  # from wide impact
 var passives: Array[Dictionary] = []  # [{passive_id, rarity}]
 var fire_thread_active: bool = false  # from Fire Thread passive
@@ -1435,7 +1438,6 @@ func _apply_passives() -> void:
 	poison_slow = 0.0
 	extra_lives = 0
 	grapple_range_mult = 1.0
-	grapple_speed_mult = 1.0
 	radius_multiplier = 1.0
 	fire_thread_active = false
 	fire_burn_damage = 0.0
@@ -1496,7 +1498,6 @@ func _apply_passives() -> void:
 
 			PassiveRegistry.PassiveId.THREAD_MASTER:
 				grapple_range_mult *= rdata.get("grapple_range_mult", 1.0)
-				grapple_speed_mult *= rdata.get("grapple_speed_mult", 1.0)
 
 			PassiveRegistry.PassiveId.WIDE_IMPACT:
 				radius_multiplier *= rdata.get("radius_multiplier", 1.0)
@@ -1569,6 +1570,11 @@ func _apply_passives() -> void:
 
 			PassiveRegistry.PassiveId.PHASE_SHOT:
 				phase_shot = true
+
+	# Cap grapple range multiplier — otherwise stacked Thread Master
+	# picks can send the rope beyond the map. Shoot/retract speeds
+	# derive from this value, so the cap also tames round-trip time.
+	grapple_range_mult = minf(grapple_range_mult, GRAPPLE_RANGE_MULT_CAP)
 
 	hp = minf(hp, MAX_HP)
 
