@@ -1,5 +1,61 @@
 # TangleBattle — Рабочий лог
 
+## 2026-04-22 — feat(gameplay): размер снаряда + Wide Impact определяют взрыв с двумя зонами
+
+### Запрос
+"На расстояние взрыва пусть влияет не урон, а размер снаряда
+(+пассивка на дистанцию). Чем ближе игрок к центру снаряда — тем
+сильнее эффект. Максимальная дальность взрыва = 2·радиус снаряда.
+Максимальный урон = 1·радиус и менее."
+
+### Причина
+До этого `explosion_radius *= size_mult` (т.е. размер через damage_cap)
+делался в `_apply_size_mult`, а falloff был линейным от центра:
+`falloff = 1 - dist/r`. Wide Impact (`radius_multiplier`) вообще не
+касался взрывов гранаты/ракеты.
+
+### Фикс
+
+Во всех трёх снарядах с взрывом:
+**`grenade.gd`, `rocket.gd`, `guided_rocket.gd`:**
+1. Из `_apply_size_mult` удалено `explosion_radius *= size_mult` —
+   исходное значение из cfg сохраняется как «база».
+2. В `_explode` эффективный радиус теперь вычисляется:
+   ```
+   var wide: float = src.radius_multiplier if src != null else 1.0
+   var r: float = explosion_radius * size_mult * wide
+   var max_reach: float = 2.0 * r
+   ```
+3. Новый двухзонный falloff:
+   ```
+   if dist >= max_reach: continue
+   if dist <= r:
+       falloff = 1.0               # полный урон + полный knockback
+   else:
+       falloff = 1.0 - (dist - r) / r   # линейный спад от 1 до 0
+   ```
+
+### Семантика
+- Зона 1 (`dist ≤ r`) — максимальный урон и отбрасывание, как
+  попадание «в самый центр».
+- Зона 2 (`r < dist < 2r`) — линейный спад к нулю.
+- За `2r` — нет эффекта.
+- При `size_mult = 1, radius_multiplier = 1`: зона 1 = базовый
+  `explosion_radius` из cfg (как было раньше «полная зона»),
+  zone 2 добавляет мягкий outer ring до 2×.
+- Wide Impact ×5 + Size-Cap ×5 = max `r = base × 25` (покрытие 2×25 = 50×).
+  Cap-ы обеих множителей (5.0 каждый) предотвращают runaway.
+
+### Файлы
+- `scripts/characters/grenade.gd` (+17 / -8 в `_apply_size_mult` + `_explode`)
+- `scripts/characters/rocket.gd` (+17 / -8)
+- `scripts/characters/guided_rocket.gd` (+17 / -8)
+
+### Тест
+- `mcp__godot__run_project` — runtime чисто.
+
+---
+
 ## 2026-04-22 — chore(balance): потолок damage→size ×5
 
 ### Запрос

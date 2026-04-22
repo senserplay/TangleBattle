@@ -75,7 +75,10 @@ func _ready() -> void:
 func _apply_size_mult() -> void:
 	if size_mult == 1.0:
 		return
-	explosion_radius *= size_mult
+	# Explosion extent is computed on demand in _explode (it also folds
+	# in Wide Impact), so we no longer pre-scale `explosion_radius`.
+	# Contact detection and physical collision still scale here so the
+	# grenade actually feels bigger while flying.
 	player_detect_radius *= size_mult
 	var col: CollisionShape2D = get_node_or_null("CollisionShape2D")
 	if col != null and col.shape is CircleShape2D:
@@ -215,21 +218,36 @@ func _explode() -> void:
 			if dist < 500.0:
 				var intensity := 1.0 - dist / 500.0
 				p.vibrate(intensity * 0.4, intensity * 0.8, 0.25)
+	# Explosion reach is driven by the projectile's SIZE, not directly
+	# by damage — size_mult is already damage-capped at 5× elsewhere,
+	# and Wide Impact (owner.radius_multiplier) stacks on top.
+	# Two zones:
+	#   dist ≤ r           → full damage + full knockback.
+	#   r < dist < 2·r     → linear falloff from 1 to 0.
+	#   dist ≥ 2·r         → out of reach, skip.
+	var src: Node = owner_ref if is_instance_valid(owner_ref) else null
+	var dmg_mult: float = src.damage_multiplier if src != null else 1.0
+	var wide: float = src.radius_multiplier if src != null else 1.0
+	var r: float = explosion_radius * size_mult * wide
+	var max_reach: float = 2.0 * r
 	for p in get_tree().get_nodes_in_group("players"):
 		if not p.is_alive:
 			continue
 		var diff: Vector2 = p.global_position - global_position
 		var dist := diff.length()
-		if dist < explosion_radius:
-			var falloff := 1.0 - dist / explosion_radius
-			var away := diff.normalized() if dist > 1.0 else Vector2.UP
-			var src: Node = owner_ref if is_instance_valid(owner_ref) else null
-			var dmg_mult: float = src.damage_multiplier if src != null else 1.0
-			p.take_damage(damage * falloff * dmg_mult, src)
-			p.apply_knockback(
-				away * knockback * falloff
-				+ Vector2.UP * knockback_up * falloff
-			)
+		if dist >= max_reach:
+			continue
+		var falloff: float
+		if dist <= r:
+			falloff = 1.0
+		else:
+			falloff = 1.0 - (dist - r) / r
+		var away := diff.normalized() if dist > 1.0 else Vector2.UP
+		p.take_damage(damage * falloff * dmg_mult, src)
+		p.apply_knockback(
+			away * knockback * falloff
+			+ Vector2.UP * knockback_up * falloff
+		)
 	queue_redraw()
 	await get_tree().create_timer(0.2).timeout
 	if not is_inside_tree() or not is_instance_valid(self):
