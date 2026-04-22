@@ -1,5 +1,46 @@
 # TangleBattle — Рабочий лог
 
+## 2026-04-22 — fix(gameplay): Heaven's Wrath — Wide Impact масштабирует только ширину
+
+### Запрос
+"Wide Impact на Heaven's Wrath: лучи увеличиваются, расстояние между
+краями луча уменьшаются, как и расстояние от края первого луча
+до игрока."
+
+### Причина
+В предыдущей итерации я масштабировал и `pillar_width`, и
+`pillar_spacing` на `radius_mult`. Центры лучей раздвигались
+пропорционально ширине — края стояли на тех же расстояниях, а край
+первого луча от игрока РОС вместе с `pillar_spacing`. Противоречит
+запросу.
+
+### Фикс
+`scripts/characters/heavens_wrath.gd::setup_from_config`:
+- `pillar_spacing = cfg.get("pillar_spacing", 120.0)` — **без**
+  `radius_mult`. Центры фиксированы.
+- `pillar_width = cfg.get("pillar_width", 60.0) * radius_mult` —
+  ширина всё ещё растёт.
+
+Математика (базово 120 spacing / 60 width):
+- Без WI: край первого луча = 120 − 30 = 90 px от игрока;
+  edge-to-edge gap = 120 − 60 = 60 px.
+- WI ×2: ширина 120, первый край = 120 − 60 = 60 px (ближе);
+  gap = 120 − 120 = 0 px (лучи касаются).
+- WI ×3: первый край = 120 − 90 = 30 px; gap = 120 − 180 = −60 px
+  (лучи перекрываются — "стена света").
+
+`docs/passives/05_wide_impact.md` обновлён: «ширина столбов растёт,
+spacing фиксирован → края сближаются, край первого луча к игроку».
+
+### Файлы
+- `scripts/characters/heavens_wrath.gd` (−1 умножение, +комментарий)
+- `docs/passives/05_wide_impact.md` (формулировка)
+
+### Тест
+- `mcp__godot__run_project` — runtime чисто.
+
+---
+
 ## 2026-04-22 — chore(balance): потолок Wide Impact ×5
 
 ### Запрос
