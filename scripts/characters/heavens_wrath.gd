@@ -128,7 +128,17 @@ func _spawn_pillar(index: int) -> void:
 	else:
 		offset_x = (index + 1) * pillar_spacing * aim_dir.x
 	var px: float = start_pos.x + offset_x
-	var pw: float = pillar_width * (1.0 - index * 0.05)  # slightly narrower each
+	# In the edge-to-edge layout every beam must keep the full width so
+	# that the "left edge = previous right edge" invariant actually
+	# holds. Without this, the 5%-per-index narrowing opens up a
+	# growing visual gap the further the beam is from the player.
+	# In the standard layout we keep the slight taper for visual
+	# rhythm — beams don't have to touch there.
+	var pw: float
+	if edge_to_edge:
+		pw = pillar_width
+	else:
+		pw = pillar_width * (1.0 - index * 0.05)  # slightly narrower each
 	pillars.append({
 		"x": px,
 		"w": maxf(pw, 30.0),
