@@ -1,5 +1,44 @@
 # TangleBattle — Рабочий лог
 
+## 2026-04-22 — feat(gameplay): Heaven's Wrath — 5 лучей edge-to-edge на максимуме WI
+
+### Запрос
+"На максимальном влиянии от Wide Impact Heaven's Wrath должен работать
+так: 5 лучей, начало первого в точке использования, начало второго
+в точке конца первого (а не центра), и так далее."
+
+### Реализация
+`scripts/characters/heavens_wrath.gd`:
+- Новый флаг `edge_to_edge: bool` — выставляется в `setup_from_config`
+  при `radius_mult >= 4.99` (эпсилон против float-шума умножений,
+  реальный потолок `RADIUS_MULT_CAP = 5.0`).
+- При `edge_to_edge`: `pillar_count = 5` (вместо базовых 6).
+- В `_spawn_pillar`:
+  ```
+  if edge_to_edge:
+      offset_x = (index + 0.5) * pillar_width * aim_dir.x
+  else:
+      offset_x = (index + 1) * pillar_spacing * aim_dir.x
+  ```
+  Первый луч имеет центр в `player.x + width/2` → его **левый край
+  прямо в точке каста**. Следующий луч сдвинут на `+width` →
+  левый край = правый край предыдущего.
+
+### Семантика
+- WI ×1–×4: старая логика 6 лучей, spacing=120 фикс, ширина растёт,
+  края сближаются.
+- WI ×5 (потолок): внезапная смена раскладки на 5 лучей впритык,
+  стартующих ровно из игрока. Полная «стена света» без промежутков.
+
+### Файлы
+- `scripts/characters/heavens_wrath.gd` (+13 / -2)
+- `docs/passives/05_wide_impact.md` (пояснение максимальной раскладки)
+
+### Тест
+- `mcp__godot__run_project` — runtime чисто.
+
+---
+
 ## 2026-04-22 — fix(gameplay): Heaven's Wrath — Wide Impact масштабирует только ширину
 
 ### Запрос
