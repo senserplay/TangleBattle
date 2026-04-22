@@ -36,8 +36,18 @@ var bounces_left: int = 0
 # Scales visual size, physical collision, explosion radius AND contact
 # detection radius by the owner's damage_multiplier — set at spawn.
 var size_mult: float = 1.0
+# Actual outer reach of the last blast (2·r). Stored so _draw's
+# stylised fireball circles match the real damage zone instead of
+# the old cfg-driven 180-px default.
+var effective_reach: float = 0.0
 
 const GRAVITY := 980.0
+# Base *visual* half-width of the grenade sprite (display_w 44 / 2).
+# The explosion's full-damage zone is exactly this at size_mult=1
+# and Wide Impact=1 — so the damage reach matches what the player
+# sees on screen, not the config's explosion_radius (which was an
+# old-school 180-px AoE that looked 4× bigger than the grenade).
+const BASE_VISUAL_RADIUS := 22.0
 
 
 func setup(id: int, dir: Vector2, speed: float, col: Color) -> void:
@@ -228,8 +238,17 @@ func _explode() -> void:
 	var src: Node = owner_ref if is_instance_valid(owner_ref) else null
 	var dmg_mult: float = src.damage_multiplier if src != null else 1.0
 	var wide: float = src.radius_multiplier if src != null else 1.0
-	var r: float = explosion_radius * size_mult * wide
+	# "Projectile radius" — the grenade's visible half-width, scaled by
+	# its own size_mult (damage-driven, capped 5×) and Wide Impact
+	# (capped 5×). Explosion_radius from cfg is no longer used for
+	# the damage zone — only for legacy _draw circles below.
+	# Cap inner r at 5× base so outer (2r) never exceeds 10× the
+	# projectile's standard visual radius, no matter how much size_mult
+	# and Wide Impact stack.
+	var r: float = minf(BASE_VISUAL_RADIUS * size_mult * wide,
+		5.0 * BASE_VISUAL_RADIUS)
 	var max_reach: float = 2.0 * r
+	effective_reach = max_reach
 	for p in get_tree().get_nodes_in_group("players"):
 		if not p.is_alive:
 			continue
@@ -277,15 +296,18 @@ func _rebounce_grenade() -> void:
 
 func _draw() -> void:
 	if exploded:
-		# Stylised fireball layers (no art asset for explosion yet).
+		# Stylised fireball layers — sized off the real outer reach so
+		# the visual matches the actual damage zone (old cfg-driven
+		# `explosion_radius * 0.5` was locked to 180 px and no longer
+		# reflects the blast).
 		draw_circle(
-			Vector2.ZERO, explosion_radius * 0.5, Color(1, 0.7, 0.1, 0.4)
+			Vector2.ZERO, effective_reach * 0.5, Color(1, 0.7, 0.1, 0.4)
 		)
 		draw_circle(
-			Vector2.ZERO, explosion_radius * 0.3, Color(1, 0.9, 0.3, 0.6)
+			Vector2.ZERO, effective_reach * 0.3, Color(1, 0.9, 0.3, 0.6)
 		)
 		draw_circle(
-			Vector2.ZERO, explosion_radius * 0.15, Color(1, 1, 0.8, 0.8)
+			Vector2.ZERO, effective_reach * 0.15, Color(1, 1, 0.8, 0.8)
 		)
 		return
 

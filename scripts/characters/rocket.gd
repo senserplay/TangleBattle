@@ -24,6 +24,11 @@ var max_lifetime: float = 2.5
 var last_hit_body: Node = null
 # Scales visual + collision + explosion radius by damage_multiplier.
 var size_mult: float = 1.0
+# See grenade.gd — visual half-width of the rocket body used to drive
+# the explosion zones (1×r full / 2×r outer), capped at 5× so the max
+# outer reach is ≤ 10× the rocket's standard size.
+const BASE_VISUAL_RADIUS := 10.0
+var effective_reach: float = 0.0
 
 # Trail
 var trail_points: Array[Vector2] = []
@@ -158,8 +163,10 @@ func _explode() -> void:
 	var src: Node = owner_ref if is_instance_valid(owner_ref) else null
 	var dmg_mult: float = src.damage_multiplier if src != null else 1.0
 	var wide: float = src.radius_multiplier if src != null else 1.0
-	var r: float = explosion_radius * size_mult * wide
+	var r: float = minf(BASE_VISUAL_RADIUS * size_mult * wide,
+		5.0 * BASE_VISUAL_RADIUS)
 	var max_reach: float = 2.0 * r
+	effective_reach = max_reach
 	for p in get_tree().get_nodes_in_group("players"):
 		if not p.is_alive:
 			continue
@@ -230,12 +237,13 @@ func _surface_normal_at_hit() -> Vector2:
 
 func _draw() -> void:
 	if exploded:
+		# Visual matches the real outer reach (see grenade.gd).
 		draw_circle(
-			Vector2.ZERO, explosion_radius * 0.4,
+			Vector2.ZERO, effective_reach * 0.4,
 			Color(1, 0.6, 0.1, 0.45)
 		)
 		draw_circle(
-			Vector2.ZERO, explosion_radius * 0.2,
+			Vector2.ZERO, effective_reach * 0.2,
 			Color(1, 0.9, 0.4, 0.65)
 		)
 		return

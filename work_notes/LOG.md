@@ -1,5 +1,64 @@
 # TangleBattle — Рабочий лог
 
+## 2026-04-22 — fix(gameplay): взрыв = 2×визуал_снаряда, cap 10×стандартного размера
+
+### Запрос
+"Взрыв от гранаты задевает даже на 4× от размера, должно быть не
+более 2×. Установи максимальный радиус взрывной волны у любого
+взрываного снаряда — 10× стандартного размера."
+
+### Причина
+В прошлой итерации я использовал `explosion_radius` из конфига (180
+для гранаты, 120 для ракет) как «радиус снаряда». Это визуально
+в ~8× больше, чем сама граната (sprite ~22 px). Юзер называл это
+"4×" — по сути тот же симптом. Формула должна опираться на
+ВИЗУАЛЬНЫЙ радиус снаряда, не на `explosion_radius` cfg.
+
+### Фикс
+В каждом из трёх взрывных снарядов — `grenade.gd`, `rocket.gd`,
+`guided_rocket.gd`:
+
+1. Добавлена константа `BASE_VISUAL_RADIUS`:
+   - Grenade: 22 (половина display_w 44).
+   - Rocket: 10 (tip distance polygon body).
+   - Guided Rocket: 12 (tip distance).
+
+2. В `_explode`:
+   ```
+   r = min(BASE_VISUAL_RADIUS * size_mult * wide, 5 * BASE_VISUAL_RADIUS)
+   max_reach = 2 * r     # ≤ 10 × BASE_VISUAL_RADIUS — жёсткий кап
+   ```
+   - Размер снаряда ведёт расширение (size_mult × Wide Impact).
+   - Cap на `r = 5 × base` гарантирует `max_reach ≤ 10 × base`.
+   - `cfg.explosion_radius` больше не участвует в damage zone.
+
+3. Добавлено поле `effective_reach` (сохраняется на `_explode`).
+   В `_draw` ветка `exploded` теперь рисует визуал fireball от
+   `effective_reach`, а не от старого `explosion_radius`. Иначе был
+   бы конфликт: визуал 180 px, урон 44 px.
+
+### Итоговые числа
+
+| Снаряд | Base | Max stacks (cap) |
+|--------|------|------------------|
+| Grenade | r=22, reach=44 | r=110, reach=220 |
+| Rocket | r=10, reach=20 | r=50, reach=100 |
+| Guided | r=12, reach=24 | r=60, reach=120 |
+
+Внутри `r` — полный урон, между `r` и `2r` — линейный спад, вне —
+ноль. Размер визуала fireball совпадает с реальной зоной поражения.
+
+### Файлы
+- `scripts/characters/grenade.gd` (+14 / -4: const, effective_reach,
+  cap, draw ties)
+- `scripts/characters/rocket.gd` (+11 / -5)
+- `scripts/characters/guided_rocket.gd` (+10 / -4)
+
+### Тест
+- `mcp__godot__run_project` — runtime чисто.
+
+---
+
 ## 2026-04-22 — feat(gameplay): размер снаряда + Wide Impact определяют взрыв с двумя зонами
 
 ### Запрос
