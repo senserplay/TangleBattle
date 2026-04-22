@@ -898,33 +898,41 @@ func _handle_movement(delta: float) -> void:
 	if Input.is_action_pressed(prefix + "right"):
 		direction += 1.0
 
+	# Universal momentum-preservation rule: any horizontal velocity above
+	# normal walk speed is treated as "boosted momentum" (dash, knockback,
+	# grapple fling, explosion push, …) and is NOT subject to artificial
+	# friction/air-drag. Only external forces — gravity, collisions via
+	# move_and_slide, and the player's own counter-steer input — are
+	# allowed to decay it. The rule is direction-agnostic: a sideways
+	# carry, diagonal carry, or even a backward carry is preserved
+	# identically; no component of the dash gets special treatment.
+	var target_vx: float = direction * SPEED * speed_multiplier * base_speed_mult
+	var max_walk: float = SPEED * speed_multiplier * base_speed_mult
+	var over_walk: bool = absf(velocity.x) > max_walk
+	var counter_steering: bool = direction != 0.0 \
+		and signf(direction) != signf(velocity.x)
+
 	if is_on_floor():
-		var target_vx := direction * SPEED * speed_multiplier * base_speed_mult
-		var fric_mul: float = _map_floor_friction_mult()
-		# Preserve momentum from dash/knockback when player has more speed
-		# than walking would give. Active input still steers, but gives a
-		# soft pull toward target instead of an abrupt brake.
-		var max_walk: float = SPEED * speed_multiplier * base_speed_mult
-		if absf(velocity.x) > max_walk and (
-			direction == 0.0
-			or signf(velocity.x) == signf(direction)
-		):
-			# Decelerate gently to retain dash carry-over
-			velocity.x = move_toward(
-				velocity.x, target_vx,
-				GROUND_FRICTION * SPEED * delta * 0.30 * fric_mul
-			)
+		if over_walk and not counter_steering:
+			# Coast — preserve boosted momentum exactly. Ground friction
+			# skipped; only a direct collision or the player pressing the
+			# opposite direction will slow them.
+			pass
 		else:
+			var fric_mul: float = _map_floor_friction_mult()
 			velocity.x = move_toward(
 				velocity.x, target_vx,
 				GROUND_FRICTION * SPEED * delta * fric_mul
 			)
 	else:
-		# Air: additive steering, preserves momentum from knockback/rope
+		# Air movement — additive steering. Input accelerates normally.
+		# When no input is held, a gentle drag applies ONLY while the
+		# player is within normal walk speed (sub-boost). Above that
+		# threshold, drag is skipped so a mid-air dash carry keeps going
+		# until gravity/collision/input act on it.
 		if absf(direction) > 0.1:
 			velocity.x += direction * AIR_ACCEL * delta
-		else:
-			# Gentle drag when not pressing anything
+		elif not over_walk:
 			velocity.x *= (1.0 - AIR_DRAG * delta)
 
 	if player_id != 1 and direction != 0.0:
