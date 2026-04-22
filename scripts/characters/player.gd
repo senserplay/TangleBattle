@@ -67,9 +67,13 @@ const PLAYER_BOUNCE := 200.0
 # can't exceed it — so no combination yeets a player off the map.
 const MAX_KNOCKBACK_MAGNITUDE := 1800.0
 const BASE_RADIUS := 24.0  # radius at 100 HP
-const MIN_SCALE := 0.7  # scale at very low HP
-const MAX_SCALE := 1.8  # scale at very high HP (e.g. 250 HP with Tank)
+const MIN_SCALE := 0.7  # asymptote at HP → 0 (never reached)
+const MAX_SCALE := 1.8  # asymptote at HP → ∞ (never reached)
 const BASE_HP_REF := 100.0  # reference HP for scale=1.0
+# Steepness of the asymptotic scaling curve. Higher = approaches
+# MIN/MAX faster. At k=2: scale≈0.74 at 0 HP, ≈1.69 at 200 HP,
+# ≈1.799 at 500 HP — never actually touches the bounds.
+const HP_SCALE_STEEPNESS := 2.0
 
 var player_id: int = 1
 var player_color: Color = Color.RED
@@ -442,9 +446,24 @@ func trigger_face_event(emotion: String, duration: float) -> void:
 # ══════════════════ ANIMATION ══════════════════
 
 func _update_hp_scale() -> void:
-	# Scale based on MAX_HP relative to base (100 HP)
-	var raw_scale := MAX_HP / BASE_HP_REF
-	hp_scale = clampf(raw_scale, MIN_SCALE, MAX_SCALE)
+	# Asymptotic HP → size curve. Linear hp_ratio was clamped hard at
+	# MIN/MAX, which made the difference between 70 HP and 100 HP, or
+	# 180 HP and 250 HP, look identical. Use a two-sided exponential
+	# so the scale eases into both bounds without ever touching them:
+	#
+	#   hp_ratio = MAX_HP / 100
+	#   t ≥ 1 → 1 + (MAX-1) · (1 − e^(−k·(t−1)))      asymptote MAX
+	#   t < 1 → 1 − (1−MIN) · (1 − e^(−k·(1−t)))      asymptote MIN
+	#
+	# scale is strictly in (MIN_SCALE, MAX_SCALE) for any finite HP,
+	# so the old `clampf` is no longer needed.
+	var hp_ratio := MAX_HP / BASE_HP_REF
+	if hp_ratio >= 1.0:
+		hp_scale = 1.0 + (MAX_SCALE - 1.0) \
+			* (1.0 - exp(-HP_SCALE_STEEPNESS * (hp_ratio - 1.0)))
+	else:
+		hp_scale = 1.0 - (1.0 - MIN_SCALE) \
+			* (1.0 - exp(-HP_SCALE_STEEPNESS * (1.0 - hp_ratio)))
 	# Update collision shape radius
 	var col_shape: CollisionShape2D = $CollisionShape2D
 	if col_shape != null and col_shape.shape is CircleShape2D:
