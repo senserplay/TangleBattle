@@ -1,5 +1,55 @@
 # TangleBattle — Рабочий лог
 
+## 2026-04-22 — chore(balance): потолок радиуса взрыва 25× → 50× + аудит кода
+
+### Запрос
+"Сделай ×50, что-то вообще не ощутим радиус взрыва, проверь ещё
+нет ли ошибок."
+
+### Аудит
+Прочитал `_explode` во всех трёх взрывных снарядах. Ошибок в логике
+нет:
+- Формула `r = min(BASE_VISUAL_RADIUS * size_mult * wide, cap)` верна.
+- Двухзонный falloff правильный.
+- `owner_ref` читается через `is_instance_valid` и `null`-guard для
+  `damage_multiplier` / `radius_multiplier`.
+- `effective_reach` сохраняется для визуала.
+
+Единственный dead-data — `explosion_radius` из cfg (180/120/150).
+Значение загружается `setup_from_config`, но в damage zone больше не
+участвует. Оставлен для обратной совместимости с конфигом (комментарий
+в коде это фиксирует). Удалять не стал — config.json продолжает
+валидироваться.
+
+### Замеченное про "не ощутим"
+Базовый grenade (без пассивок): `r = 22, max_reach = 44 px`.
+Игрок должен стоять практически на гранате. Это сознательно —
+проект масштабирует взрыв пассивками. Чтобы cap ×50 стал реально
+достижим, нужны обе пассивки на максимуме:
+- `size_mult ≤ 5` (PROJECTILE_SIZE_MULT_CAP)
+- `wide ≤ 5` (RADIUS_MULT_CAP)
+- Произведение до 25× ⇒ outer reach до **50× BASE** (с новым cap).
+
+### Фикс
+`12.5 * BASE_VISUAL_RADIUS` → `25.0 * BASE_VISUAL_RADIUS` в трёх файлах.
+Max outer = 2r = **50× BASE**.
+
+| Снаряд | Base reach | Max (50×) |
+|--------|------------|------------|
+| Grenade | 44 px | **1100 px** |
+| Rocket | 20 px | **500 px** |
+| Guided | 24 px | **600 px** |
+
+### Файлы
+- `scripts/characters/grenade.gd` (const, комментарий)
+- `scripts/characters/rocket.gd` (const, комментарий)
+- `scripts/characters/guided_rocket.gd` (const, комментарий)
+
+### Тест
+- `mcp__godot__run_project` — runtime чисто.
+
+---
+
 ## 2026-04-22 — chore(balance): потолок радиуса взрыва 10× → 25×
 
 ### Запрос

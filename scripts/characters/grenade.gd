@@ -242,11 +242,11 @@ func _explode() -> void:
 	# its own size_mult (damage-driven, capped 5×) and Wide Impact
 	# (capped 5×). Explosion_radius from cfg is no longer used for
 	# the damage zone — only for legacy _draw circles below.
-	# Cap inner r at 12.5× base so outer reach (2r) never exceeds 25×
+	# Cap inner r at 25× base so outer reach (2r) never exceeds 50×
 	# the projectile's standard visual radius, no matter how much
 	# size_mult and Wide Impact stack.
 	var r: float = minf(BASE_VISUAL_RADIUS * size_mult * wide,
-		12.5 * BASE_VISUAL_RADIUS)
+		25.0 * BASE_VISUAL_RADIUS)
 	var max_reach: float = 2.0 * r
 	effective_reach = max_reach
 	for p in get_tree().get_nodes_in_group("players"):
