@@ -67,13 +67,15 @@ const PLAYER_BOUNCE := 200.0
 # can't exceed it — so no combination yeets a player off the map.
 const MAX_KNOCKBACK_MAGNITUDE := 1800.0
 const BASE_RADIUS := 24.0  # radius at 100 HP
-const MIN_SCALE := 0.7  # asymptote at HP → 0 (never reached)
-const MAX_SCALE := 1.8  # asymptote at HP → ∞ (never reached)
+const MIN_SCALE := 0.3  # asymptote at HP → 0 (never reached)
+const MAX_SCALE := 3.6  # asymptote at HP → ∞ (never reached)
 const BASE_HP_REF := 100.0  # reference HP for scale=1.0
-# Steepness of the asymptotic scaling curve. Higher = approaches
-# MIN/MAX faster. At k=2: scale≈0.74 at 0 HP, ≈1.69 at 200 HP,
-# ≈1.799 at 500 HP — never actually touches the bounds.
-const HP_SCALE_STEEPNESS := 2.0
+# Steepness of the log-tanh curve. Input is `ln(HP/100)` so a single
+# unit of x already covers a ×e ≈ 2.72 step in HP. k=1 was tuned so
+# the curve spreads meaningfully over HP ∈ [20, 10000]:
+#   HP=20  → ~0.53,  HP=100 → 1.0,  HP=10000 → ~3.55.
+# Never actually touches MIN or MAX for any finite HP > 0.
+const HP_SCALE_STEEPNESS := 1.0
 
 var player_id: int = 1
 var player_color: Color = Color.RED
@@ -446,24 +448,27 @@ func trigger_face_event(emotion: String, duration: float) -> void:
 # ══════════════════ ANIMATION ══════════════════
 
 func _update_hp_scale() -> void:
-	# Asymptotic HP → size curve. Linear hp_ratio was clamped hard at
-	# MIN/MAX, which made the difference between 70 HP and 100 HP, or
-	# 180 HP and 250 HP, look identical. Use a two-sided exponential
-	# so the scale eases into both bounds without ever touching them:
+	# Log-tanh HP → size curve. Linear hp_ratio saturates long before
+	# crazy HP values do anything useful — a 10 000 HP Endless run
+	# looked the same as a 500 HP Tank. Take the natural log of the
+	# HP ratio first so every ×e step of HP maps to a constant step
+	# of x, then squash with tanh so the result stays strictly inside
+	# (MIN_SCALE, MAX_SCALE):
 	#
-	#   hp_ratio = MAX_HP / 100
-	#   t ≥ 1 → 1 + (MAX-1) · (1 − e^(−k·(t−1)))      asymptote MAX
-	#   t < 1 → 1 − (1−MIN) · (1 − e^(−k·(1−t)))      asymptote MIN
+	#   x = ln(max(MAX_HP, 1) / 100)           # x=0 at 100 HP
+	#   t = tanh(k·x / 2)                      # t ∈ (−1, +1)
+	#   t ≥ 0 → scale = 1 + (MAX−1)·t          # asymptote MAX
+	#   t < 0 → scale = 1 − (1−MIN)·(−t)       # asymptote MIN
 	#
-	# scale is strictly in (MIN_SCALE, MAX_SCALE) for any finite HP,
-	# so the old `clampf` is no longer needed.
-	var hp_ratio := MAX_HP / BASE_HP_REF
-	if hp_ratio >= 1.0:
-		hp_scale = 1.0 + (MAX_SCALE - 1.0) \
-			* (1.0 - exp(-HP_SCALE_STEEPNESS * (hp_ratio - 1.0)))
+	# For any finite HP > 0 the result is strictly inside the bounds,
+	# so there's no clamp — MIN and MAX are approached asymptotically.
+	var safe_hp: float = maxf(MAX_HP, 1.0)
+	var x: float = log(safe_hp / BASE_HP_REF)
+	var t: float = tanh(HP_SCALE_STEEPNESS * x / 2.0)
+	if t >= 0.0:
+		hp_scale = 1.0 + (MAX_SCALE - 1.0) * t
 	else:
-		hp_scale = 1.0 - (1.0 - MIN_SCALE) \
-			* (1.0 - exp(-HP_SCALE_STEEPNESS * (1.0 - hp_ratio)))
+		hp_scale = 1.0 - (1.0 - MIN_SCALE) * -t
 	# Update collision shape radius
 	var col_shape: CollisionShape2D = $CollisionShape2D
 	if col_shape != null and col_shape.shape is CircleShape2D:
