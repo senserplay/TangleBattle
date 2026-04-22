@@ -57,7 +57,8 @@ func _ready() -> void:
 func _apply_size_mult() -> void:
 	if size_mult == 1.0:
 		return
-	explosion_radius *= size_mult
+	# Explosion reach is computed in _explode using size_mult + Wide
+	# Impact — don't bake size_mult into explosion_radius here.
 	var col: CollisionShape2D = get_node_or_null("CollisionShape2D")
 	if col != null and col.shape is CircleShape2D:
 		var new_shape: CircleShape2D = col.shape.duplicate()
@@ -150,21 +151,33 @@ func _explode() -> void:
 	if cam != null and cam.has_method("add_shake"):
 		cam.add_shake(6.0)
 
+	# Size-driven explosion zones (see grenade.gd for full rationale):
+	#   dist ≤ r       → full damage/knockback.
+	#   r < dist < 2·r → linear falloff.
+	#   dist ≥ 2·r     → no effect.
+	var src: Node = owner_ref if is_instance_valid(owner_ref) else null
+	var dmg_mult: float = src.damage_multiplier if src != null else 1.0
+	var wide: float = src.radius_multiplier if src != null else 1.0
+	var r: float = explosion_radius * size_mult * wide
+	var max_reach: float = 2.0 * r
 	for p in get_tree().get_nodes_in_group("players"):
 		if not p.is_alive:
 			continue
 		var diff: Vector2 = p.global_position - global_position
 		var dist := diff.length()
-		if dist < explosion_radius:
-			var falloff := 1.0 - dist / explosion_radius
-			var away := diff.normalized() if dist > 1.0 else Vector2.UP
-			var src: Node = owner_ref if is_instance_valid(owner_ref) else null
-			var dmg_mult: float = src.damage_multiplier if src != null else 1.0
-			p.take_damage(damage * falloff * dmg_mult, src)
-			p.apply_knockback(
-				away * knockback * falloff
-				+ Vector2.UP * knockback_up * falloff
-			)
+		if dist >= max_reach:
+			continue
+		var falloff: float
+		if dist <= r:
+			falloff = 1.0
+		else:
+			falloff = 1.0 - (dist - r) / r
+		var away := diff.normalized() if dist > 1.0 else Vector2.UP
+		p.take_damage(damage * falloff * dmg_mult, src)
+		p.apply_knockback(
+			away * knockback * falloff
+			+ Vector2.UP * knockback_up * falloff
+		)
 
 	queue_redraw()
 	await get_tree().create_timer(0.15).timeout
