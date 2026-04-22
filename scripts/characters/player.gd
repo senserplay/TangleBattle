@@ -245,13 +245,23 @@ func setup(id: int) -> void:
 	# Ensure input actions exist for this player
 	_ensure_actions()
 	if player_id == 1:
+		# Hide OS cursor — in-game crosshair is drawn in _draw_crosshair
+		# at the mouse world position, always legible against any map.
 		Input.set_default_cursor_shape(Input.CURSOR_CROSS)
+		Input.mouse_mode = Input.MOUSE_MODE_HIDDEN
 	# Setup extracted components
 	_grapple = $PlayerGrapple
 	_abilities = $PlayerAbilities
 	_grapple.setup(self)
 	_abilities.setup(self)
 	_setup_visual_sprites()
+
+
+func _exit_tree() -> void:
+	# Restore OS cursor visibility when the keyboard player leaves the
+	# scene (round end, returning to lobby, menu) so UI remains usable.
+	if player_id == 1:
+		Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 
 
 func _setup_visual_sprites() -> void:
@@ -1793,9 +1803,8 @@ func _draw() -> void:
 		var spin_col := Color(1.0, 0.8, 0.2, 0.5 * (1.0 - t))
 		draw_arc(Vector2.ZERO, 30.0 + t * 30.0, 0.0, TAU, 24, spin_col, 4.0)
 
-	# Crosshair (gamepad only)
-	if player_id != 1:
-		_draw_crosshair()
+	# Crosshair — drawn for every player (P1 at mouse, others at aim dir)
+	_draw_crosshair()
 
 	# Body and eyes are drawn by Sprite2D nodes via _update_visual_sprites().
 	# Below variables are still needed by trailing draws (whip, grab hook, etc.).
@@ -2044,7 +2053,14 @@ func draw_ellipse_simple(
 
 
 func _draw_crosshair() -> void:
-	var ch_pos := aim_direction * CROSSHAIR_DIST
+	# Keyboard player — pin the crosshair to the actual mouse position
+	# (converted to local space so _draw's canvas transform is honored).
+	# Gamepad players — fixed offset along aim_direction.
+	var ch_pos: Vector2
+	if player_id == 1:
+		ch_pos = get_global_mouse_position() - global_position
+	else:
+		ch_pos = aim_direction * CROSSHAIR_DIST
 	var s := CROSSHAIR_SIZE
 	var col := player_color.lightened(0.3)
 	col.a = 0.85
