@@ -57,6 +57,11 @@ const ICON_SPACING := 62.0
 
 # Player-to-player collision
 const PLAYER_BOUNCE := 200.0
+# Hard cap on the magnitude of any single knockback event after mass
+# scaling. Passives (Heavy Impact, future knockback boosters, stacked
+# explosions) may still push the applied force up to this value, but
+# can't exceed it — so no combination yeets a player off the map.
+const MAX_KNOCKBACK_MAGNITUDE := 1800.0
 const BASE_RADIUS := 24.0  # radius at 100 HP
 const MIN_SCALE := 0.7  # scale at very low HP
 const MAX_SCALE := 1.8  # scale at very high HP (e.g. 250 HP with Tank)
@@ -671,8 +676,16 @@ func _handle_player_collisions() -> void:
 				var bounce_force := maxf(PLAYER_BOUNCE, impact * 0.4)
 				var my_mult: float = collision_force_mult
 				var their_mult: float = p.collision_force_mult
-				velocity += push * bounce_force * my_mult * 0.5
-				p.velocity -= push * bounce_force * their_mult * 0.5
+				# Route each side through the same mass-scaling + cap
+				# rule used by apply_knockback. Heavy Impact still
+				# amplifies collision_force_mult, but the amplification
+				# can't exceed MAX_KNOCKBACK_MAGNITUDE.
+				velocity += _scale_knockback(
+					push * bounce_force * my_mult * 0.5
+				)
+				p.velocity -= p._scale_knockback(
+					push * bounce_force * their_mult * 0.5
+				)
 				# Squash on collision
 				squash_x = 0.85
 				squash_y = 1.15
@@ -1154,7 +1167,21 @@ func apply_knockback(force: Vector2) -> void:
 		return
 	if is_grappling:
 		_release_grapple()
-	velocity += force
+	velocity += _scale_knockback(force)
+
+
+## Universal knockback scaling — applies to every source (explosions,
+## projectiles, dash hits, swap, parry-reflect, player bounce, etc.).
+## Heavier player (larger hp_scale) resists being pushed (divisor ≥1),
+## lighter player is pushed more (divisor <1). The resulting vector is
+## clamped to MAX_KNOCKBACK_MAGNITUDE so any stacked passive boost tops
+## out at a fair ceiling instead of spiralling to infinity.
+func _scale_knockback(force: Vector2) -> Vector2:
+	var mass_factor: float = maxf(hp_scale, 0.5)
+	var scaled: Vector2 = force / mass_factor
+	if scaled.length() > MAX_KNOCKBACK_MAGNITUDE:
+		scaled = scaled.normalized() * MAX_KNOCKBACK_MAGNITUDE
+	return scaled
 
 
 func apply_slow(duration: float) -> void:
