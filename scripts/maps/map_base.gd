@@ -1568,7 +1568,7 @@ func _pickup_item(body: Node2D, item: Area2D) -> void:
 
 ## ══════ MAP EVENTS ══════
 func _trigger_random_event() -> void:
-	var event: int = randi_range(0, 2)
+	var event: int = randi_range(0, 3)
 	match event:
 		0:
 			_event_meteor()
@@ -1576,6 +1576,8 @@ func _trigger_random_event() -> void:
 			_event_lightning()
 		2:
 			_event_wave()
+		3:
+			_event_tsunami()
 
 
 func _event_meteor() -> void:

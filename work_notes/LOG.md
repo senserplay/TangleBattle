@@ -1,5 +1,29 @@
 # TangleBattle — Рабочий лог
 
+## 2026-04-22 — feat(editor): опция Tsunami в выпадающем меню событий
+
+### Запрос
+"И в редактор карт тоже добавь возможность добавлять это событие."
+
+### Фикс
+`scripts/main/map_editor.gd`:
+- `EVENT_IDS` добавлен `"tsunami"`.
+- `EVENT_LABELS` добавлен `"Tsunami"`.
+
+`scripts/maps/map_base.gd::_trigger_random_event`:
+- Пул «Random (all)» расширен с 3 до 4 событий — теперь
+  включает tsunami. Иначе если кастомная карта выбирает
+  `event_type = "all"`, цунами бы никогда не срабатывало.
+
+### Файлы
+- `scripts/main/map_editor.gd` (константы, +1 строка)
+- `scripts/maps/map_base.gd::_trigger_random_event` (+2 строки)
+
+### Тест
+- `mcp__godot__run_project` — runtime чисто.
+
+---
+
 ## 2026-04-22 — feat(maps): событие «Tsunami» на Ocean Shore
 
 ### Запрос
