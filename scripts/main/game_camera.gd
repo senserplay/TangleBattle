@@ -65,6 +65,23 @@ func _process(delta: float) -> void:
 
 	target_zoom = clampf(target_zoom, min_allowed, MAX_ZOOM)
 
+	# Map-rect bounds are applied to the TARGET before the lerp, using
+	# half_view derived from target_zoom. The previous implementation
+	# lerped `position` first, then clamped it (and also ran an
+	# emergency tighten in _ensure_players_visible), so every frame
+	# the camera moved-then-snapped-back — visible as jitter when
+	# players spread out near the map edges. One write per frame
+	# against a pre-clamped target removes the feedback loop.
+	if map_ref != null and "map_rect" in map_ref:
+		var mr: Rect2 = map_ref.map_rect
+		var half_view := VIEWPORT_REF / (2.0 * target_zoom)
+		target_center.x = clampf(target_center.x,
+			mr.position.x + half_view.x - 100,
+			mr.end.x - half_view.x + 100)
+		target_center.y = clampf(target_center.y,
+			mr.position.y + half_view.y - 100,
+			mr.end.y - half_view.y + 100)
+
 	var dist_to_target := position.distance_to(target_center)
 	var pos_speed := SMOOTH_POS + dist_to_target * 0.02
 	var zoom_diff := absf(zoom.x - target_zoom)
@@ -77,7 +94,8 @@ func _process(delta: float) -> void:
 	var new_zoom := lerpf(zoom.x, target_zoom, t_zoom)
 	zoom = Vector2(new_zoom, new_zoom)
 
-	# Screen shake
+	# Screen shake — affects offset only, never `position`, so shake
+	# and bounds clamping can't fight each other.
 	if shake_amount > 0.3:
 		shake_time += delta * 30.0
 		offset = Vector2(
@@ -88,33 +106,3 @@ func _process(delta: float) -> void:
 	else:
 		shake_amount = 0.0
 		offset = offset.lerp(Vector2.ZERO, delta * 10.0)
-
-	_ensure_players_visible(alive_positions)
-
-	if map_ref != null and "map_rect" in map_ref:
-		var mr: Rect2 = map_ref.map_rect
-		var half_view := VIEWPORT_REF / (2.0 * zoom.x)
-		position.x = clampf(position.x,
-			mr.position.x + half_view.x - 100,
-			mr.end.x - half_view.x + 100)
-		position.y = clampf(position.y,
-			mr.position.y + half_view.y - 100,
-			mr.end.y - half_view.y + 100)
-
-
-func _ensure_players_visible(positions: Array[Vector2]) -> void:
-	var half_view := VIEWPORT_REF / (2.0 * zoom.x)
-	var cam_rect := Rect2(
-		position.x - half_view.x, position.y - half_view.y,
-		half_view.x * 2.0, half_view.y * 2.0)
-	var margin := 50.0
-	var safe := Rect2(
-		cam_rect.position.x + margin, cam_rect.position.y + margin,
-		cam_rect.size.x - margin * 2.0, cam_rect.size.y - margin * 2.0)
-	for pos in positions:
-		if not safe.has_point(pos):
-			var emergency_zoom := zoom.x * 0.97
-			emergency_zoom = maxf(emergency_zoom, MIN_ZOOM)
-			zoom = Vector2(emergency_zoom, emergency_zoom)
-			position = position.lerp(pos, 0.15)
-			return

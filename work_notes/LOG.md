@@ -1,5 +1,48 @@
 # TangleBattle — Рабочий лог
 
+## 2026-04-22 — fix(camera): убрана тряска при большом расстоянии между игроками
+
+### Запрос
+"Убрать тряску камеры при большом расстоянии между игроками.
+Ограничения применяются ПОСЛЕ того, как камера поменяла позицию
+в этом тике — надо ДО. Не менять position в _process несколько
+раз за выполнение."
+
+### Причина
+`_process` писал в `position` трижды за кадр:
+1. Lerp к `target_center`: `position = position.lerp(target_center, t_pos)`.
+2. Emergency-correction в `_ensure_players_visible`: ещё один
+   `position.lerp(pos, 0.15)` + домножение zoom'а на 0.97.
+3. Финальный `clampf` по map_rect на `position.x/y`.
+
+Когда игроки разбежались у краёв карты, `_ensure_players_visible`
+срабатывал каждый кадр (игрок снаружи safe-area → emergency zoom
+делает камеру ещё меньше → на след. кадре другой игрок уже снаружи
+→ повтор). Плюс финальный clamp дёргал `position` назад в bounds
+после неверного шага. Всё это — визуальная тряска.
+
+### Фикс
+`scripts/main/game_camera.gd::_process`:
+
+1. **Pre-clamp `target_center`** по map_rect'у, используя half_view
+   из `target_zoom` (не текущего). Значит цель лерпа всегда внутри
+   допустимой зоны.
+2. **Одна запись в `position` за кадр** — только `position.lerp(target_center, t_pos)`. Никакого post-clamp.
+3. **`_ensure_players_visible` удалён** — он был главным источником
+   feedback-цикла. Игроки за краем camera-view при `min_allowed`
+   zoom — это ограничение карты, а не баг; принудительное дотягивание
+   только портило ощущение.
+4. `offset` используется только под shake (как и раньше), чтобы
+   shake и bounds-clamp не дрались.
+
+### Файлы
+- `scripts/main/game_camera.gd::_process` (+15 / −32)
+
+### Тест
+- `mcp__godot__run_project` — runtime чисто.
+
+---
+
 ## 2026-04-22 — feat(editor): опция Tsunami в выпадающем меню событий
 
 ### Запрос
