@@ -1,5 +1,42 @@
 # TangleBattle — Рабочий лог
 
+## 2026-04-22 — fix(gameplay): Iron Skin теперь действует и на DoT-тики
+
+### Запрос
+"Пассивка на пониженный входящий урон не работает или работает очень
+плохо. Не особо заметно разницу."
+
+### Причина
+`take_damage()` корректно умножал входящий урон на `(1 - damage_reduction)`
+перед вычитанием из `hp`. Однако DoT-эффекты (огонь и яд) обходили
+эту логику:
+
+- `_apply_fire_burn()` — `hp -= dmg` (прямое вычитание на каждый тик).
+- `_run_poison_dot()` — `hp -= per_tick` (прямое вычитание).
+
+Оба игнорировали `damage_reduction`. В бою с Poison Projectile +
+Fire Thread игрок с Iron Skin получал **полный** урон через DoT и
+мизерное снижение только по прямым ударам — отсюда ощущение, что
+пассивка «почти не работает».
+
+### Фикс
+`scripts/characters/player.gd`:
+- `_apply_fire_burn` tick: `hp -= dmg * (1.0 - damage_reduction)`
+- `_run_poison_dot` tick: `hp -= per_tick * (1.0 - damage_reduction)`
+
+Теперь редукция применяется единообразно ко всем типам входящего
+урона — прямому, огню, яду. Cap 0.8 на `damage_reduction` (в
+`_apply_passives`) по-прежнему защищает от 100% иммунитета при
+стеке Iron Skin + Tank.
+
+### Файлы
+- `scripts/characters/player.gd` (+2 / -2 + 2 комментария)
+
+### Тест
+- `mcp__godot__run_project` — runtime чисто.
+
+---
+
 ## 2026-04-22 — fix(gameplay): Shockwave + shield VFX на нажатие щита (фикс-CD 5 с)
 
 ### Запрос

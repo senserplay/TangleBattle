@@ -997,7 +997,8 @@ func _apply_fire_burn(
 		await get_tree().create_timer(tick).timeout
 		if not is_alive:
 			break
-		hp -= dmg
+		# Iron Skin applies to DoT tick damage just like direct hits.
+		hp -= dmg * (1.0 - damage_reduction)
 		hit_flash_timer = 0.05
 		_spawn_hit_burst("fire", 6)
 		if hp <= 0.0:
@@ -1155,7 +1156,8 @@ func _run_poison_dot(per_tick: float, ticks: int) -> void:
 		if not is_alive:
 			remove_meta("poison_active")
 			return
-		hp -= per_tick
+		# Iron Skin applies to DoT tick damage just like direct hits.
+		hp -= per_tick * (1.0 - damage_reduction)
 		hit_flash_timer = 0.05
 		_spawn_hit_burst("poison", 5)
 		if hp <= 0.0:
