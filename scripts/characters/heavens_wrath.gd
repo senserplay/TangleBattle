@@ -39,11 +39,13 @@ func setup_from_config(
 	color = col
 	damage = cfg.get("damage", 30.0)
 	pillar_count = int(cfg.get("pillar_count", 6))
-	# Wide Impact (radius_multiplier) scales BOTH the column width AND
-	# the spacing between columns — ability covers proportionally more
-	# ground and each pillar has a wider hit box. pillar_count is left
-	# alone so the feel of a steady 6-beat rhythm stays.
-	pillar_spacing = cfg.get("pillar_spacing", 120.0) * radius_mult
+	# Wide Impact scales ONLY pillar_width. Center-to-center spacing
+	# stays fixed, so as beams grow wider their edges get closer
+	# together (eventually overlapping), and the edge of the first
+	# beam moves closer to the player — exactly the "merge into a
+	# wall of light" feel the user asked for. pillar_count is also
+	# left alone so the 6-beat rhythm holds.
+	pillar_spacing = cfg.get("pillar_spacing", 120.0)
 	pillar_width = cfg.get("pillar_width", 60.0) * radius_mult
 	pillar_delay = cfg.get("pillar_delay", 0.12)
 	pillar_speed = cfg.get("pillar_speed", 3000.0)
