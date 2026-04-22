@@ -52,6 +52,16 @@ const LIGHTNING_DUR: float = 0.8
 var _wind_start_t: float = -1.0
 var _wind_dir: float = 1.0
 const WIND_DUR: float = 1.0
+# Tsunami event — water creeps in from the right, peaks, then a slow
+# wave crest traverses the map before receding. Driven from right to
+# left so the map's left spawn is the "safe high ground" vibe.
+var _tsunami_start_t: float = -1.0
+const TSUNAMI_RISE_DUR: float = 5.0
+const TSUNAMI_WAVE_DUR: float = 5.0
+const TSUNAMI_RECEDE_DUR: float = 3.0
+const TSUNAMI_WATER_PEAK: float = 420.0   # px above kill line
+const TSUNAMI_WAVE_HEIGHT: float = 260.0  # crest above water level
+const TSUNAMI_WAVE_WIDTH: float = 600.0   # half-width of crest hitbox
 
 ## Parallax layers: [{color, elements: [{x, y, size, shape}], scroll_factor}]
 ## scroll_factor: 0.0 = static, 1.0 = moves with camera
@@ -389,6 +399,56 @@ func _draw_event_vfx() -> void:
 					draw_line(p1, p2, col, 2.0)
 		else:
 			_wind_start_t = -1.0
+	# ───── Tsunami ─────
+	if _tsunami_start_t >= 0.0:
+		var el: float = now - _tsunami_start_t
+		var water_y: float = _tsunami_water_y(el)
+		var left: float = map_rect.position.x
+		var w: float = map_rect.size.x
+		var bottom: float = map_rect.end.y
+		# Main water body — semi-transparent deep blue.
+		draw_rect(
+			Rect2(left, water_y, w, bottom - water_y),
+			Color(0.15, 0.45, 0.75, 0.55)
+		)
+		# Shimmering top edge — sine stripes scrolling with time.
+		var seg: float = 40.0
+		var n_seg: int = int(w / seg) + 1
+		for i in range(n_seg):
+			var xa: float = left + i * seg
+			var xb: float = left + (i + 1) * seg
+			var ya: float = water_y + sin(el * 2.5 + xa * 0.02) * 8.0
+			var yb: float = water_y + sin(el * 2.5 + xb * 0.02) * 8.0
+			draw_line(Vector2(xa, ya), Vector2(xb, yb),
+				Color(0.5, 0.85, 1.0, 0.85), 3.0)
+		# Wave crest — only during the WAVE phase. Big blob + foam arc.
+		if el > TSUNAMI_RISE_DUR \
+			and el < TSUNAMI_RISE_DUR + TSUNAMI_WAVE_DUR:
+			var wx: float = _tsunami_wave_x(el)
+			var wy: float = water_y - TSUNAMI_WAVE_HEIGHT * 0.5
+			# Ellipse approximated via a polygon.
+			var pts: PackedVector2Array = []
+			var segs: int = 28
+			for si in range(segs):
+				var ang: float = si * TAU / segs
+				pts.append(Vector2(
+					wx + cos(ang) * TSUNAMI_WAVE_WIDTH * 0.5,
+					wy + sin(ang) * TSUNAMI_WAVE_HEIGHT
+				))
+			draw_colored_polygon(pts, Color(0.2, 0.55, 0.9, 0.7))
+			# Foam crest — upper half-arc.
+			draw_arc(Vector2(wx, wy), TSUNAMI_WAVE_HEIGHT,
+				PI, TAU, 24, Color(1.0, 1.0, 1.0, 0.9), 6.0)
+			# Spray droplets in front of the wave.
+			for si in range(12):
+				var ang2: float = float(si) * TAU / 12.0 \
+					+ el * 4.0
+				var rx: float = cos(ang2) * TSUNAMI_WAVE_WIDTH * 0.55
+				var ry: float = sin(ang2) * TSUNAMI_WAVE_HEIGHT * 0.9
+				if ry < 0.0:  # above wave line
+					draw_circle(
+						Vector2(wx + rx, wy + ry), 5.0,
+						Color(1.0, 1.0, 1.0, 0.75))
 
 
 func _draw_event_banner() -> void:
@@ -1157,7 +1217,23 @@ func _process(delta: float) -> void:
 				"wind":      _event_wave()
 				"meteor":    _event_meteor()
 				"lightning": _event_lightning()
+				"tsunami":   _event_tsunami()
 				_:           _trigger_random_event()
+
+	# Tsunami — runs per physics frame while active (water damage,
+	# wave push). Draw side reads the same timings in _draw_event_vfx.
+	if _tsunami_start_t >= 0.0:
+		var t_el: float = _event_time() - _tsunami_start_t
+		var total: float = TSUNAMI_RISE_DUR + TSUNAMI_WAVE_DUR \
+			+ TSUNAMI_RECEDE_DUR
+		if t_el >= total:
+			_tsunami_start_t = -1.0
+			# Clear any leftover "was hit this wave" markers on players.
+			for p in get_tree().get_nodes_in_group("players"):
+				if p.has_meta("tsunami_hit"):
+					p.remove_meta("tsunami_hit")
+		else:
+			_apply_tsunami_tick(delta, t_el)
 
 	# Item spawning
 	if item_spawns.size() > 0 and Engine.get_physics_frames() % 900 == 0:
@@ -1561,6 +1637,64 @@ func _event_wave() -> void:
 		if p.is_alive:
 			p.apply_knockback(Vector2(dir * 400.0, -100.0))
 	SoundManager.play_dash()
+
+
+func _event_tsunami() -> void:
+	_show_event_banner("🌊 TSUNAMI 🌊", Color(0.35, 0.8, 1.0), 2.2)
+	_tsunami_start_t = _event_time()
+	SoundManager.play_explosion()  # low boom cue
+
+
+func _tsunami_water_y(el: float) -> float:
+	# Base water line = top of bottom kill zone; water rises above it
+	# up to TSUNAMI_WATER_PEAK and recedes back.
+	var base_y: float = map_rect.end.y - danger_bottom
+	var recede_start: float = TSUNAMI_RISE_DUR + TSUNAMI_WAVE_DUR
+	if el < TSUNAMI_RISE_DUR:
+		return base_y - TSUNAMI_WATER_PEAK * (el / TSUNAMI_RISE_DUR)
+	if el < recede_start:
+		return base_y - TSUNAMI_WATER_PEAK
+	var k: float = (el - recede_start) / TSUNAMI_RECEDE_DUR
+	return base_y - TSUNAMI_WATER_PEAK * (1.0 - k)
+
+
+func _tsunami_wave_x(el: float) -> float:
+	# Single crest moves right → left during the WAVE phase. Before /
+	# after that phase the crest is off-screen (out of bounds).
+	if el < TSUNAMI_RISE_DUR:
+		return map_rect.end.x + 2000.0
+	if el >= TSUNAMI_RISE_DUR + TSUNAMI_WAVE_DUR:
+		return map_rect.position.x - 2000.0
+	var k: float = (el - TSUNAMI_RISE_DUR) / TSUNAMI_WAVE_DUR
+	return lerpf(map_rect.end.x + 200.0,
+		map_rect.position.x - 200.0, k)
+
+
+func _apply_tsunami_tick(delta: float, el: float) -> void:
+	var water_y: float = _tsunami_water_y(el)
+	var wave_x: float = _tsunami_wave_x(el)
+	var wave_active: bool = el > TSUNAMI_RISE_DUR \
+		and el < TSUNAMI_RISE_DUR + TSUNAMI_WAVE_DUR
+	var wave_crest_y: float = water_y - TSUNAMI_WAVE_HEIGHT * 0.5
+	for p in get_tree().get_nodes_in_group("players"):
+		if not p.is_alive:
+			continue
+		# Any body below the water level takes slow drowning damage
+		# and is dragged to the left (water is pouring in from right).
+		if p.global_position.y > water_y:
+			p.take_damage(5.0 * delta)
+			p.velocity.x -= 80.0 * delta * 60.0
+		# Big crest — one hit per wave pass, stored via a meta tag.
+		if wave_active:
+			var dx: float = p.global_position.x - wave_x
+			var dy: float = p.global_position.y - wave_crest_y
+			if absf(dx) < TSUNAMI_WAVE_WIDTH * 0.5 \
+				and absf(dy) < TSUNAMI_WAVE_HEIGHT:
+				if not p.has_meta("tsunami_hit"):
+					p.set_meta("tsunami_hit", true)
+					p.take_damage(20.0)
+					p.apply_knockback(Vector2(-650.0, -320.0))
+					SoundManager.play_hit()
 
 
 func _show_event_banner(text: String, color: Color, dur: float) -> void:

@@ -51,3 +51,8 @@ func _init() -> void:
 		Vector2(1250, 2235), Vector2(3250, 2235),
 		Vector2(950, 1885),  Vector2(3550, 1885),
 	]
+
+	# Thematic map event — water creeps in from the right, peaks, a
+	# slow crest marches left, water recedes. Fires every
+	# EVENT_INTERVAL seconds (see map_base.gd).
+	event_type = "tsunami"
