@@ -1,5 +1,51 @@
 # TangleBattle — Рабочий лог
 
+## 2026-04-22 — chore(rules): кооперативный workflow + строгий fetch/pull в helper-скриптах
+
+### Запрос
+"Над проектом будут работать другие участники — перед началом каждой
+фичи нужно подпуливать изменения с remote. Пропиши это в правилах."
+
+### Изменения
+
+**`CLAUDE.md`:**
+- §8.3 «Workflow одного изменения» — добавлен явный шаг 2:
+  «Подтянуть develop/main с remote». Шаги перенумерованы 1–7.
+- Новая §9 «Кооперативная работа — синхронизация с remote»:
+  - 9.1 Перед каждым branch — `fetch --tags --prune` + `pull --ff-only`.
+  - 9.2 В начале сессии — `fetch --tags --prune` + `git status`.
+  - 9.3 Перед `finish_branch.ps1` — re-pull develop (теперь делается
+    автоматически, см. ниже).
+  - 9.4 Конфликты при мерже — простые решаем сами, сложные → к юзеру.
+  - 9.5 Push — скрипты пушат сами, не делать вручную после.
+  - 9.6 NEVER list: `--force` в shared-веток, коммит IDE-файлов,
+    rebase запушенных, релиз без «ок».
+
+**`scripts/release/new_branch.ps1`:**
+- Добавлен явный `git fetch --tags --prune origin` перед
+  `checkout develop`.
+- `git pull --ff-only origin develop` больше не глушит stderr
+  (`2>$null` удалён). Если develop разошёлся с remote — скрипт
+  останавливается с понятной ошибкой.
+
+**`scripts/release/finish_branch.ps1`:**
+- После `checkout develop` добавлен блок `git fetch origin` +
+  `git pull --ff-only origin develop`. Это закрывает классическую
+  гонку: пока я работал на feature-ветке, кто-то запушил коммит
+  в develop — раньше мой push после мержа упал бы с
+  non-fast-forward. Теперь pull прозрачно подтягивает чужие
+  коммиты ДО мержа.
+
+### Файлы
+- `CLAUDE.md` (+62 строки: §8.3 правка + §9 целиком)
+- `scripts/release/new_branch.ps1` (+15 / −1: явный fetch + строгий pull)
+- `scripts/release/finish_branch.ps1` (+15 / −0: pull develop перед мерджем)
+
+### Тест
+- Скрипты протестированы при создании этой же ветки (chore/claude-coop-rules) — fetch и pull прошли чисто.
+
+---
+
 ## 2026-04-22 — fix(camera): убрана тряска при большом расстоянии между игроками
 
 ### Запрос
