@@ -2144,20 +2144,12 @@ func _draw_crosshair() -> void:
 		ch_pos = aim_direction * CROSSHAIR_DIST
 	var s := CROSSHAIR_SIZE
 
-	# Vignette — a SOLID dark disc behind the crosshair (radial gradient
-	# fading from ~55 % black at center to 0 at the edge). The crosshair
-	# sits on top, fully visible against busy / bright backgrounds.
-	# Built as a triangle-fan polygon with per-vertex alpha so the fade
-	# is a true linear gradient — no shader required.
-	var vignette_radius: float = s * 3.0   # ~36 px — covers crosshair lines (s*1.6) + margin
-	var n_segs: int = 32
-	var v_pts: PackedVector2Array = [ch_pos]
-	var v_cols: PackedColorArray = [Color(0, 0, 0, 0.55)]
-	for i in range(n_segs + 1):
-		var ang: float = float(i) * TAU / float(n_segs)
-		v_pts.append(ch_pos + Vector2(cos(ang), sin(ang)) * vignette_radius)
-		v_cols.append(Color(0, 0, 0, 0.0))
-	draw_polygon(v_pts, v_cols)
+	# Flat semi-transparent grey disc behind the crosshair — neutral
+	# colour (so it doesn't tint the player-coloured crosshair) at
+	# ~50 % alpha. Radius matches the crosshair's outer extent
+	# (`s * 1.6`, where the line tips end), so the whole crosshair
+	# silhouette sits on a uniform grey plate regardless of the map.
+	draw_circle(ch_pos, s * 1.6, Color(0.4, 0.4, 0.4, 0.5))
 
 	# Bright color layer params — fully opaque, lightened a lot.
 	var col := player_color.lightened(0.5)
