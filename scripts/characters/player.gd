@@ -2144,22 +2144,20 @@ func _draw_crosshair() -> void:
 		ch_pos = aim_direction * CROSSHAIR_DIST
 	var s := CROSSHAIR_SIZE
 
-	# Vignette band — a ring of soft black arcs around the crosshair
-	# darkens the surrounding map without touching the crosshair
-	# itself. Approximates a focal blur on busy / bright backgrounds.
-	# Bell-curve alpha (peaks mid-band) gives a smooth fall-off.
-	var vignette_inner: float = s * 2.5    # ~30 px gap from crosshair
-	var vignette_outer: float = s * 7.0    # ~84 px outer reach
-	var vignette_steps: int = 10
-	for i in range(vignette_steps):
-		var t: float = float(i) / float(vignette_steps - 1)
-		var r: float = lerpf(vignette_inner, vignette_outer, t)
-		var bell: float = 1.0 - absf(t - 0.45) * 2.0
-		bell = clampf(bell, 0.0, 1.0)
-		var alpha: float = 0.07 * bell
-		if alpha > 0.0:
-			draw_arc(ch_pos, r, 0.0, TAU, 32,
-				Color(0, 0, 0, alpha), 6.0)
+	# Vignette — a SOLID dark disc behind the crosshair (radial gradient
+	# fading from ~55 % black at center to 0 at the edge). The crosshair
+	# sits on top, fully visible against busy / bright backgrounds.
+	# Built as a triangle-fan polygon with per-vertex alpha so the fade
+	# is a true linear gradient — no shader required.
+	var vignette_radius: float = s * 3.0   # ~36 px — covers crosshair lines (s*1.6) + margin
+	var n_segs: int = 32
+	var v_pts: PackedVector2Array = [ch_pos]
+	var v_cols: PackedColorArray = [Color(0, 0, 0, 0.55)]
+	for i in range(n_segs + 1):
+		var ang: float = float(i) * TAU / float(n_segs)
+		v_pts.append(ch_pos + Vector2(cos(ang), sin(ang)) * vignette_radius)
+		v_cols.append(Color(0, 0, 0, 0.0))
+	draw_polygon(v_pts, v_cols)
 
 	# Bright color layer params — fully opaque, lightened a lot.
 	var col := player_color.lightened(0.5)
