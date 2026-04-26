@@ -2,10 +2,26 @@ class_name PlayerAbilities
 extends Node
 ## Ability dispatch and individual ability logic extracted from player.gd.
 
-# Hard cap on `damage_multiplier → size_mult` for every spawned projectile.
-# Stacked damage passives can push damage_multiplier high; without a cap
-# a single yarn ball / grenade / rocket would fill a whole screen.
-const PROJECTILE_SIZE_MULT_CAP := 5.0
+# Damage → projectile-size mapping.
+#
+# Linear scaling (size_mult = damage_multiplier with a hard cap) made
+# the projectile exactly mirror damage growth — too aggressive at
+# normal stacks and a brick wall at the cap. Replaced with an
+# asymptotic curve:
+#
+#   size_mult(d) = 1 + (max - 1) · (1 − e^(−k · (d − 1)))    (d ≥ 1)
+#
+# • size_mult(1)  = 1.0    — base damage = base size.
+# • size_mult(d)  → max     as d → ∞ (max never actually reached).
+# • Lower k = damage matters less. k=0.4 was tuned so a 1.5× damage
+#   build ≈ 1.36× size, 2× ≈ 1.66×, 5× ≈ 2.59×.
+#
+# `max` is per-projectile: bumpy combat projectiles cap at 3×, the
+# boomerang stays smaller (2×) because its visible swing volume is
+# already large at base.
+const PROJECTILE_SIZE_MAX_DEFAULT := 3.0
+const BOOMERANG_SIZE_MAX := 2.0
+const PROJECTILE_SIZE_K := 0.4
 
 var player: CharacterBody2D
 
@@ -33,6 +49,18 @@ var _heavens_wrath_scene: PackedScene = preload(
 
 func setup(p: CharacterBody2D) -> void:
 	player = p
+
+
+func _projectile_size(max_mult: float) -> float:
+	## Map owner.damage_multiplier through the asymptotic curve described
+	## in the constants block above. Returns the size_mult to apply at
+	## spawn. For sub-1.0 damage (rare debuffs) we fall back to linear
+	## with a small floor so projectiles don't disappear.
+	var d: float = player.damage_multiplier
+	if d <= 1.0:
+		return maxf(d, 0.5)
+	return 1.0 + (max_mult - 1.0) \
+		* (1.0 - exp(-PROJECTILE_SIZE_K * (d - 1.0)))
 
 
 func _can_spawn_ability(ab_id: int) -> bool:
@@ -251,7 +279,7 @@ func _ab_yarn_toss() -> void:
 	proj.speed *= player.projectile_speed_mult
 	proj.homing = player.homing_strength
 	proj.phase = player.phase_shot
-	proj.size_mult = minf(player.damage_multiplier, PROJECTILE_SIZE_MULT_CAP)
+	proj.size_mult = _projectile_size(PROJECTILE_SIZE_MAX_DEFAULT)
 	proj.global_position = player.global_position \
 		+ player.aim_direction * (player.get_player_radius() + 8.0)
 	get_tree().current_scene.add_child(proj)
@@ -277,7 +305,7 @@ func _burst_yarn_toss(cfg: Dictionary, count: int) -> void:
 		p2.speed *= player.projectile_speed_mult
 		p2.homing = player.homing_strength
 		p2.phase = player.phase_shot
-		p2.size_mult = minf(player.damage_multiplier, PROJECTILE_SIZE_MULT_CAP)
+		p2.size_mult = _projectile_size(PROJECTILE_SIZE_MAX_DEFAULT)
 		p2.global_position = player.global_position \
 			+ dir * (player.get_player_radius() + 8.0)
 		get_tree().current_scene.add_child(p2)
@@ -403,8 +431,7 @@ func _throw_grenade() -> void:
 	# 8-px safety gap so the hitboxes can't touch at spawn.
 	const GRENADE_BASE_COLLISION_RADIUS := 14.0   # matches grenade.tscn
 	const GRENADE_SPAWN_GAP := 8.0
-	var gren_size_mult: float = minf(player.damage_multiplier,
-		PROJECTILE_SIZE_MULT_CAP)
+	var gren_size_mult: float = _projectile_size(PROJECTILE_SIZE_MAX_DEFAULT)
 	var grenade_collision_radius: float = \
 		GRENADE_BASE_COLLISION_RADIUS * gren_size_mult
 	var spawn_offset: float = player.get_player_radius() \
@@ -535,7 +562,7 @@ func _ab_boomerang() -> void:
 		player.player_id, player.aim_direction, player.player_color, cfg)
 	boom.owner_ref = player
 	boom.homing = player.homing_strength
-	boom.size_mult = minf(player.damage_multiplier, PROJECTILE_SIZE_MULT_CAP)
+	boom.size_mult = _projectile_size(BOOMERANG_SIZE_MAX)
 	boom.global_position = player.global_position \
 		+ player.aim_direction * (player.get_player_radius() + 10.0)
 	get_tree().current_scene.add_child(boom)
@@ -558,7 +585,7 @@ func _burst_boomerang(cfg: Dictionary, count: int) -> void:
 		b2.setup_from_config(player.player_id, dir, player.player_color, cfg)
 		b2.owner_ref = player
 		b2.homing = player.homing_strength
-		b2.size_mult = minf(player.damage_multiplier, PROJECTILE_SIZE_MULT_CAP)
+		b2.size_mult = _projectile_size(BOOMERANG_SIZE_MAX)
 		b2.global_position = player.global_position \
 			+ dir * (player.get_player_radius() + 10.0)
 		get_tree().current_scene.add_child(b2)
@@ -591,7 +618,7 @@ func _burst_rockets(cfg: Dictionary, count: int) -> void:
 			r2.homing = player.homing_strength
 			r2.phase = player.phase_shot
 			r2.max_bounces = player.ricochet_bounces
-			r2.size_mult = minf(player.damage_multiplier, PROJECTILE_SIZE_MULT_CAP)
+			r2.size_mult = _projectile_size(PROJECTILE_SIZE_MAX_DEFAULT)
 			r2.global_position = player.global_position \
 				+ dir * (player.get_player_radius() + 10.0)
 			get_tree().current_scene.add_child(r2)
@@ -615,7 +642,7 @@ func _ab_guided_rocket() -> void:
 	rocket.homing = player.homing_strength
 	rocket.phase = player.phase_shot
 	rocket.max_bounces = player.ricochet_bounces
-	rocket.size_mult = minf(player.damage_multiplier, PROJECTILE_SIZE_MULT_CAP)
+	rocket.size_mult = _projectile_size(PROJECTILE_SIZE_MAX_DEFAULT)
 	rocket.global_position = player.global_position \
 		+ player.aim_direction * (player.get_player_radius() + 10.0)
 	get_tree().current_scene.add_child(rocket)
@@ -703,7 +730,7 @@ func _ab_rocket_launcher() -> void:
 		rocket.homing = player.homing_strength
 		rocket.phase = player.phase_shot
 		rocket.max_bounces = player.ricochet_bounces
-		rocket.size_mult = minf(player.damage_multiplier, PROJECTILE_SIZE_MULT_CAP)
+		rocket.size_mult = _projectile_size(PROJECTILE_SIZE_MAX_DEFAULT)
 		rocket.global_position = player.global_position \
 			+ dir * (player.get_player_radius() + 10.0)
 		get_tree().current_scene.add_child(rocket)
