@@ -1,5 +1,74 @@
 # TangleBattle — Рабочий лог
 
+## 2026-04-27 — tweak(balance): нелинейный damage→size с асимптотой 3× / 2×
+
+### Запрос
+"Урон должен влиять на размер не линейно. Максимум 3× для большинства,
+2× для бумеранга. Урон должен меньше влиять — придумай формулу."
+
+### Причина
+`size_mult = minf(damage_multiplier, 5.0)` — линейно: каждый
+1× к damage = 1× к размеру. Glass Cannon ×1.4 уже давал заметный
+рост, а стек 3-4× раздувал снаряд почти в раза 4. Юзер хочет
+смягчить: рост быстрый около базы, медленнее у потолка, и потолок
+ниже.
+
+### Формула
+Двусторонний экспоненциальный спад к асимптоте:
+```
+size_mult(d) = 1 + (max - 1) · (1 − e^(−k · (d − 1)))      d ≥ 1
+size_mult(d) = max(d, 0.5)                                 d < 1
+```
+- `d` = `player.damage_multiplier`.
+- `max` — потолок-асимптота (3.0 по умолчанию, 2.0 для бумеранга).
+- `k = PROJECTILE_SIZE_K = 0.4` — крутизна. Меньше = damage влияет
+  слабее.
+
+Профиль (max=3.0):
+| damage | size_mult |
+|--------|-----------|
+| 1.0 | 1.00 |
+| 1.5 | 1.36 |
+| 2.0 | 1.66 |
+| 3.0 | 1.90 |
+| 5.0 | 2.59 |
+| 10.0 | 2.96 |
+| ∞ | 3.0 (асимптота) |
+
+Профиль (max=2.0, boomerang):
+| damage | size_mult |
+|--------|-----------|
+| 1.0 | 1.00 |
+| 1.5 | 1.18 |
+| 2.0 | 1.33 |
+| 5.0 | 1.80 |
+| ∞ | 2.0 (асимптота) |
+
+Никакого жёсткого `clamp` — формула сама ограничена.
+
+### Фикс
+`scripts/characters/player_abilities.gd`:
+- Удалён `const PROJECTILE_SIZE_MULT_CAP := 5.0`.
+- Добавлены `PROJECTILE_SIZE_MAX_DEFAULT = 3.0`, `BOOMERANG_SIZE_MAX = 2.0`,
+  `PROJECTILE_SIZE_K = 0.4`.
+- Добавлен helper `_projectile_size(max_mult: float) -> float`.
+- Все 8 точек спавна обновлены:
+  - yarn_toss × 2 (regular + burst) — MAX_DEFAULT.
+  - grenade — MAX_DEFAULT (через локальную `gren_size_mult`,
+    которая используется и для расчёта spawn_offset).
+  - rocket_launcher × 2 (salvo + burst) — MAX_DEFAULT.
+  - guided_rocket — MAX_DEFAULT.
+  - boomerang × 2 (regular + burst) — **BOOMERANG_SIZE_MAX**.
+
+### Файлы
+- `scripts/characters/player_abilities.gd` (+22 / −10: const, helper,
+  8 call sites)
+
+### Тест
+- `mcp__godot__run_project` — runtime чисто.
+
+---
+
 ## 2026-04-22 — chore(rules): кооперативный workflow + строгий fetch/pull в helper-скриптах
 
 ### Запрос
