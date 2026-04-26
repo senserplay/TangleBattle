@@ -163,11 +163,15 @@ Helper мержа в develop: `pwsh scripts/release/finish_branch.ps1`
 
 ### 8.3 Workflow одного изменения
 1. ОБЯЗАТЕЛЬНО прочитать `work_notes/LOG.md`
-2. `pwsh scripts/release/new_branch.ps1 feature my-feature`
-3. Реализация + тест через `mcp__godot__run_project`
-4. ОБЯЗАТЕЛЬНО обновить `work_notes/LOG.md`
-5. Коммит (с co-author Claude)
-6. `pwsh scripts/release/finish_branch.ps1` — мерж в develop, push, авто-проверка релиза
+2. **Подтянуть `develop`/`main` с remote** (см. §9 — над проектом
+   работают другие участники, локальная ветка может быть устаревшей).
+3. `pwsh scripts/release/new_branch.ps1 feature my-feature`
+   (скрипт сам делает `git fetch` + `git pull --ff-only origin develop`,
+   но если в session уже шла работа, имеет смысл явно подтвердить).
+4. Реализация + тест через `mcp__godot__run_project`
+5. ОБЯЗАТЕЛЬНО обновить `work_notes/LOG.md`
+6. Коммит (с co-author Claude)
+7. `pwsh scripts/release/finish_branch.ps1` — мерж в develop, push, авто-проверка релиза
 
 ### 8.4 Когда делать релиз — Claude сам решает
 Запускать `pwsh scripts/release/check_release.ps1`:
@@ -196,3 +200,77 @@ smoke test → билд .exe → merge в main → tag → push → GitHub Relea
 - Godot: `C:\Users\belya\Downloads\Godot_v4.6.1-stable_mono_win64\` (config.ps1)
 - gh CLI (опционально): `winget install GitHub.cli` для автозалива на GitHub
 - PowerShell 5.1+ (есть на Win10/11)
+
+## 9. Кооперативная работа — синхронизация с remote
+
+### ЭТО ВАЖНО — над проектом работают другие участники
+
+Локальный `develop` и `main` могут отставать от удалённой версии.
+Перед началом ЛЮБОЙ новой фичи / правки нужно подтянуть свежие
+изменения, иначе ветка отвилкуется от устаревшей точки и при мерже
+породит конфликты или потеряет чужие коммиты.
+
+### 9.1 Перед каждым новым branch — обязательная синхронизация
+
+```powershell
+git fetch --tags --prune origin   # тянем все ветки + теги, чистим удалённые
+git checkout develop
+git pull --ff-only origin develop # только fast-forward, без слияний
+```
+
+Скрипт `pwsh scripts/release/new_branch.ps1 <type> <name>` уже
+делает это автоматически (`fetch + checkout develop + pull --ff-only`),
+но имеет смысл прочитать его вывод и убедиться, что pull прошёл.
+
+Если `pull --ff-only` падает с «non-fast-forward», значит локальный
+`develop` разъехался с remote. В этом случае:
+1. Сообщить пользователю — Claude сам не делает rebase/merge `develop`.
+2. Обычно проблема в незакоммиченном изменении, попавшем в `develop`
+   локально — стэшнуть и попробовать снова.
+
+### 9.2 В начале каждой сессии
+
+Сразу после прочтения `work_notes/LOG.md` (см. §3):
+
+```powershell
+git fetch --tags --prune origin
+git status   # проверить чистоту рабочего дерева
+```
+
+Это даёт честную картину: какие ветки существуют, какие новые теги
+от других участников появились, нет ли локальных недомерженных
+коммитов.
+
+### 9.3 Перед `finish_branch.ps1` — re-pull develop
+
+`finish_branch.ps1` сам делает `git pull --ff-only origin develop`
+перед мержем feature-ветки внутрь. Если за время реализации фичи
+в remote приехал чужой коммит, скрипт корректно подтянет его и
+сделает merge-commit. Если возникнет конфликт — скрипт остановится
+и попросит решить вручную.
+
+### 9.4 Конфликты при мерже
+
+- **Простой случай** (изменены разные файлы): Claude может разрешить
+  и закоммитить мерж сам.
+- **Сложный случай** (изменён один и тот же блок кода в файле):
+  остановиться, показать пользователю diff обеих версий и спросить,
+  какую логику оставить.
+
+### 9.5 Push после релиза/мерджа
+
+Скрипты `finish_branch.ps1` и `make_release.ps1` пушат сами. После
+успешного запуска нет необходимости делать `git push` руками —
+если случайно сделать, может появиться лишний коммит обновления
+LOG.md, который мы не хотим публиковать без сигнала.
+
+### 9.6 Что НЕ делать
+
+- ❌ `git push --force` в `develop` или `main`.
+- ❌ Коммитить локальные настройки IDE / `.idea/*` / `Task.txt`.
+  В рабочем дереве часто лежат незакоммиченные сторонние файлы —
+  стэшить через `git stash push -u` перед запуском
+  `new_branch.ps1` или `finish_branch.ps1`.
+- ❌ Делать rebase или amend уже запушенных коммитов в shared-ветках.
+- ❌ Запускать `make_release.ps1` без явного «ок» от пользователя
+  (см. §8.4).

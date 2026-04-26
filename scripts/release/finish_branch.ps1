@@ -39,6 +39,22 @@ try {
     Write-Host "Merging $current into develop..."
     git checkout develop
     if ($LASTEXITCODE -ne 0) { exit 1 }
+    # Cooperative sync (CLAUDE.md §9): pick up any commits other
+    # contributors pushed to develop while we were on the feature
+    # branch. Without this the subsequent push could fail with
+    # non-fast-forward, or worse, our merge could overwrite their
+    # changes if someone force-pushes.
+    Write-Host "Pulling latest origin/develop..."
+    git fetch origin
+    if ($LASTEXITCODE -ne 0) {
+        Write-Error "git fetch failed — check remote connectivity."
+        exit 1
+    }
+    git pull --ff-only origin develop
+    if ($LASTEXITCODE -ne 0) {
+        Write-Error "develop diverged from origin/develop. Resolve manually before merging the feature branch."
+        exit 1
+    }
     git merge --no-ff $current -m "Merge $current into develop"
     if ($LASTEXITCODE -ne 0) { exit 1 }
 

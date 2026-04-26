@@ -30,6 +30,16 @@ try {
         exit 1
     }
 
+    # Cooperative-work sync — pick up changes from other contributors
+    # before forking a branch (CLAUDE.md §9). `--prune` drops stale
+    # remote-tracking refs, `--tags` keeps hotfix base in sync.
+    Write-Host "Fetching from origin..."
+    git fetch --tags --prune origin
+    if ($LASTEXITCODE -ne 0) {
+        Write-Error "git fetch failed — check remote connectivity."
+        exit 1
+    }
+
     # Hotfix branches start from latest tag, not develop
     if ($Type -eq "hotfix") {
         $tag = Get-LastReleaseTag
@@ -44,7 +54,14 @@ try {
         Write-Host "Switching to develop..."
         git checkout develop
         if ($LASTEXITCODE -ne 0) { exit 1 }
-        git pull --ff-only origin develop 2>$null
+        # Strict fast-forward: if local develop diverged, surface it.
+        # The previous `2>$null` swallowed errors and let stale local
+        # branches silently fork from old commits.
+        git pull --ff-only origin develop
+        if ($LASTEXITCODE -ne 0) {
+            Write-Error "git pull --ff-only failed. Local develop may have diverged from origin/develop. Resolve manually before branching."
+            exit 1
+        }
     }
 
     # Check branch doesn't already exist
