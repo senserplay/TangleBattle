@@ -2143,23 +2143,51 @@ func _draw_crosshair() -> void:
 	else:
 		ch_pos = aim_direction * CROSSHAIR_DIST
 	var s := CROSSHAIR_SIZE
-	var col := player_color.lightened(0.3)
-	col.a = 0.85
-	var outline := Color(0, 0, 0, 0.7)
-	# Outline layer (black, thicker)
-	draw_arc(ch_pos, s, 0.0, TAU, 20, outline, 4.0)
-	draw_line(ch_pos + Vector2(-s * 1.6, 0), ch_pos + Vector2(-s * 0.4, 0), outline, 4.0)
-	draw_line(ch_pos + Vector2(s * 0.4, 0), ch_pos + Vector2(s * 1.6, 0), outline, 4.0)
-	draw_line(ch_pos + Vector2(0, -s * 1.6), ch_pos + Vector2(0, -s * 0.4), outline, 4.0)
-	draw_line(ch_pos + Vector2(0, s * 0.4), ch_pos + Vector2(0, s * 1.6), outline, 4.0)
-	draw_circle(ch_pos, 4.0, outline)
-	# Color layer on top
-	draw_arc(ch_pos, s, 0.0, TAU, 20, col, 2.0)
-	draw_line(ch_pos + Vector2(-s * 1.6, 0), ch_pos + Vector2(-s * 0.4, 0), col, 2.0)
-	draw_line(ch_pos + Vector2(s * 0.4, 0), ch_pos + Vector2(s * 1.6, 0), col, 2.0)
-	draw_line(ch_pos + Vector2(0, -s * 1.6), ch_pos + Vector2(0, -s * 0.4), col, 2.0)
-	draw_line(ch_pos + Vector2(0, s * 0.4), ch_pos + Vector2(0, s * 1.6), col, 2.0)
-	draw_circle(ch_pos, 2.5, col)
+
+	# Vignette band — a ring of soft black arcs around the crosshair
+	# darkens the surrounding map without touching the crosshair
+	# itself. Approximates a focal blur on busy / bright backgrounds.
+	# Bell-curve alpha (peaks mid-band) gives a smooth fall-off.
+	var vignette_inner: float = s * 2.5    # ~30 px gap from crosshair
+	var vignette_outer: float = s * 7.0    # ~84 px outer reach
+	var vignette_steps: int = 10
+	for i in range(vignette_steps):
+		var t: float = float(i) / float(vignette_steps - 1)
+		var r: float = lerpf(vignette_inner, vignette_outer, t)
+		var bell: float = 1.0 - absf(t - 0.45) * 2.0
+		bell = clampf(bell, 0.0, 1.0)
+		var alpha: float = 0.07 * bell
+		if alpha > 0.0:
+			draw_arc(ch_pos, r, 0.0, TAU, 32,
+				Color(0, 0, 0, alpha), 6.0)
+
+	# Bright color layer params — fully opaque, lightened a lot.
+	var col := player_color.lightened(0.5)
+	col.a = 1.0
+	var outline := Color(0, 0, 0, 0.95)
+
+	# Outline (black, thicker than before).
+	draw_arc(ch_pos, s, 0.0, TAU, 20, outline, 5.0)
+	draw_line(ch_pos + Vector2(-s * 1.6, 0), ch_pos + Vector2(-s * 0.4, 0), outline, 5.0)
+	draw_line(ch_pos + Vector2(s * 0.4, 0), ch_pos + Vector2(s * 1.6, 0), outline, 5.0)
+	draw_line(ch_pos + Vector2(0, -s * 1.6), ch_pos + Vector2(0, -s * 0.4), outline, 5.0)
+	draw_line(ch_pos + Vector2(0, s * 0.4), ch_pos + Vector2(0, s * 1.6), outline, 5.0)
+	draw_circle(ch_pos, 4.5, outline)
+
+	# Soft glow ring outside the crosshair circle for halo punch.
+	var glow := col
+	glow.a = 0.35
+	draw_arc(ch_pos, s + 2.5, 0.0, TAU, 24, glow, 5.0)
+
+	# Color body — brighter, thicker than before.
+	draw_arc(ch_pos, s, 0.0, TAU, 20, col, 2.5)
+	draw_line(ch_pos + Vector2(-s * 1.6, 0), ch_pos + Vector2(-s * 0.4, 0), col, 2.5)
+	draw_line(ch_pos + Vector2(s * 0.4, 0), ch_pos + Vector2(s * 1.6, 0), col, 2.5)
+	draw_line(ch_pos + Vector2(0, -s * 1.6), ch_pos + Vector2(0, -s * 0.4), col, 2.5)
+	draw_line(ch_pos + Vector2(0, s * 0.4), ch_pos + Vector2(0, s * 1.6), col, 2.5)
+	draw_circle(ch_pos, 3.0, col)
+	# Tiny white core for extra contrast against any background.
+	draw_circle(ch_pos, 1.5, Color(1, 1, 1, 0.95))
 
 
 func _draw_hp_bar() -> void:
