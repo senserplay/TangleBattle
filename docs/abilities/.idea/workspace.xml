@@ -5,9 +5,38 @@
   </component>
   <component name="ChangeListManager">
     <list default="true" id="fc28cf1c-3cd1-4f3d-8bdd-a23b4fbfa1ca" name="Changes" comment="">
-      <change beforePath="$PROJECT_DIR$/../../scenes/main/map_editor.tscn" beforeDir="false" afterPath="$PROJECT_DIR$/../../scenes/main/map_editor.tscn" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/../../scripts/main/game.gd" beforeDir="false" afterPath="$PROJECT_DIR$/../../scripts/main/game.gd" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/../../scripts/main/map_editor.gd" beforeDir="false" afterPath="$PROJECT_DIR$/../../scripts/main/map_editor.gd" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/../../Task.txt" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/../../assets/textures/effects/projectiles/black_hole_0.png.import" beforeDir="false" afterPath="$PROJECT_DIR$/../../assets/textures/effects/projectiles/black_hole_0.png.import" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/../../assets/textures/effects/projectiles/black_hole_1.png.import" beforeDir="false" afterPath="$PROJECT_DIR$/../../assets/textures/effects/projectiles/black_hole_1.png.import" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/../../assets/textures/effects/projectiles/black_hole_2.png.import" beforeDir="false" afterPath="$PROJECT_DIR$/../../assets/textures/effects/projectiles/black_hole_2.png.import" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/../../assets/textures/effects/projectiles/black_hole_3.png.import" beforeDir="false" afterPath="$PROJECT_DIR$/../../assets/textures/effects/projectiles/black_hole_3.png.import" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/../../assets/textures/effects/projectiles/black_hole_4.png.import" beforeDir="false" afterPath="$PROJECT_DIR$/../../assets/textures/effects/projectiles/black_hole_4.png.import" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/../../assets/textures/effects/projectiles/black_hole_5.png.import" beforeDir="false" afterPath="$PROJECT_DIR$/../../assets/textures/effects/projectiles/black_hole_5.png.import" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/../../assets/textures/effects/projectiles/black_hole_6.png.import" beforeDir="false" afterPath="$PROJECT_DIR$/../../assets/textures/effects/projectiles/black_hole_6.png.import" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/../../assets/textures/effects/projectiles/boomerang.png.import" beforeDir="false" afterPath="$PROJECT_DIR$/../../assets/textures/effects/projectiles/boomerang.png.import" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/../../assets/textures/effects/projectiles/grenade.png.import" beforeDir="false" afterPath="$PROJECT_DIR$/../../assets/textures/effects/projectiles/grenade.png.import" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/../../assets/textures/effects/projectiles/heavens_wrath.png.import" beforeDir="false" afterPath="$PROJECT_DIR$/../../assets/textures/effects/projectiles/heavens_wrath.png.import" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/../../assets/textures/effects/projectiles/portal_gate_0.png.import" beforeDir="false" afterPath="$PROJECT_DIR$/../../assets/textures/effects/projectiles/portal_gate_0.png.import" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/../../assets/textures/effects/projectiles/portal_gate_1.png.import" beforeDir="false" afterPath="$PROJECT_DIR$/../../assets/textures/effects/projectiles/portal_gate_1.png.import" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/../../assets/textures/effects/projectiles/portal_gate_2.png.import" beforeDir="false" afterPath="$PROJECT_DIR$/../../assets/textures/effects/projectiles/portal_gate_2.png.import" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/../../assets/textures/effects/projectiles/portal_gate_3.png.import" beforeDir="false" afterPath="$PROJECT_DIR$/../../assets/textures/effects/projectiles/portal_gate_3.png.import" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/../../assets/textures/effects/projectiles/portal_gate_4.png.import" beforeDir="false" afterPath="$PROJECT_DIR$/../../assets/textures/effects/projectiles/portal_gate_4.png.import" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/../../assets/textures/effects/projectiles/rope.png.import" beforeDir="false" afterPath="$PROJECT_DIR$/../../assets/textures/effects/projectiles/rope.png.import" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/../../assets/textures/effects/projectiles/stink_cloud_0.png.import" beforeDir="false" afterPath="$PROJECT_DIR$/../../assets/textures/effects/projectiles/stink_cloud_0.png.import" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/../../assets/textures/effects/projectiles/stink_cloud_1.png.import" beforeDir="false" afterPath="$PROJECT_DIR$/../../assets/textures/effects/projectiles/stink_cloud_1.png.import" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/../../assets/textures/effects/projectiles/stink_cloud_2.png.import" beforeDir="false" afterPath="$PROJECT_DIR$/../../assets/textures/effects/projectiles/stink_cloud_2.png.import" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/../../assets/textures/effects/projectiles/stink_cloud_3.png.import" beforeDir="false" afterPath="$PROJECT_DIR$/../../assets/textures/effects/projectiles/stink_cloud_3.png.import" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/../../assets/textures/effects/projectiles/stink_cloud_4.png.import" beforeDir="false" afterPath="$PROJECT_DIR$/../../assets/textures/effects/projectiles/stink_cloud_4.png.import" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/../../assets/textures/effects/projectiles/stink_cloud_5.png.import" beforeDir="false" afterPath="$PROJECT_DIR$/../../assets/textures/effects/projectiles/stink_cloud_5.png.import" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/../../assets/textures/effects/projectiles/swap_0.png.import" beforeDir="false" afterPath="$PROJECT_DIR$/../../assets/textures/effects/projectiles/swap_0.png.import" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/../../assets/textures/effects/projectiles/swap_1.png.import" beforeDir="false" afterPath="$PROJECT_DIR$/../../assets/textures/effects/projectiles/swap_1.png.import" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/../../assets/textures/effects/projectiles/swap_2.png.import" beforeDir="false" afterPath="$PROJECT_DIR$/../../assets/textures/effects/projectiles/swap_2.png.import" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/../../assets/textures/effects/projectiles/swap_3.png.import" beforeDir="false" afterPath="$PROJECT_DIR$/../../assets/textures/effects/projectiles/swap_3.png.import" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/../../assets/textures/effects/projectiles/swap_4.png.import" beforeDir="false" afterPath="$PROJECT_DIR$/../../assets/textures/effects/projectiles/swap_4.png.import" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/../../assets/textures/effects/projectiles/thread_pull.png.import" beforeDir="false" afterPath="$PROJECT_DIR$/../../assets/textures/effects/projectiles/thread_pull.png.import" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/../../assets/textures/effects/projectiles/yarn_toss.png.import" beforeDir="false" afterPath="$PROJECT_DIR$/../../assets/textures/effects/projectiles/yarn_toss.png.import" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/.idea/.name" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/.name" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -29,8 +58,8 @@
   "keyToString": {
     "RunOnceActivity.ShowReadmeOnStart": "true",
     "RunOnceActivity.git.unshallow": "true",
-    "git-widget-placeholder": "fix/editor-collisions-import",
-    "last_opened_file_path": "C:/Users/belya/Documents/Godot/TangleBattle/docs/abilities"
+    "git-widget-placeholder": "develop",
+    "last_opened_file_path": "C:/Users/belya/PycharmProjects/DiplomDriverMonitoring"
   }
 }]]></component>
   <component name="SharedIndexes">
